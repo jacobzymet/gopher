@@ -10,6 +10,10 @@ const runtime = readFileSync(
   join(root, 'src/ui/chat/scripts/runtime.js'),
   'utf8'
 ).replace(/\r\n/g, '\n');
+const state = readFileSync(
+  join(root, 'src/ui/chat/scripts/state.js'),
+  'utf8'
+).replace(/\r\n/g, '\n');
 const bots = readFileSync(
   join(root, 'src/ui/chat/scripts/bots.js'),
   'utf8'
@@ -24,6 +28,55 @@ function declaration(source, name) {
   assert.ok(match, 'missing function ' + name);
   return match[0];
 }
+
+test('search finds models outside Pins and ranks model names first', () => {
+  const context = vm.createContext({
+    modelMenuOptions: [
+      { value: 'a', label: 'Other', provider: 'Nova' },
+      { value: 'b', label: 'Nova fast', provider: 'Remote' },
+      { value: 'c', label: 'Local model', provider: 'Desktop' },
+    ],
+    modelMenuTab: 'pins', pinnedModelIds: ['c'], recentModelIds: [],
+    modelMenuFilter: 'nova', modelMenuMatches: [],
+    modelLooksLocal: (option) => option.value === 'c',
+  });
+  for (const name of ['modelFilterTerms', 'modelMenuSourceOptions', 'computeModelMatches']) {
+    vm.runInContext(declaration(runtime, name), context);
+  }
+  context.computeModelMatches();
+  assert.equal(context.modelMenuMatches.map((item) => item.value).join(','), 'b,a');
+  context.modelMenuFilter = '';
+  context.computeModelMatches();
+  assert.equal(context.modelMenuMatches[0].value, 'c');
+});
+
+test('typing selects the first search result so Enter can choose it', () => {
+  const context = vm.createContext({
+    modelMenuActiveIndex: -1,
+    visibleModelMenuOptions: () => [{ value: 'first' }, { value: 'selected' }],
+    modelMenuSelectedId: () => 'selected', modelFilterTerms: () => ['first'],
+    computeModelMatches() {}, renderModelMenuList() {}, paintModelMenuActive() {},
+    modelMenuIsOpen: () => false,
+  });
+  vm.runInContext(declaration(runtime, 'applyModelFilter'), context);
+  context.applyModelFilter();
+  assert.equal(context.modelMenuActiveIndex, 0);
+});
+
+test('removing the last pin leaves the Pins view stable', () => {
+  const context = vm.createContext({
+    pinnedModelIds: ['only'], recentModelIds: ['recent'], modelMenuTab: 'pins',
+    isModelPinned: (value) => value === 'only',
+    savePinnedModelIds(ids) { context.pinnedModelIds = ids; },
+    modelMenuIsOpen: () => true,
+    syncModelMenuTabs() {},
+    applyModelFilter() {},
+  });
+  vm.runInContext(declaration(state, 'togglePinnedModel'), context);
+  context.togglePinnedModel('only');
+  assert.equal(context.modelMenuTab, 'pins');
+  assert.deepEqual([...context.pinnedModelIds], []);
+});
 
 test('the shared model menu rejects detached and hidden anchors', () => {
   const context = vm.createContext({});

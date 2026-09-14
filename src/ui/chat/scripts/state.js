@@ -796,9 +796,6 @@ function togglePinnedModel(value) {
   if (!value) return;
   if (isModelPinned(value)) {
     savePinnedModelIds(pinnedModelIds.filter((id) => id !== value));
-    if (modelMenuTab === 'pins' && !pinnedModelIds.length) {
-      modelMenuTab = recentModelIds.length ? 'recents' : fallbackModelMenuTab();
-    }
   } else {
     savePinnedModelIds([value, ...pinnedModelIds.filter((id) => id !== value)]);
   }
@@ -1758,9 +1755,6 @@ function generateConversationTitle(convo, userText) {
       const title = await requestGeneratedTitle(text);
       if (convo._titleReq !== requestId) return;
       if (!conversations.some((item) => item.id === convo.id)) return;
-      if (title.toLowerCase() === text.toLowerCase()) {
-        throw new Error('model echoed the title source');
-      }
       convo.title = title;
       convo.titleStatus = 'generated';
       saveConversations();

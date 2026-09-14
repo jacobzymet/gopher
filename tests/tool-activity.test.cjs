@@ -91,6 +91,45 @@ test('failure status invalidates the activity rendering signature', () => {
   assert.notEqual(context.timelineSignature([{ ...part, ok: true }]), context.timelineSignature([{ ...part, ok: false }]));
 });
 
+test('reasoning snapshots never merge backward across a completed tool', () => {
+  const context = vm.createContext({});
+  for (const name of ['sealedTimelineMergeTarget', 'ensureSealedTimelineThink']) {
+    vm.runInContext(declaration(render, name), context);
+  }
+  const stream = {
+    timeline: [
+      { type: 'think', content: 'Before the approval.' },
+      { type: 'tool', id: 'write', live: false },
+    ],
+  };
+  context.ensureSealedTimelineThink(stream, 'After the approval.');
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(stream.timeline)),
+    [
+      { type: 'think', content: 'Before the approval.' },
+      { type: 'tool', id: 'write', live: false },
+      { type: 'think', content: 'After the approval.' },
+    ]
+  );
+});
+
+test('a same-round snapshot can still complete reasoning before live approval cards', () => {
+  const context = vm.createContext({});
+  for (const name of ['sealedTimelineMergeTarget', 'ensureSealedTimelineThink']) {
+    vm.runInContext(declaration(render, name), context);
+  }
+  const stream = {
+    timeline: [
+      { type: 'think', content: 'Checking' },
+      { type: 'tool', id: 'write', live: true, approval: 'pending' },
+    ],
+  };
+  context.ensureSealedTimelineThink(stream, 'Checking the file first');
+  assert.equal(stream.timeline.length, 2);
+  assert.equal(stream.timeline[0].content, 'Checking the file first');
+  assert.equal(stream.timeline[1].id, 'write');
+});
+
 test('live tools and legacy saved cards remain compatible', () => {
   const context = harness();
   assert.match(context.agentStepHtml({ name: 'read_file', live: true }), /class="agent-step is-live"/);

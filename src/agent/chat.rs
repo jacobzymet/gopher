@@ -364,9 +364,6 @@ pub async fn generate_chat_title(
                 truncate_for_error(&raw)
             )
         })?;
-    if normalized_title_text(&raw) == normalized_title_text(&snippet) {
-        return Err("model echoed the title source".into());
-    }
     Ok(candidate)
 }
 
@@ -619,14 +616,6 @@ fn truncate_title_words(title: &str) -> String {
         .join(" ")
 }
 
-fn normalized_title_text(text: &str) -> String {
-    strip_think_blocks(text)
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .to_lowercase()
-}
-
 fn last_short_title_fragment(text: &str) -> Option<String> {
     let compact = text.replace(['\n', '\r'], " ");
     compact.split(['.', '!', '?', ';']).rev().find_map(|part| {
@@ -700,6 +689,18 @@ mod title_tests {
             )
             .as_deref(),
             Some("Debugging unreliable automatic conversation title generation")
+        );
+    }
+
+    #[test]
+    fn accepts_a_concise_user_request_as_a_valid_title() {
+        assert_eq!(
+            sanitize_chat_title("Improve model selector UX").as_deref(),
+            Some("Improve model selector UX")
+        );
+        assert_eq!(
+            sanitize_chat_title("is there a title gen issue? fix").as_deref(),
+            Some("is there a title gen issue?")
         );
     }
 

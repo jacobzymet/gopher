@@ -263,7 +263,7 @@ function normalizeModelMenuTab(tab) {
 }
 
 function modelMenuUsesProviderGroups() {
-  return modelMenuTab === 'local' || modelMenuTab === 'network';
+  return !modelFilterTerms().length && (modelMenuTab === 'local' || modelMenuTab === 'network');
 }
 
 function groupModelOptions(options) {
@@ -322,6 +322,7 @@ function modelFilterTerms() {
 }
 
 function modelMenuSourceOptions() {
+  if (modelFilterTerms().length) return modelMenuOptions;
   if (modelMenuTab === 'local') return modelMenuOptions.filter(modelLooksLocal);
   if (modelMenuTab === 'network') return modelMenuOptions.filter((option) => !modelLooksLocal(option));
   const byValue = new Map(modelMenuOptions.map((option) => [option.value, option]));
@@ -343,6 +344,7 @@ function syncModelMenuTabs() {
     const active = name === modelMenuTab;
     tab.classList.toggle('is-active', active);
     tab.setAttribute('aria-selected', active ? 'true' : 'false');
+    tab.tabIndex = active ? 0 : -1;
   });
   if (chatModelList) {
     const label = modelMenuTab === 'recents'
@@ -356,6 +358,8 @@ function syncModelMenuTabs() {
 
 function setModelMenuTab(tab, { keepActive = false } = {}) {
   const next = normalizeModelMenuTab(tab);
+  modelMenuFilter = '';
+  if (chatModelSearch) chatModelSearch.value = '';
   if (modelMenuTab === next && modelMenuIsOpen()) {
     applyModelFilter({ keepActive });
     return;
@@ -462,7 +466,6 @@ function renderModelOptionHtml(option, index, { showProvider, terms }) {
 
 function renderModelMenuList() {
   const terms = modelFilterTerms();
-  const sourceCount = modelMenuSourceOptions().length;
   const grouped = modelMenuUsesProviderGroups();
   const forceOpen = !!terms.length;
   let html = '';
@@ -512,28 +515,32 @@ function renderModelMenuList() {
   });
 
   const empty = !modelMenuMatches.length;
+  chatModelMenu.classList.toggle('is-searching', !!terms.length);
   chatModelEmpty.classList.toggle('is-hidden', !empty);
   chatModelList.classList.toggle('is-hidden', empty);
   if (empty) {
     if (modelMenuTab === 'recents' && !terms.length) {
       chatModelEmpty.textContent = 'Pick a model from Local or Network to set your default.';
     } else if (modelMenuTab === 'pins' && !terms.length) {
-      chatModelEmpty.textContent = 'Pin models from Recents, Local, or Network to keep them here.';
+      chatModelEmpty.textContent = 'No pinned models yet. Pin any model to keep it here.';
     } else if (modelMenuTab === 'local' && !terms.length) {
       chatModelEmpty.textContent = 'No local models.';
     } else if (modelMenuTab === 'network' && !terms.length) {
       chatModelEmpty.textContent = 'No network models.';
     } else if (terms.length) {
-      chatModelEmpty.textContent = 'No models match “' + modelMenuFilter.trim() + '”';
+      chatModelEmpty.textContent = 'No matches for “' + modelMenuFilter.trim() + '”.';
     } else {
       chatModelEmpty.textContent = 'No models available.';
     }
   }
   if (chatModelSearchCount) {
     chatModelSearchCount.textContent = terms.length
-      ? modelMenuMatches.length + '/' + sourceCount
-      : String(sourceCount);
+      ? modelMenuMatches.length + (modelMenuMatches.length === 1 ? ' result' : ' results')
+      : '';
+    chatModelSearchCount.classList.toggle('is-hidden', !terms.length);
   }
+  if (terms.length) chatModelList.setAttribute('aria-label', 'Search results across all models');
+  else syncModelMenuTabs();
 }
 
 /** Re-filter and repaint the open menu after the query changed. */
@@ -551,6 +558,7 @@ function applyModelFilter({ keepActive = false } = {}) {
   if (restored >= 0) modelMenuActiveIndex = restored;
   else {
     modelMenuActiveIndex = options.findIndex((option) => option.value === modelMenuSelectedId());
+    if (modelFilterTerms().length && options.length) modelMenuActiveIndex = 0;
   }
   paintModelMenuActive();
   if (modelMenuIsOpen()) positionModelMenu();
@@ -4345,6 +4353,7 @@ chatModelSelectWrap.addEventListener('click', (event) => {
 
 /** Shared arrow/Enter/Escape handling for the trigger and the filter field. */
 function handleModelMenuKeydown(event) {
+  if (event.isComposing) return;
   const open = modelMenuIsOpen();
   if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
     event.preventDefault();
@@ -4359,6 +4368,7 @@ function handleModelMenuKeydown(event) {
     modelMenuActiveIndex = (from + delta + count) % count;
     paintModelMenuActive();
   } else if (event.key === 'Home' || event.key === 'End') {
+    if (event.target === chatModelSearch) return;
     if (!open || !visibleModelMenuOptions().length) return;
     event.preventDefault();
     modelMenuActiveIndex = event.key === 'Home' ? 0 : visibleModelMenuOptions().length - 1;
@@ -4378,9 +4388,13 @@ function handleModelMenuKeydown(event) {
   } else if (event.key === 'Escape' && open) {
     event.preventDefault();
     event.stopPropagation();
+    if (event.target === chatModelSearch && modelFilterTerms().length) {
+      modelMenuFilter = '';
+      chatModelSearch.value = '';
+      applyModelFilter();
+      return;
+    }
     closeModelMenu({ restoreFocus: true });
-  } else if (event.key === 'Tab' && open) {
-    closeModelMenu();
   }
 }
 
@@ -4410,22 +4424,20 @@ chatModelMenu.addEventListener('click', (event) => {
     toggleModelProviderCollapsed(group.getAttribute('data-model-group') || '');
     return;
   }
-  if (event.target.closest('[data-model-pin], [data-model-pick], .chat-model-option')) {
-    event.preventDefault();
-    event.stopPropagation();
-  }
-});
-// pointerdown so selection wins before the document "outside click" closer.
-chatModelMenu.addEventListener('pointerdown', (event) => {
-  // Let the filter field take the caret normally.
-  if (event.target.closest('.chat-model-search')) return;
-  if (event.target.closest('[data-model-tab]')) return;
-  if (event.target.closest('[data-model-group]')) return;
   const pin = event.target.closest('[data-model-pin]');
   if (pin) {
     event.preventDefault();
     event.stopPropagation();
-    togglePinnedModel(pin.getAttribute('data-model-pin') || '');
+    const value = pin.getAttribute('data-model-pin') || '';
+    const before = [...chatModelList.querySelectorAll('[data-model-pin]')];
+    const index = before.indexOf(pin);
+    togglePinnedModel(value);
+    const after = [...chatModelList.querySelectorAll('[data-model-pin]')];
+    const same = after.find((item) => item.getAttribute('data-model-pin') === value);
+    const fallback = modelSearchEnabled()
+      ? chatModelSearch
+      : chatModelMenu.querySelector('[data-model-tab].is-active');
+    (same || after[Math.min(Math.max(index, 0), after.length - 1)] || fallback)?.focus();
     return;
   }
   const pick = event.target.closest('[data-model-pick]');
@@ -4437,6 +4449,24 @@ chatModelMenu.addEventListener('pointerdown', (event) => {
   event.preventDefault();
   event.stopPropagation();
   chooseModelOption(value);
+});
+chatModelMenu.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    event.stopPropagation();
+    closeModelMenu({ restoreFocus: true });
+    return;
+  }
+  const tab = event.target.closest('[data-model-tab]');
+  if (!tab || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+  event.preventDefault();
+  const tabs = [...chatModelMenu.querySelectorAll('[data-model-tab]')]
+    .filter((item) => !item.classList.contains('is-hidden'));
+  const index = tabs.indexOf(tab);
+  const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1
+    : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+  setModelMenuTab(tabs[next].getAttribute('data-model-tab'));
+  tabs[next].focus();
 });
 document.addEventListener('click', (event) => {
   if (!modelMenuIsOpen()) return;

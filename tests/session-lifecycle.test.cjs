@@ -263,6 +263,32 @@ test('failed title requests retry before applying a deterministic fallback', asy
   assert.equal(convo.title, 'explain automatic title generation reliability');
 });
 
+test('a concise first message may be used directly as its generated title', async () => {
+  const text = 'Improve model selector UX';
+  const convo = {
+    id: 'chat-title-echo',
+    title: text,
+    titleStatus: 'pending',
+    titleAttempts: 0,
+    messages: [{ role: 'user', content: text }],
+  };
+  let revealed = '';
+  const state = vm.createContext({
+    conversations: [convo],
+    requestGeneratedTitle: async () => text,
+    firstUserText: () => text,
+    saveConversations() {},
+    revealGeneratedTitle(_convo, title) { revealed = title; },
+    console: { warn(error) { throw error; } },
+  });
+  vm.runInContext(stateDeclaration('generateConversationTitle'), state);
+  state.generateConversationTitle(convo, text);
+  await new Promise(setImmediate);
+  assert.equal(convo.titleStatus, 'generated');
+  assert.equal(convo.title, text);
+  assert.equal(revealed, text);
+});
+
 test('Stop invalidates a pending start without clearing a newer attempt', () => {
   const state = vm.createContext({
     outboundStarting: new Set(),
