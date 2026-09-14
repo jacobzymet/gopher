@@ -966,10 +966,9 @@ html[data-theme="light"] .agent-process-note {
   font-size: 0.62rem;
   letter-spacing: 0.03em;
   color: var(--color-muted);
-  padding: 0.18rem 0.5rem;
-  border-radius: var(--radius-pill);
-  background: color-mix(in oklch, var(--color-ink) 7%, transparent);
+  white-space: nowrap;
 }
+.chat-model-search-count.is-hidden { display: none; }
 .chat-model-tabs {
   flex: 0 0 auto;
   display: flex;
@@ -977,6 +976,7 @@ html[data-theme="light"] .agent-process-note {
   padding: 0.45rem 0.55rem 0.35rem;
   border-bottom: 1px solid color-mix(in oklch, var(--color-rule) 80%, transparent);
 }
+.chat-model-menu.is-searching .chat-model-tabs { display: none; }
 .chat-model-tab {
   appearance: none;
   border: 0;
@@ -1179,9 +1179,9 @@ html[data-theme="light"] .agent-process-note {
 }
 .chat-model-option .chat-model-origin-pill {
   flex: 0 0 auto;
-  max-width: none;
-  overflow: visible;
-  text-overflow: clip;
+  max-width: 6.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .chat-model-pin {
   flex: 0 0 auto;

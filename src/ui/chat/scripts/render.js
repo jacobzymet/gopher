@@ -220,11 +220,22 @@ function renderSealedAnswerHtml(parts, { notesCollapsed = true } = {}) {
   return notesHtml + answerHtml;
 }
 
+/**
+ * Authoritative content_clear snapshots can arrive after tool_prepare cards from
+ * the same model round. They may extend content immediately before those still-
+ * live tools, but must never reach backward across a completed tool.
+ */
+function sealedTimelineMergeTarget(stream, type) {
+  const parts = Array.isArray(stream?.timeline) ? stream.timeline : [];
+  let index = parts.length - 1;
+  while (index >= 0 && parts[index]?.type === 'tool' && parts[index]?.live) index -= 1;
+  return parts[index]?.type === type ? parts[index] : null;
+}
+
 function ensureSealedTimelineText(stream, text) {
   const sealed = String(text || '').trim();
   if (!sealed) return;
-  const texts = stream.timeline.filter((part) => part && part.type === 'text');
-  const last = texts[texts.length - 1];
+  const last = sealedTimelineMergeTarget(stream, 'text');
   if (last && String(last.content || '').trim() === sealed) return;
   if (last && sealed.startsWith(String(last.content || '').trim())) {
     last.content = sealed;
@@ -236,8 +247,7 @@ function ensureSealedTimelineText(stream, text) {
 function ensureSealedTimelineThink(stream, reasoning) {
   const sealed = String(reasoning || '').trim();
   if (!sealed) return;
-  const thinks = stream.timeline.filter((part) => part && part.type === 'think');
-  const last = thinks[thinks.length - 1];
+  const last = sealedTimelineMergeTarget(stream, 'think');
   if (last && String(last.content || '').trim() === sealed) return;
   if (last && sealed.startsWith(String(last.content || '').trim())) {
     last.content = sealed;
