@@ -29,25 +29,56 @@ function declaration(source, name) {
   return match[0];
 }
 
-test('search finds models outside Pins and ranks model names first', () => {
+test('unified model ordering is deduplicated and search ranks model names first', () => {
   const context = vm.createContext({
     modelMenuOptions: [
       { value: 'a', label: 'Other', provider: 'Nova' },
       { value: 'b', label: 'Nova fast', provider: 'Remote' },
       { value: 'c', label: 'Local model', provider: 'Desktop' },
     ],
-    modelMenuTab: 'pins', pinnedModelIds: ['c'], recentModelIds: [],
-    modelMenuFilter: 'nova', modelMenuMatches: [],
-    modelLooksLocal: (option) => option.value === 'c',
+    selectedChatModel: 'c', pinnedModelIds: ['a'], recentModelIds: ['b', 'a'],
+    modelMenuFilter: '', modelMenuMatches: [],
+    modelMenuSelectedId: () => 'c',
   });
-  for (const name of ['modelFilterTerms', 'modelMenuSourceOptions', 'computeModelMatches']) {
+  for (const name of [
+    'modelFilterTerms',
+    'orderedUnifiedModelOptions',
+    'modelMenuSourceOptions',
+    'computeModelMatches',
+  ]) {
     vm.runInContext(declaration(runtime, name), context);
   }
   context.computeModelMatches();
-  assert.equal(context.modelMenuMatches.map((item) => item.value).join(','), 'b,a');
-  context.modelMenuFilter = '';
+  assert.equal(context.modelMenuMatches.map((item) => item.value).join(','), 'c,a,b');
+  context.modelMenuFilter = 'nova';
   context.computeModelMatches();
-  assert.equal(context.modelMenuMatches[0].value, 'c');
+  assert.equal(context.modelMenuMatches.map((item) => item.value).join(','), 'b,a');
+});
+test('unified sections keep priority groups and then identify the provider', () => {
+  const context = vm.createContext({
+    pinnedModelIds: ['pin'],
+    recentModelIds: ['recent'],
+    modelMenuSelectedId: () => 'current',
+    isModelPinned: (value) => value === 'pin',
+  });
+  for (const name of ['modelProviderKey', 'modelProviderLabel', 'modelMenuSection']) {
+    vm.runInContext(declaration(runtime, name), context);
+  }
+  assert.equal(context.modelMenuSection({ value: 'current', provider: 'OpenRouter' }), 'current');
+  assert.equal(context.modelMenuSection({ value: 'pin', provider: 'OpenRouter' }), 'pinned');
+  assert.equal(context.modelMenuSection({ value: 'recent', provider: 'OpenRouter' }), 'recent');
+  assert.equal(
+    context.modelMenuSection({ value: 'other', providerId: 'openrouter', provider: 'OpenRouter' }),
+    'provider:openrouter'
+  );
+});
+
+test('model rows use one cube marker and omit redundant cloud badges', () => {
+  const renderer = declaration(runtime, 'renderModelOptionHtml');
+  assert.match(renderer, /chat-model-option-icon/);
+  assert.doesNotMatch(renderer, /chat-model-option-rail/);
+  assert.doesNotMatch(renderer, /Cloud/);
+  assert.match(renderer, /localityBadge/);
 });
 
 test('typing selects the first search result so Enter can choose it', () => {
@@ -63,19 +94,19 @@ test('typing selects the first search result so Enter can choose it', () => {
   assert.equal(context.modelMenuActiveIndex, 0);
 });
 
-test('removing the last pin leaves the Pins view stable', () => {
+test('removing the last pin keeps the unified list open and reranks it', () => {
+  let reranked = false;
   const context = vm.createContext({
-    pinnedModelIds: ['only'], recentModelIds: ['recent'], modelMenuTab: 'pins',
+    pinnedModelIds: ['only'],
     isModelPinned: (value) => value === 'only',
     savePinnedModelIds(ids) { context.pinnedModelIds = ids; },
     modelMenuIsOpen: () => true,
-    syncModelMenuTabs() {},
-    applyModelFilter() {},
+    applyModelFilter() { reranked = true; },
   });
   vm.runInContext(declaration(state, 'togglePinnedModel'), context);
   context.togglePinnedModel('only');
-  assert.equal(context.modelMenuTab, 'pins');
   assert.deepEqual([...context.pinnedModelIds], []);
+  assert.equal(reranked, true);
 });
 
 test('the shared model menu rejects detached and hidden anchors', () => {

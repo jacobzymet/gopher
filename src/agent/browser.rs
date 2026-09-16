@@ -166,7 +166,7 @@ pub async fn execute(
                     &page,
                     &format!(
                         r#"() => {{
-  const el = document.querySelector('[data-tensor-ref="{ref_id}"]');
+  const el = document.querySelector('[data-gopher-ref="{ref_id}"]');
   if (!el) return {{ ok: false, error: 'Unknown ref {ref_id}. Call browser_snapshot first.' }};
   el.scrollIntoView({{ block: 'center', inline: 'nearest' }});
   if (el instanceof HTMLElement) el.click();
@@ -202,7 +202,7 @@ pub async fn execute(
                     &page,
                     &format!(
                         r#"() => {{
-  const el = document.querySelector('[data-tensor-ref="{ref_id}"]');
+  const el = document.querySelector('[data-gopher-ref="{ref_id}"]');
   if (!el) return {{ ok: false, error: 'Unknown ref {ref_id}. Call browser_snapshot first.' }};
   el.scrollIntoView({{ block: 'center', inline: 'nearest' }});
   el.focus();
@@ -244,7 +244,7 @@ pub async fn execute(
             let ref_js = match arg_str(args, "ref") {
                 Some(r) => {
                     let r = sanitize_ref(&r)?;
-                    format!(r#"document.querySelector('[data-tensor-ref="{r}"]')"#)
+                    format!(r#"document.querySelector('[data-gopher-ref="{r}"]')"#)
                 }
                 None => "document.activeElement".into(),
             };
@@ -456,7 +456,7 @@ async fn launch_session(_session_id: &str) -> Result<Session, String> {
         builder = builder.chrome_executable(exe);
     }
     let profile = tempfile::Builder::new()
-        .prefix("tensor-browser-")
+        .prefix("gopher-browser-")
         .tempdir()
         .map_err(|err| format!("Could not create private browser profile: {err}"))?;
     secure_fs::ensure_private_dir(profile.path()).map_err(|err| err.to_string())?;
@@ -766,7 +766,7 @@ const SNAPSHOT_JS: &str = r#"() => {
     seen.add(el);
     i += 1;
     const ref = 'e' + i;
-    el.setAttribute('data-tensor-ref', ref);
+    el.setAttribute('data-gopher-ref', ref);
     const tag = el.tagName.toLowerCase();
     const type = (el.getAttribute('type') || '').toLowerCase();
     const name = (el.getAttribute('aria-label') || el.getAttribute('name') || el.getAttribute('placeholder') || '').trim().slice(0, 80);

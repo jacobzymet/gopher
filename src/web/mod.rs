@@ -54,10 +54,9 @@ const _: () = assert!(CHAT_STORE_LIMIT > CHAT_REQUEST_LIMIT);
 
 pub type SharedApp = Arc<Mutex<App>>;
 
-pub const INSTANCE_MARKER: &str = "tensor";
+pub const INSTANCE_MARKER: &str = "gopher";
 
-const SESSION_COOKIE: &str = "tensor_session";
-const LEGACY_SESSION_COOKIE: &str = "tensorui_session";
+const SESSION_COOKIE: &str = "gopher_session";
 
 #[derive(Clone)]
 struct ApiSecurity {
@@ -101,8 +100,7 @@ fn secret_eq(left: &str, right: &str) -> bool {
 fn request_token<B>(request: &Request<B>) -> Option<&str> {
     if let Some(value) = request
         .headers()
-        .get("x-tensor-token")
-        .or_else(|| request.headers().get("x-tensorui-token"))
+        .get("x-gopher-token")
         .and_then(|value| value.to_str().ok())
     {
         return Some(value);
@@ -113,11 +111,7 @@ fn request_token<B>(request: &Request<B>) -> Option<&str> {
         .and_then(|value| value.to_str().ok())?
         .split(';')
         .map(str::trim)
-        .find_map(|cookie| {
-            cookie
-                .strip_prefix(&format!("{SESSION_COOKIE}="))
-                .or_else(|| cookie.strip_prefix(&format!("{LEGACY_SESSION_COOKIE}=")))
-        })
+        .find_map(|cookie| cookie.strip_prefix(&format!("{SESSION_COOKIE}=")))
 }
 
 fn trusted_api_origin(headers: &HeaderMap, security: &ApiSecurity) -> bool {

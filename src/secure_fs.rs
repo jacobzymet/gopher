@@ -57,7 +57,7 @@ pub struct DataLock {
 impl DataLock {
     pub fn acquire(root: &Path) -> Result<Self> {
         ensure_private_dir(root)?;
-        let path = root.join(".tensorui.lock");
+        let path = root.join(".gopher.lock");
         reject_unsafe_destination(&path)?;
         let mut options = OpenOptions::new();
         options.create(true).read(true).write(true);
@@ -97,7 +97,7 @@ impl DataLock {
             let result = unsafe { flock(file.as_raw_fd(), LOCK_EX | LOCK_NB) };
             if result != 0 {
                 return Err(std::io::Error::last_os_error())
-                    .context("This data folder is already in use by another Tensor process.");
+                    .context("This data folder is already in use by another Gopher process.");
             }
         }
 

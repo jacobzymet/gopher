@@ -1,0 +1,83 @@
+[     490ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[     491ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[     491ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[     491ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[     491ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[     491ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[     491ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[     491ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[  761875ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://gopher.localhost:3930/api/state:0
+[  765899ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://gopher.localhost:3930/api/state:0
+[  769901ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://gopher.localhost:3930/api/state:0
+[  773889ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://gopher.localhost:3930/api/state:0
+[  777904ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://gopher.localhost:3930/api/state:0
+[  781899ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://gopher.localhost:3930/api/state:0
+[  784876ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  785541ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  787543ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  789551ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  791545ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  793550ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  795540ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  797540ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  799552ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  801540ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  803541ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  805381ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[  805381ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[  805381ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[  805381ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[  805381ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[  805382ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[  805382ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[  805382ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[  966492ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://gopher.localhost:3930/api/state:0
+[  970495ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://gopher.localhost:3930/api/state:0
+[  974500ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://gopher.localhost:3930/api/state:0
+[  978504ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://gopher.localhost:3930/api/state:0
+[  982491ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://gopher.localhost:3930/api/state:0
+[  986497ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://gopher.localhost:3930/api/state:0
+[  988450ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  990146ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  992144ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  994146ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  996146ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  998146ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[ 1000147ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[ 1002148ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[ 1004147ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[ 1006146ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[ 1008144ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[ 1009139ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[ 1009140ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[ 1009140ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[ 1009140ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[ 1009140ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[ 1009140ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[ 1009140ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[ 1009140ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[ 1088192ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://gopher.localhost:3930/api/state:0
+[ 1092192ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://gopher.localhost:3930/api/state:0
+[ 1096185ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://gopher.localhost:3930/api/state:0
+[ 1100194ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://gopher.localhost:3930/api/state:0
+[ 1104176ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://gopher.localhost:3930/api/state:0
+[ 1108191ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://gopher.localhost:3930/api/state:0
+[ 1112177ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://gopher.localhost:3930/api/state:0
+[ 1114169ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[ 1115854ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[ 1117853ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[ 1119853ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[ 1121853ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[ 1123855ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[ 1125853ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[ 1127856ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[ 1129176ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[ 1129177ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[ 1129177ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[ 1129177ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[ 1129177ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[ 1129177ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[ 1129177ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[ 1129177ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[ 1146203ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://gopher.localhost:3930/api/state:0
+[ 1150188ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://gopher.localhost:3930/api/state:0

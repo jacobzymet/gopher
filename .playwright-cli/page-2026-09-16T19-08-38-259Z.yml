@@ -1,0 +1,111 @@
+- generic [ref=f1e1]:
+  - generic [ref=f1e2]:
+    - complementary [ref=f1e3]:
+      - generic [ref=f1e5]:
+        - link "Gopher" [ref=f1e6] [cursor=pointer]:
+          - /url: /
+        - 'button "Surface: Agent. Switch surface" [ref=f1e8] [cursor=pointer]':
+          - generic [ref=f1e9]: Agent
+      - generic [ref=f1e14]:
+        - group "New chat" [ref=f1e15]:
+          - button "New chat" [ref=f1e16] [cursor=pointer]
+          - button "New ghost chat" [ref=f1e20] [cursor=pointer]
+        - button "Search chats and projects" [ref=f1e23] [cursor=pointer]:
+          - generic [ref=f1e27]: Search
+          - generic [aria-hidden] [ref=f1e28]: ⌘ K
+      - generic [ref=f1e29]:
+        - generic "Workspace" [ref=f1e30]:
+          - paragraph [ref=f1e31]: Workspace
+          - button "Projects" [ref=f1e32] [cursor=pointer]
+        - generic [ref=f1e37]:
+          - paragraph [ref=f1e38]: Recents
+          - button "Select" [ref=f1e39] [cursor=pointer]
+        - navigation "Conversations" [ref=f1e40]:
+          - paragraph [ref=f1e41]: No conversations yet.
+    - main [ref=f1e42]:
+      - generic [ref=f1e43]:
+        - generic [ref=f1e44]:
+          - button "Hide sidebar" [expanded] [pressed] [ref=f1e45] [cursor=pointer]
+          - 'button "Account: You. Active profile: Personal. Switch profile" [ref=f1e50] [cursor=pointer]':
+            - generic [aria-hidden] [ref=f1e51]: "Y"
+            - generic [ref=f1e53]:
+              - strong [ref=f1e54]: You
+              - generic [ref=f1e55]: Personal
+        - generic [ref=f1e59]:
+          - button "Turn on privacy mode" [ref=f1e60] [cursor=pointer]
+          - button "Notifications" [ref=f1e66] [cursor=pointer]
+          - button "Open settings" [ref=f1e69] [cursor=pointer]
+          - button "Show activity sidebar" [ref=f1e73] [cursor=pointer]
+      - generic [ref=f1e77]:
+        - generic [ref=f1e78]:
+          - generic [ref=f1e82]:
+            - img "Gopher" [ref=f1e83]
+            - heading "Still up?" [level=1] [ref=f1e84]
+            - paragraph [ref=f1e85]:
+              - text: Chatting with gopher-qa-model via
+              - generic [ref=f1e121]: Gopher QA
+            - generic [ref=f1e87]:
+              - generic [ref=f1e88]:
+                - textbox "How can I help you today? Type @ to mention" [ref=f1e89]
+                - generic [ref=f1e90]:
+                  - generic [ref=f1e91]:
+                    - button "Add files and capabilities" [ref=f1e93] [cursor=pointer]
+                    - button "Open terminal" [ref=f1e95] [cursor=pointer]
+                    - button "Choose workspace folder" [ref=f1e98] [cursor=pointer]
+                  - generic [ref=f1e102]:
+                    - button "Voice input" [ref=f1e103] [cursor=pointer]
+                    - button "Branch into a new chat" [disabled] [ref=f1e107]:
+                      - generic [ref=f1e113]: Branch
+                    - button "Send message" [disabled] [ref=f1e114]
+              - button "Model" [expanded] [ref=f1e120] [cursor=pointer]: gopher-qa-model
+          - generic [aria-hidden]:
+            - generic:
+              - button
+              - generic:
+                - generic: Terminal
+                - textbox:
+                  - /placeholder: Folder for this chat
+                - button
+                - button
+                - button
+              - generic:
+                - generic:
+                  - paragraph: Choose a folder for this chat. The model and terminal stay inside it.
+                - complementary:
+                  - list
+        - complementary "Turn activity":
+          - generic: Activity
+          - generic:
+            - generic:
+              - generic:
+                - paragraph: Select an assistant reply to inspect reasoning and tool steps.
+  - button "Close model selector" [ref=f1e122]
+  - dialog [ref=f1e123]:
+    - generic [ref=f1e124]:
+      - generic [ref=f1e125]:
+        - strong [ref=f1e126]: Choose a model
+        - generic [ref=f1e127]: Current · gopher-qa-model · Gopher QA
+      - generic [ref=f1e128]:
+        - generic [aria-hidden] [ref=f1e129]: ↑↓ select · ↵ use
+        - button "Close model selector" [ref=f1e130] [cursor=pointer]: ×
+    - generic [ref=f1e131]:
+      - combobox "Search every available model" [expanded] [active] [ref=f1e135]
+      - generic [aria-hidden] [ref=f1e136]: 1 model
+    - listbox "All available models" [ref=f1e137]:
+      - generic [ref=f1e138]: Current
+      - generic [ref=f1e139]: "1"
+      - option [selected] [ref=f1e140] [cursor=pointer]:
+        - button "gopher-qa-model Default Gopher QA Local" [ref=f1e141]:
+          - generic [ref=f1e147]:
+            - generic [ref=f1e148]:
+              - generic [ref=f1e149]: gopher-qa-model
+              - generic "Default model" [ref=f1e150]: Default
+            - generic [ref=f1e151]:
+              - generic "Gopher QA" [ref=f1e152]
+              - generic [ref=f1e153]: Local
+        - button "Pin model" [ref=f1e154]
+    - generic [ref=f1e157]:
+      - generic [ref=f1e158]: 1 models · 1 provider · 1 local
+      - generic [ref=f1e159]:
+        - button "Manage providers" [ref=f1e160] [cursor=pointer]
+        - button "Cancel" [ref=f1e161] [cursor=pointer]

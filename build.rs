@@ -39,8 +39,22 @@ fn bundle_ui(files: &[&str], output: &str) {
         .unwrap_or_else(|error| panic!("failed to write {}: {error}", output.display()));
 }
 
+fn windows_icon_path() -> PathBuf {
+    let png = include_bytes!("assets/browser-favicon.png");
+    let mut ico = Vec::with_capacity(22 + png.len());
+    ico.extend_from_slice(&[0, 0, 1, 0, 1, 0]);
+    ico.extend_from_slice(&[0, 0, 0, 0, 1, 0, 32, 0]);
+    ico.extend_from_slice(&(png.len() as u32).to_le_bytes());
+    ico.extend_from_slice(&22u32.to_le_bytes());
+    ico.extend_from_slice(png);
+
+    let output =
+        PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR is not set")).join("gopher.ico");
+    fs::write(&output, ico)
+        .unwrap_or_else(|error| panic!("failed to write {}: {error}", output.display()));
+    output
+}
 fn main() {
-    println!("cargo:rerun-if-changed=assets/app.ico");
     println!("cargo:rerun-if-changed=assets/browser-favicon.png");
     println!("cargo:rerun-if-changed=prompts");
 
@@ -49,9 +63,14 @@ fn main() {
 
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     if target_os == "windows" {
+        let icon_path = windows_icon_path();
         let mut res = winresource::WindowsResource::new();
-        res.set_icon("assets/app.ico");
-        res.set("ProductName", "Tensor");
+        res.set_icon(
+            icon_path
+                .to_str()
+                .expect("generated Windows icon path is not valid UTF-8"),
+        );
+        res.set("ProductName", "Gopher");
         res.set(
             "FileDescription",
             "A local, lightweight, open source LLM harness for humanity",

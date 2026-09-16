@@ -42,15 +42,15 @@ const KDF_PARALLELISM: u32 = 1;
 const LEGACY_KDF_MEMORY_KIB: u32 = 19_456;
 const LEGACY_KDF_ITERATIONS: u32 = 2;
 
-pub const AAD_CHATS: &[u8] = b"tensorui:v1:chats";
-pub const AAD_PREFERENCES: &[u8] = b"tensorui:v1:preferences";
-pub const AAD_PROVIDER_TOKENS: &[u8] = b"tensorui:v1:provider-tokens";
-pub const AAD_SKILL_INDEX: &[u8] = b"tensorui:v1:skill-index";
-pub const AAD_SKILL_CONTENT: &[u8] = b"tensorui:v1:skill-content";
-pub const AAD_SKILLS: &[u8] = b"tensorui:v1:skills";
-pub const AAD_ENCRYPTION_TRANSITION: &[u8] = b"tensorui:v1:encryption-transition";
-const AAD_VERIFIER: &[u8] = b"tensorui:v1:verifier";
-const VERIFIER_PLAINTEXT: &[u8] = b"tensorui-ok";
+pub const AAD_CHATS: &[u8] = b"gopher:v1:chats";
+pub const AAD_PREFERENCES: &[u8] = b"gopher:v1:preferences";
+pub const AAD_PROVIDER_TOKENS: &[u8] = b"gopher:v1:provider-tokens";
+pub const AAD_SKILL_INDEX: &[u8] = b"gopher:v1:skill-index";
+pub const AAD_SKILL_CONTENT: &[u8] = b"gopher:v1:skill-content";
+pub const AAD_SKILLS: &[u8] = b"gopher:v1:skills";
+pub const AAD_ENCRYPTION_TRANSITION: &[u8] = b"gopher:v1:encryption-transition";
+const AAD_VERIFIER: &[u8] = b"gopher:v1:verifier";
+const VERIFIER_PLAINTEXT: &[u8] = b"gopher-ok";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EncryptionMeta {
@@ -105,7 +105,7 @@ impl EncryptionMeta {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Envelope {
-    tensorui_crypto: u32,
+    gopher_crypto: u32,
     nonce: String,
     ciphertext: String,
 }
@@ -237,7 +237,7 @@ pub fn validate_passphrase(passphrase: &str) -> Result<()> {
 
 pub fn is_envelope(value: &Value) -> bool {
     matches!(
-        value.get("tensorui_crypto").and_then(|v| v.as_u64()),
+        value.get("gopher_crypto").and_then(|v| v.as_u64()),
         Some(1 | 2)
     ) && value.get("ciphertext").and_then(|v| v.as_str()).is_some()
         && value.get("nonce").and_then(|v| v.as_str()).is_some()
@@ -266,7 +266,7 @@ fn encrypt_bytes(key: &DiskKey, plaintext: &[u8], aad: &[u8]) -> Result<Value> {
         )
         .map_err(|error| anyhow::anyhow!("encryption failed: {error}"))?;
     Ok(serde_json::to_value(Envelope {
-        tensorui_crypto: ENVELOPE_V2,
+        gopher_crypto: ENVELOPE_V2,
         nonce: B64.encode(nonce_bytes),
         ciphertext: B64.encode(ciphertext),
     })?)
@@ -295,7 +295,7 @@ fn decrypt_bytes(key: &DiskKey, value: &Value, aad: &[u8]) -> Result<Vec<u8>> {
         .map_err(|_| anyhow::anyhow!("invalid encryption key"))?;
     let nonce = Nonce::from_slice(&nonce_raw);
 
-    let plaintext = match envelope.tensorui_crypto {
+    let plaintext = match envelope.gopher_crypto {
         ENVELOPE_V2 => cipher
             .decrypt(
                 nonce,
@@ -401,7 +401,7 @@ mod tests {
         let nonce = Nonce::from_slice(&nonce_bytes);
         let ciphertext = cipher.encrypt(nonce, plaintext.as_ref()).unwrap();
         let envelope = serde_json::json!({
-            "tensorui_crypto": 1,
+            "gopher_crypto": 1,
             "nonce": B64.encode(nonce_bytes),
             "ciphertext": B64.encode(ciphertext),
         });

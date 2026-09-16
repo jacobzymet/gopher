@@ -8,7 +8,7 @@ use std::{
 
 use anyhow::{Context, Result, bail};
 use clap::Parser;
-use tensor::{
+use gopher::{
     app::App,
     config::{self, Config},
     desktop, system, web,
@@ -17,16 +17,16 @@ use tokio::net::TcpListener;
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "tensor",
+    name = "gopher",
     version,
-    about = "Tensor — a local, lightweight, open source LLM harness for humanity"
+    about = "Gopher — a local, lightweight, open source LLM harness for humanity"
 )]
 struct Cli {
     /// Use a specific TOML configuration file
     #[arg(long, value_name = "PATH")]
     config: Option<std::path::PathBuf>,
 
-    /// Loopback address for the Tensor web server (overrides config/env). Non-loopback addresses are refused.
+    /// Loopback address for the Gopher web server (overrides config/env). Non-loopback addresses are refused.
     #[arg(long, value_name = "ADDR")]
     bind: Option<SocketAddr>,
 
@@ -55,7 +55,7 @@ fn main() -> Result<()> {
 
     let cli = Cli::parse();
     let open_browser = cli.browser || cli.open;
-    tensor::updates::cleanup_previous_install();
+    gopher::updates::cleanup_previous_install();
     let config_path = cli.config.unwrap_or_else(Config::default_path);
     let config = Config::load(&config_path)?;
 
@@ -67,7 +67,7 @@ fn main() -> Result<()> {
         .build()
         .context("could not start the async runtime")?;
 
-    let (bind_attempts, bind_delay) = tensor::updates::bind_retry_budget(cli.update_restart);
+    let (bind_attempts, bind_delay) = gopher::updates::bind_retry_budget(cli.update_restart);
     let mut listener = None;
     for attempt in 0..bind_attempts {
         match runtime.block_on(TcpListener::bind(bind)) {
@@ -100,7 +100,7 @@ fn main() -> Result<()> {
         runtime.spawn(async move { web::serve(shared, listener).await })
     };
 
-    println!("Tensor listening on {url}");
+    println!("Gopher listening on {url}");
     println!("  Chat     {url}/");
     println!("  Settings {url}/settings");
 
@@ -115,7 +115,7 @@ fn main() -> Result<()> {
                     server.abort();
                     result.map_err(Into::into)
                 }
-                _ = tensor::updates::wait_for_restart_request() => {
+                _ = gopher::updates::wait_for_restart_request() => {
                     server.abort();
                     Ok(())
                 }
@@ -136,7 +136,7 @@ fn main() -> Result<()> {
     if let Ok(mut app) = shared.lock() {
         app.shutdown();
     }
-    tensor::updates::spawn_restart_if_pending();
+    gopher::updates::spawn_restart_if_pending();
     result
 }
 
@@ -144,7 +144,7 @@ const FOCUS_TIMEOUT: Duration = Duration::from_secs(5);
 
 fn greet_running_instance(bind: SocketAddr) -> Result<()> {
     match focus_running_instance(bind) {
-        Some(_) => println!("Tensor is already running — focusing the open window."),
+        Some(_) => println!("Gopher is already running — focusing the open window."),
         None => bail!(
             "{bind} is already in use by another program — pass --bind to choose a different address"
         ),
@@ -154,7 +154,7 @@ fn greet_running_instance(bind: SocketAddr) -> Result<()> {
 
 fn focus_running_instance(bind: SocketAddr) -> Option<()> {
     let url = config::loopback_ui_url(bind);
-    let client = tensor::http::app_blocking_client(FOCUS_TIMEOUT);
+    let client = gopher::http::app_blocking_client(FOCUS_TIMEOUT);
     // Bootstrap the per-process HttpOnly session cookie exactly as a browser
     // navigation does before calling the authenticated local API.
     // Probe via the bind address — Chrome maps *.localhost itself; reqwest uses OS DNS.
@@ -163,12 +163,9 @@ fn focus_running_instance(bind: SocketAddr) -> Option<()> {
     if response.status().as_u16() != 200 {
         return None;
     }
-    let body = tensor::http::blocking_response_bytes_limited(response, 64 * 1024).ok()?;
+    let body = gopher::http::blocking_response_bytes_limited(response, 64 * 1024).ok()?;
     let info: serde_json::Value = serde_json::from_slice(&body).ok()?;
-    if !matches!(
-        info.get("app").and_then(|app| app.as_str()),
-        Some(web::INSTANCE_MARKER | "tensorui")
-    ) {
+    if info.get("app").and_then(|app| app.as_str()) != Some(web::INSTANCE_MARKER) {
         return None;
     }
     Some(())

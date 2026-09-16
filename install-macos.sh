@@ -1,16 +1,16 @@
 #!/bin/sh
-# Tensor installer for macOS.
+# Gopher installer for macOS.
 # Usage: curl -fsSL https://github.com/jacobzymet/tensorUI/releases/latest/download/install-macos.sh | sh
 set -eu
 (set -o pipefail) 2>/dev/null && set -o pipefail
 
 REPO="jacobzymet/tensorUI"
 GITHUB="https://github.com/${REPO}"
-BIN_NAME="tensor"
+BIN_NAME="gopher"
 
 usage() {
   cat <<'EOF'
-Install Tensor from GitHub Releases (macOS).
+Install Gopher from GitHub Releases (macOS).
 
 Usage:
   install-macos.sh [options]
@@ -23,8 +23,8 @@ Options:
   -h, --help           Show this help
 
 Environment:
-  TENSOR_VERSION       Same as --version
-  TENSOR_INSTALL_DIR   Same as --dir
+  GOPHER_VERSION       Same as --version
+  GOPHER_INSTALL_DIR   Same as --dir
   GITHUB_TOKEN         Optional token if GitHub rate-limits you
 EOF
 }
@@ -40,9 +40,9 @@ info() {
 
 github_curl() {
   if [ -n "${GITHUB_TOKEN:-}" ]; then
-    curl --connect-timeout 20 --retry 3 --retry-delay 1 -H "User-Agent: tensor-install" -H "Authorization: Bearer ${GITHUB_TOKEN}" "$@"
+    curl --connect-timeout 20 --retry 3 --retry-delay 1 -H "User-Agent: gopher-install" -H "Authorization: Bearer ${GITHUB_TOKEN}" "$@"
   else
-    curl --connect-timeout 20 --retry 3 --retry-delay 1 -H "User-Agent: tensor-install" "$@"
+    curl --connect-timeout 20 --retry 3 --retry-delay 1 -H "User-Agent: gopher-install" "$@"
   fi
 }
 
@@ -50,8 +50,8 @@ need_cmd() {
   command -v "$1" >/dev/null 2>&1 || err "missing required command: $1"
 }
 
-version="${TENSOR_VERSION:-}"
-install_dir="${TENSOR_INSTALL_DIR:-}"
+version="${GOPHER_VERSION:-}"
+install_dir="${GOPHER_INSTALL_DIR:-}"
 no_path=0
 
 while [ $# -gt 0 ]; do
@@ -107,7 +107,7 @@ esac
 target="${arch}-apple-darwin"
 
 if [ -z "$version" ]; then
-  info "Looking up the latest Tensor release..."
+  info "Looking up the latest Gopher release..."
   final=$(github_curl -fsSLI --max-time 30 -o /dev/null -w '%{url_effective}' "${GITHUB}/releases/latest") || err "could not resolve the latest release"
   final=$(printf '%s' "$final" | tr -d '\r')
   tag=${final##*/}
@@ -120,9 +120,9 @@ case "$tag" in
 esac
 version=${tag#v}
 [ -n "$version" ] || err "could not determine a release version"
-info "Installing Tensor ${version} (${target})..."
+info "Installing Gopher ${version} (${target})..."
 
-WORKDIR=$(mktemp -d "${TMPDIR:-/tmp}/tensor-install.XXXXXX")
+WORKDIR=$(mktemp -d "${TMPDIR:-/tmp}/gopher-install.XXXXXX")
 cleanup() {
   if [ -n "${WORKDIR:-}" ] && [ -d "$WORKDIR" ]; then
     rm -rf "$WORKDIR"
@@ -132,9 +132,9 @@ trap cleanup EXIT INT HUP
 
 asset=""
 url=""
-archive="${WORKDIR}/tensor.tgz"
+archive="${WORKDIR}/gopher.tgz"
 base="${GITHUB}/releases/download/${tag}"
-for prefix in tensor tensorui; do
+for prefix in gopher; do
   candidate="${prefix}-${version}-${target}.tar.gz"
   candidate_url="${base}/${candidate}"
   if github_curl -fsSLI --max-time 30 -o /dev/null "$candidate_url" 2>/dev/null; then
@@ -168,13 +168,13 @@ mkdir "$extract"
 tar -xzf "$archive" -C "$extract"
 
 src=""
-for candidate in "$extract"/*/tensor "$extract"/tensor "$extract"/*/tensorui "$extract"/tensorui; do
+for candidate in "$extract"/*/gopher "$extract"/gopher; do
   if [ -f "$candidate" ]; then
     src=$candidate
     break
   fi
 done
-[ -n "$src" ] || err "archive did not contain a tensor binary"
+[ -n "$src" ] || err "archive did not contain a gopher binary"
 
 mkdir -p "$install_dir"
 dest="${install_dir}/${BIN_NAME}"
@@ -217,6 +217,6 @@ if [ "$no_path" -eq 0 ] && [ "$onpath" -eq 0 ]; then
 fi
 
 info ""
-info "Launch Tensor with:  tensor"
-info "Browser UI:          tensor --browser"
-info "Headless:            tensor --headless"
+info "Launch Gopher with:  gopher"
+info "Browser UI:          gopher --browser"
+info "Headless:            gopher --headless"

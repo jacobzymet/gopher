@@ -1595,6 +1595,49 @@ dependencies = [
 ]
 
 [[package]]
+name = "gopher"
+version = "0.5.0"
+dependencies = [
+ "aes-gcm",
+ "anyhow",
+ "argon2",
+ "async-stream",
+ "axum",
+ "base64 0.23.1",
+ "chromiumoxide",
+ "clap",
+ "directories",
+ "dom_smoothie",
+ "flate2",
+ "futures-util",
+ "getrandom 0.4.3",
+ "image",
+ "libc",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "pdf-extract",
+ "portable-pty",
+ "reqwest",
+ "rfd",
+ "rustls",
+ "scraper",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tao",
+ "tar",
+ "tempfile",
+ "tokio",
+ "toml 0.9.12+spec-1.1.0",
+ "windows-sys 0.61.2",
+ "winresource",
+ "wry",
+ "zeroize",
+ "zip",
+]
+
+[[package]]
 name = "gtk"
 version = "0.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3878,49 +3921,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5fed54709c5b3a53d09bb1c113ea4f5ceafd1e772ddcb0030a82e1d56c087b08"
 dependencies = [
  "new_debug_unreachable",
-]
-
-[[package]]
-name = "tensor"
-version = "0.5.0"
-dependencies = [
- "aes-gcm",
- "anyhow",
- "argon2",
- "async-stream",
- "axum",
- "base64 0.23.1",
- "chromiumoxide",
- "clap",
- "directories",
- "dom_smoothie",
- "flate2",
- "futures-util",
- "getrandom 0.4.3",
- "image",
- "libc",
- "objc2",
- "objc2-app-kit",
- "objc2-foundation",
- "pdf-extract",
- "portable-pty",
- "reqwest",
- "rfd",
- "rustls",
- "scraper",
- "serde",
- "serde_json",
- "sha2",
- "tao",
- "tar",
- "tempfile",
- "tokio",
- "toml 0.9.12+spec-1.1.0",
- "windows-sys 0.61.2",
- "winresource",
- "wry",
- "zeroize",
- "zip",
 ]
 
 [[package]]

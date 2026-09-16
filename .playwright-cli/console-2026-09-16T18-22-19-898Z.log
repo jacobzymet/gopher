@@ -1,0 +1,80 @@
+[     440ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[     440ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[     440ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[     440ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[     440ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[     440ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[     440ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[     440ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3930/:0
+[   65845ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://gopher.localhost:3930/api/state:0
+[   69844ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://gopher.localhost:3930/api/state:0
+[   73844ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://gopher.localhost:3930/api/state:0
+[   77838ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://gopher.localhost:3930/api/state:0
+[   79821ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[   81507ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[   83506ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[   85508ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[   87506ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[   89506ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[   91507ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[   93508ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[   95505ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[   97508ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[   99507ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  101506ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  103506ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  105507ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  107509ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  109507ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  111508ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  113509ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  115509ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  117508ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  119507ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  121509ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  123508ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  125507ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  127507ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  129509ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  131510ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  133509ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  135508ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  137510ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  139510ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  141508ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  143508ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  145509ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  147507ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  149509ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  151511ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  153511ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  155511ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  157508ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  159509ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  161509ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  163509ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  165510ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  167512ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  169512ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  171512ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  173507ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  175512ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  177512ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  179513ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  181511ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  183511ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  185512ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  187512ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  189512ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  191512ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  193512ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  195512ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  197512ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  199513ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  201513ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://gopher.localhost:3930/api/state:0
+[  205841ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://gopher.localhost:3930/api/state:0
+[  209835ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://gopher.localhost:3930/api/state:0
+[  213846ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://gopher.localhost:3930/api/state:0
+[  217845ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://gopher.localhost:3930/api/state:0
+[  221829ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://gopher.localhost:3930/api/state:0
+[  225840ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://gopher.localhost:3930/api/state:0

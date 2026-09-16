@@ -1,0 +1,17 @@
+[     465ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3931/:0
+[     466ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3931/:0
+[     466ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3931/:0
+[     466ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3931/:0
+[     466ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3931/:0
+[     466ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3931/:0
+[     466ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3931/:0
+[     466ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3931/:0
+[  205630ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3931/:0
+[  205630ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3931/:0
+[  205630ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3931/:0
+[  205630ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3931/:0
+[  205630ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3931/:0
+[  205630ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3931/:0
+[  205630ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3931/:0
+[  205630ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://gopher.localhost:3931/:0
+[  293995ms] [ERROR] Failed to load resource: net::ERR_CONNECTION_REFUSED @ http://gopher.localhost:3931/api/state:0

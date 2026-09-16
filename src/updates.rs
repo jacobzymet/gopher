@@ -1,4 +1,4 @@
-//! Check GitHub Releases for a newer Tensor version and install it in place.
+//! Check GitHub Releases for a newer Gopher version and install it in place.
 
 use std::cmp::Ordering;
 use std::ffi::OsString;
@@ -234,7 +234,7 @@ pub fn cleanup_previous_install() {
         });
         let _ = fs::remove_file(old);
     }
-    let _ = fs::remove_file(dir.join(".tensor-update-write-test"));
+    let _ = fs::remove_file(dir.join(".gopher-update-write-test"));
 }
 
 fn status_up_to_date() -> UpdateStatus {
@@ -255,7 +255,7 @@ fn status_up_to_date() -> UpdateStatus {
 fn github_api_headers(req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
     req.header("Accept", "application/vnd.github+json")
         .header("X-GitHub-Api-Version", "2022-11-28")
-        .header("User-Agent", concat!("tensor/", env!("CARGO_PKG_VERSION")))
+        .header("User-Agent", concat!("gopher/", env!("CARGO_PKG_VERSION")))
 }
 
 fn download_client() -> Result<reqwest::Client, String> {
@@ -266,7 +266,7 @@ fn download_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .connect_timeout(DOWNLOAD_CONNECT_TIMEOUT)
         .timeout(DOWNLOAD_TIMEOUT)
-        .user_agent(concat!("tensor/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("gopher/", env!("CARGO_PKG_VERSION")))
         .redirect(reqwest::redirect::Policy::limited(16))
         // Keep release archives byte-for-byte. Auto-decompress would corrupt
         // `.zip` / `.tar.gz` when GitHub sends Content-Encoding: gzip.
@@ -302,9 +302,9 @@ fn default_user_binary() -> Option<PathBuf> {
         let local = env::var_os("LOCALAPPDATA")?;
         Some(
             PathBuf::from(local)
-                .join("tensor")
+                .join("gopher")
                 .join("bin")
-                .join("tensor.exe"),
+                .join("gopher.exe"),
         )
     }
     #[cfg(not(windows))]
@@ -314,7 +314,7 @@ fn default_user_binary() -> Option<PathBuf> {
             PathBuf::from(home)
                 .join(".local")
                 .join("bin")
-                .join("tensor"),
+                .join("gopher"),
         )
     }
 }
@@ -323,7 +323,7 @@ fn dir_is_writable(dir: &Path) -> bool {
     if fs::create_dir_all(dir).is_err() {
         return false;
     }
-    let probe = dir.join(".tensor-update-write-test");
+    let probe = dir.join(".gopher-update-write-test");
     match fs::write(&probe, b"ok") {
         Ok(()) => {
             let _ = fs::remove_file(&probe);
@@ -342,14 +342,14 @@ pub(crate) fn install_destination() -> Result<PathBuf, String> {
         return Ok(current);
     }
     let dest = default_user_binary()
-        .ok_or_else(|| "Could not locate a writable Tensor install folder.".to_string())?;
+        .ok_or_else(|| "Could not locate a writable Gopher install folder.".to_string())?;
     let dir = dest
         .parent()
-        .ok_or_else(|| "Could not locate a writable Tensor install folder.".to_string())?;
+        .ok_or_else(|| "Could not locate a writable Gopher install folder.".to_string())?;
     if dir_is_writable(dir) {
         return Ok(dest);
     }
-    Err("Tensor cannot write to its install folder. Reinstall with the install script.".to_string())
+    Err("Gopher cannot write to its install folder. Reinstall with the install script.".to_string())
 }
 
 fn install_block_reason() -> Option<String> {
@@ -390,8 +390,7 @@ pub(crate) fn pick_release_asset(
     };
     let tar_suffix = format!("-{target}.tar.gz");
     let zip_suffix = format!("-{target}.zip");
-    let mut preferred = None;
-    let mut legacy = None;
+    let mut selected = None;
     let mut sums = None;
     for asset in assets {
         let Some(name) = asset.get("name").and_then(|value| value.as_str()) else {
@@ -422,13 +421,11 @@ pub(crate) fn pick_release_asset(
                 .and_then(|value| value.as_str())
                 .and_then(parse_github_digest),
         };
-        if name.starts_with("tensor-") {
-            preferred = Some(picked);
-        } else if name.starts_with("tensorui-") {
-            legacy = Some(picked);
+        if name.starts_with("gopher-") {
+            selected = Some(picked);
         }
     }
-    (preferred.or(legacy), sums)
+    (selected, sums)
 }
 
 fn decorate_status(mut status: UpdateStatus, has_asset: bool) -> UpdateStatus {
@@ -692,12 +689,8 @@ fn entry_file_name(path: &str) -> Option<&str> {
     Path::new(path).file_name()?.to_str()
 }
 
-fn is_app_binary_name(name: &str) -> Option<bool> {
-    match name {
-        "tensor" | "tensor.exe" => Some(true),
-        "tensorui" | "tensorui.exe" => Some(false),
-        _ => None,
-    }
+fn is_app_binary_name(name: &str) -> bool {
+    matches!(name, "gopher" | "gopher.exe")
 }
 
 fn read_limited(reader: &mut impl Read, max: usize) -> Result<Vec<u8>, String> {
@@ -731,8 +724,7 @@ pub(crate) fn extract_app_binary(archive: &[u8], asset_name: &str) -> Result<Vec
 fn extract_from_zip(bytes: &[u8]) -> Result<Vec<u8>, String> {
     let mut zip = zip::ZipArchive::new(Cursor::new(bytes))
         .map_err(|error| format!("could not read zip archive: {error}"))?;
-    let mut preferred = None;
-    let mut legacy = None;
+    let mut binary_index = None;
     for index in 0..zip.len() {
         let file = zip
             .by_index(index)
@@ -743,21 +735,19 @@ fn extract_from_zip(bytes: &[u8]) -> Result<Vec<u8>, String> {
         let Some(name) = entry_file_name(file.name()) else {
             continue;
         };
-        match is_app_binary_name(name) {
-            Some(true) => preferred = Some(index),
-            Some(false) => legacy = Some(index),
-            None => {}
+        if is_app_binary_name(name) {
+            binary_index = Some(index);
+            break;
         }
     }
-    let index = preferred
-        .or(legacy)
-        .ok_or_else(|| "archive did not contain a tensor executable".to_string())?;
+    let index =
+        binary_index.ok_or_else(|| "archive did not contain a gopher executable".to_string())?;
     let mut file = zip
         .by_index(index)
         .map_err(|error| format!("could not read zip entry: {error}"))?;
     let binary = read_limited(&mut file, MAX_BINARY_BYTES)?;
     if !looks_like_native_binary(&binary) {
-        return Err("archive executable is not a native Tensor build".to_string());
+        return Err("archive executable is not a native Gopher build".to_string());
     }
     Ok(binary)
 }
@@ -765,8 +755,7 @@ fn extract_from_zip(bytes: &[u8]) -> Result<Vec<u8>, String> {
 fn extract_from_tar_gz(bytes: &[u8]) -> Result<Vec<u8>, String> {
     let decoder = flate2::read::GzDecoder::new(Cursor::new(bytes));
     let mut archive = tar::Archive::new(decoder);
-    let mut preferred = None;
-    let mut legacy = None;
+    let mut binary = None;
     for entry in archive
         .entries()
         .map_err(|error| format!("could not read tar archive: {error}"))?
@@ -781,22 +770,14 @@ fn extract_from_tar_gz(bytes: &[u8]) -> Result<Vec<u8>, String> {
         let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
             continue;
         };
-        match is_app_binary_name(name) {
-            Some(true) => {
-                preferred = Some(read_limited(&mut entry, MAX_BINARY_BYTES)?);
-                break;
-            }
-            Some(false) if legacy.is_none() => {
-                legacy = Some(read_limited(&mut entry, MAX_BINARY_BYTES)?);
-            }
-            Some(false) | None => {}
+        if is_app_binary_name(name) {
+            binary = Some(read_limited(&mut entry, MAX_BINARY_BYTES)?);
+            break;
         }
     }
-    let binary = preferred
-        .or(legacy)
-        .ok_or_else(|| "archive did not contain a tensor executable".to_string())?;
+    let binary = binary.ok_or_else(|| "archive did not contain a gopher executable".to_string())?;
     if !looks_like_native_binary(&binary) {
-        return Err("archive executable is not a native Tensor build".to_string());
+        return Err("archive executable is not a native Gopher build".to_string());
     }
     Ok(binary)
 }
@@ -804,12 +785,12 @@ fn extract_from_tar_gz(bytes: &[u8]) -> Result<Vec<u8>, String> {
 pub(crate) fn replace_executable(dest: &Path, new_bytes: &[u8]) -> Result<(), String> {
     let dir = dest
         .parent()
-        .ok_or_else(|| "could not locate the Tensor install folder".to_string())?;
+        .ok_or_else(|| "could not locate the Gopher install folder".to_string())?;
     fs::create_dir_all(dir)
-        .map_err(|error| format!("could not create the Tensor install folder: {error}"))?;
+        .map_err(|error| format!("could not create the Gopher install folder: {error}"))?;
     let file_name = dest
         .file_name()
-        .ok_or_else(|| "could not locate the Tensor executable".to_string())?;
+        .ok_or_else(|| "could not locate the Gopher executable".to_string())?;
     let staged = dir.join(format!("{}.new", file_name.to_string_lossy()));
     let backup = {
         let mut path = dir.join(file_name);
@@ -821,7 +802,7 @@ pub(crate) fn replace_executable(dest: &Path, new_bytes: &[u8]) -> Result<(), St
     };
     fs::write(&staged, new_bytes).map_err(|error| {
         let _ = fs::remove_file(&staged);
-        format!("could not write the new Tensor binary: {error}")
+        format!("could not write the new Gopher binary: {error}")
     })?;
     #[cfg(unix)]
     {
@@ -829,12 +810,12 @@ pub(crate) fn replace_executable(dest: &Path, new_bytes: &[u8]) -> Result<(), St
         if let Err(error) = fs::set_permissions(&staged, fs::Permissions::from_mode(0o755)) {
             let _ = fs::remove_file(&staged);
             return Err(format!(
-                "could not mark the new Tensor binary executable: {error}"
+                "could not mark the new Gopher binary executable: {error}"
             ));
         }
         if let Err(error) = fs::rename(&staged, dest) {
             let _ = fs::remove_file(&staged);
-            return Err(format!("could not replace Tensor: {error}"));
+            return Err(format!("could not replace Gopher: {error}"));
         }
         let _ = fs::remove_file(&backup);
         Ok(())
@@ -847,7 +828,7 @@ pub(crate) fn replace_executable(dest: &Path, new_bytes: &[u8]) -> Result<(), St
         {
             let _ = fs::remove_file(&staged);
             return Err(format!(
-                "could not replace the running app ({error}). Quit other Tensor windows and retry."
+                "could not replace the running app ({error}). Quit other Gopher windows and retry."
             ));
         }
         if let Err(error) = fs::rename(&staged, dest) {
@@ -855,7 +836,7 @@ pub(crate) fn replace_executable(dest: &Path, new_bytes: &[u8]) -> Result<(), St
                 let _ = fs::rename(&backup, dest);
             }
             let _ = fs::remove_file(&staged);
-            return Err(format!("could not install the new Tensor binary: {error}"));
+            return Err(format!("could not install the new Gopher binary: {error}"));
         }
         Ok(())
     }
@@ -934,7 +915,7 @@ pub fn spawn_restart_if_pending() {
             .stderr(Stdio::inherit());
     }
     if let Err(error) = cmd.spawn() {
-        eprintln!("could not restart Tensor: {error}");
+        eprintln!("could not restart Gopher: {error}");
     }
 }
 
@@ -968,11 +949,11 @@ pub async fn apply() -> Result<ApplyResult, String> {
     };
     let offer = load_offer(true).await?;
     if !offer.status.update_available {
-        return Err("Tensor is already up to date.".to_string());
+        return Err("Gopher is already up to date.".to_string());
     }
     if !offer.status.can_install {
         return Err(offer.status.install_blocked.unwrap_or_else(|| {
-            "This copy of Tensor cannot install the update automatically.".to_string()
+            "This copy of Gopher cannot install the update automatically.".to_string()
         }));
     }
     let asset_name = offer
@@ -1059,48 +1040,48 @@ mod tests {
         assert!(looks_like_cargo_build(
             &PathBuf::from("home")
                 .join("me")
-                .join("tensorui2")
+                .join("gopher2")
                 .join("target")
                 .join("debug")
-                .join("tensor")
+                .join("gopher")
         ));
         assert!(looks_like_cargo_build(
             &PathBuf::from("src")
-                .join("tensorui2")
+                .join("gopher2")
                 .join("target")
                 .join("release")
-                .join("tensor.exe")
+                .join("gopher.exe")
         ));
         assert!(!looks_like_cargo_build(
             &PathBuf::from("Users")
                 .join("me")
                 .join("AppData")
                 .join("Local")
-                .join("tensor")
+                .join("gopher")
                 .join("bin")
-                .join("tensor.exe")
+                .join("gopher.exe")
         ));
         assert!(!looks_like_cargo_build(
             &PathBuf::from("home")
                 .join("me")
                 .join(".local")
                 .join("bin")
-                .join("tensor")
+                .join("gopher")
         ));
     }
 
     #[test]
     fn checksum_parser_accepts_gnu_and_star_names() {
         let sums = "\
-abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd  tensor-0.4.0-x86_64-linux-gnu.tar.gz
-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb *tensorui-0.3.0-x86_64-pc-windows-msvc.zip
+abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd  gopher-0.4.0-x86_64-linux-gnu.tar.gz
+bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb *gopher-0.3.0-x86_64-pc-windows-msvc.zip
 ";
         assert_eq!(
-            checksum_for_asset(sums, "tensor-0.4.0-x86_64-linux-gnu.tar.gz").as_deref(),
+            checksum_for_asset(sums, "gopher-0.4.0-x86_64-linux-gnu.tar.gz").as_deref(),
             Some("abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd")
         );
         assert_eq!(
-            checksum_for_asset(sums, "tensorui-0.3.0-x86_64-pc-windows-msvc.zip").as_deref(),
+            checksum_for_asset(sums, "gopher-0.3.0-x86_64-pc-windows-msvc.zip").as_deref(),
             Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
         );
         assert!(checksum_for_asset(sums, "missing.tar.gz").is_none());
@@ -1122,12 +1103,12 @@ bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb *tensorui-0.3.0
     #[test]
     fn checksum_prefers_sums_and_requires_a_hash() {
         let sums = "\
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  tensor-0.4.0-x86_64-linux-gnu.tar.gz
+aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  gopher-0.4.0-x86_64-linux-gnu.tar.gz
 ";
         assert_eq!(
             expected_archive_sha256(
                 Some(sums),
-                "tensor-0.4.0-x86_64-linux-gnu.tar.gz",
+                "gopher-0.4.0-x86_64-linux-gnu.tar.gz",
                 Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
             )
             .unwrap(),
@@ -1136,7 +1117,7 @@ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  tensor-0.4.0-x
         assert_eq!(
             expected_archive_sha256(
                 None,
-                "tensorui-0.3.0-x86_64-pc-windows-msvc.zip",
+                "gopher-0.3.0-x86_64-pc-windows-msvc.zip",
                 Some("3dae93fc74a6146ea06fe2fea2bb4cd56ed07a4c8a82a0374b0b8c7e9cb305eb")
             )
             .unwrap(),
@@ -1147,11 +1128,11 @@ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  tensor-0.4.0-x
             expected_archive_sha256(Some(sums), "missing.tar.gz", Some(unused_digest.as_str()))
                 .is_err()
         );
-        assert!(expected_archive_sha256(None, "tensor.tar.gz", None).is_err());
+        assert!(expected_archive_sha256(None, "gopher.tar.gz", None).is_err());
         assert!(
             expected_archive_sha256(
                 Some(sums),
-                "tensor-0.4.0-x86_64-linux-gnu.tar.gz",
+                "gopher-0.4.0-x86_64-linux-gnu.tar.gz",
                 Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
             )
             .unwrap_err()
@@ -1160,16 +1141,12 @@ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  tensor-0.4.0-x
     }
 
     #[test]
-    fn picks_tensor_asset_over_legacy_name() {
+    fn picks_gopher_asset() {
         let payload = serde_json::json!({
             "assets": [
                 {
-                    "name": "tensorui-0.3.0-x86_64-linux-gnu.tar.gz",
-                    "browser_download_url": "https://github.com/jacobzymet/tensorUI/releases/download/v0.3.0/tensorui-0.3.0-x86_64-linux-gnu.tar.gz"
-                },
-                {
-                    "name": "tensor-0.4.0-x86_64-linux-gnu.tar.gz",
-                    "browser_download_url": "https://github.com/jacobzymet/tensorUI/releases/download/v0.4.0/tensor-0.4.0-x86_64-linux-gnu.tar.gz",
+                    "name": "gopher-0.4.0-x86_64-linux-gnu.tar.gz",
+                    "browser_download_url": "https://github.com/jacobzymet/tensorUI/releases/download/v0.4.0/gopher-0.4.0-x86_64-linux-gnu.tar.gz",
                     "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
                 },
                 {
@@ -1180,20 +1157,19 @@ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  tensor-0.4.0-x
         });
         let (asset, sums) = pick_release_asset(&payload, "x86_64-linux-gnu");
         let asset = asset.unwrap();
-        assert_eq!(asset.name, "tensor-0.4.0-x86_64-linux-gnu.tar.gz");
+        assert_eq!(asset.name, "gopher-0.4.0-x86_64-linux-gnu.tar.gz");
         assert_eq!(
             asset.sha256.as_deref(),
             Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
         );
         assert!(sums.unwrap().ends_with("/SHA256SUMS"));
     }
-
     #[test]
     fn rejects_untrusted_asset_host() {
         let payload = serde_json::json!({
             "assets": [{
-                "name": "tensor-0.4.0-x86_64-linux-gnu.tar.gz",
-                "browser_download_url": "https://evil.example/tensor-0.4.0-x86_64-linux-gnu.tar.gz"
+                "name": "gopher-0.4.0-x86_64-linux-gnu.tar.gz",
+                "browser_download_url": "https://evil.example/gopher-0.4.0-x86_64-linux-gnu.tar.gz"
             }]
         });
         let (asset, _) = pick_release_asset(&payload, "x86_64-linux-gnu");
@@ -1201,83 +1177,31 @@ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  tensor-0.4.0-x
     }
 
     #[test]
-    #[ignore = "downloads a published GitHub Release archive"]
-    fn extracts_live_windows_release_archive() {
-        let bytes = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(download_bytes(
-                "https://github.com/jacobzymet/tensorUI/releases/download/v0.3.0/tensorui-0.3.0-x86_64-pc-windows-msvc.zip",
-                MAX_ARCHIVE_BYTES,
-            ))
-            .expect("could not download the published Windows archive");
-        assert_eq!(
-            sha256_hex(&bytes),
-            "3dae93fc74a6146ea06fe2fea2bb4cd56ed07a4c8a82a0374b0b8c7e9cb305eb",
-            "downloaded bytes must match GitHub's published asset digest"
-        );
-        let binary =
-            extract_app_binary(&bytes, "tensorui-0.3.0-x86_64-pc-windows-msvc.zip").unwrap();
-        assert!(
-            binary.starts_with(b"MZ"),
-            "published Windows archive must contain a PE binary"
-        );
-        assert!(
-            binary.len() > 1_000_000,
-            "published Windows binary looks too small: {}",
-            binary.len()
-        );
-        let dir = tempfile::tempdir().unwrap();
-        let dest = dir.path().join("tensor.exe");
-        replace_executable(&dest, &binary).unwrap();
-        assert_eq!(fs::read(&dest).unwrap(), binary);
-    }
-
-    #[test]
-    fn extracts_preferred_binary_from_zip() {
-        let (preferred_name, preferred, legacy_name, legacy) = if cfg!(windows) {
-            (
-                "tensor.exe",
-                &b"MZ tensor"[..],
-                "tensorui.exe",
-                &b"MZ legacy"[..],
-            )
+    fn extracts_gopher_binary_from_zip() {
+        let (binary_name, binary) = if cfg!(windows) {
+            ("gopher.exe", &b"MZ gopher"[..])
         } else if cfg!(target_os = "macos") {
-            (
-                "tensor",
-                &b"\xcf\xfa\xed\xfe tensor"[..],
-                "tensorui",
-                &b"\xcf\xfa\xed\xfe legacy"[..],
-            )
+            ("gopher", &b"\xcf\xfa\xed\xfe gopher"[..])
         } else {
-            (
-                "tensor",
-                &b"\x7fELF tensor"[..],
-                "tensorui",
-                &b"\x7fELF legacy"[..],
-            )
+            ("gopher", &b"\x7fELF gopher"[..])
         };
         let mut cursor = Cursor::new(Vec::new());
         {
             let mut zip = zip::ZipWriter::new(&mut cursor);
             let options = zip::write::SimpleFileOptions::default()
                 .compression_method(zip::CompressionMethod::Stored);
-            zip.start_file("tensor-0.4.0/README.md", options).unwrap();
+            zip.start_file("gopher-0.4.0/README.md", options).unwrap();
             zip.write_all(b"docs").unwrap();
-            zip.start_file(format!("tensor-0.4.0/{legacy_name}"), options)
+            zip.start_file(format!("gopher-0.4.0/{binary_name}"), options)
                 .unwrap();
-            zip.write_all(legacy).unwrap();
-            zip.start_file(format!("tensor-0.4.0/{preferred_name}"), options)
-                .unwrap();
-            zip.write_all(preferred).unwrap();
+            zip.write_all(binary).unwrap();
             zip.finish().unwrap();
         }
         let bytes = cursor.into_inner();
-        let binary = extract_app_binary(&bytes, "tensor-0.4.0-x86_64-pc-windows-msvc.zip").unwrap();
-        assert_eq!(binary, preferred);
+        let extracted =
+            extract_app_binary(&bytes, "gopher-0.4.0-x86_64-pc-windows-msvc.zip").unwrap();
+        assert_eq!(extracted, binary);
     }
-
     #[test]
     fn cargo_test_binary_looks_like_a_cargo_build() {
         let exe = env::current_exe().unwrap();
@@ -1289,46 +1213,27 @@ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  tensor-0.4.0-x
     }
 
     #[test]
-    fn extracts_preferred_binary_from_tar_gz() {
-        let (preferred_name, preferred, legacy_name, legacy) = if cfg!(windows) {
-            (
-                "tensor.exe",
-                &b"MZ tensor"[..],
-                "tensorui.exe",
-                &b"MZ legacy"[..],
-            )
+    fn extracts_gopher_binary_from_tar_gz() {
+        let (binary_name, binary) = if cfg!(windows) {
+            ("gopher.exe", &b"MZ gopher"[..])
         } else if cfg!(target_os = "macos") {
-            (
-                "tensor",
-                &b"\xcf\xfa\xed\xfe tensor"[..],
-                "tensorui",
-                &b"\xcf\xfa\xed\xfe legacy"[..],
-            )
+            ("gopher", &b"\xcf\xfa\xed\xfe gopher"[..])
         } else {
-            (
-                "tensor",
-                &b"\x7fELF tensor"[..],
-                "tensorui",
-                &b"\x7fELF legacy"[..],
-            )
+            ("gopher", &b"\x7fELF gopher"[..])
         };
         let mut encoded = Cursor::new(Vec::new());
         {
             let encoder =
                 flate2::write::GzEncoder::new(&mut encoded, flate2::Compression::default());
             let mut tar = tar::Builder::new(encoder);
-            for (name, data) in [
-                ("README.md", b"docs".as_slice()),
-                (legacy_name, legacy),
-                (preferred_name, preferred),
-            ] {
+            for (name, data) in [("README.md", b"docs".as_slice()), (binary_name, binary)] {
                 let mut header = tar::Header::new_gnu();
                 header.set_size(data.len() as u64);
                 header.set_mode(0o755);
                 header.set_cksum();
                 tar.append_data(
                     &mut header,
-                    format!("tensor-0.4.0-x86_64-linux-gnu/{name}"),
+                    format!("gopher-0.4.0-x86_64-linux-gnu/{name}"),
                     data,
                 )
                 .unwrap();
@@ -1336,17 +1241,16 @@ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  tensor-0.4.0-x
             tar.finish().unwrap();
         }
         let bytes = encoded.into_inner();
-        let binary = extract_app_binary(&bytes, "tensor-0.4.0-x86_64-linux-gnu.tar.gz").unwrap();
-        assert_eq!(binary, preferred);
+        let extracted = extract_app_binary(&bytes, "gopher-0.4.0-x86_64-linux-gnu.tar.gz").unwrap();
+        assert_eq!(extracted, binary);
     }
-
     #[test]
     fn replace_executable_creates_missing_destination() {
         let dir = tempfile::tempdir().unwrap();
         let dest = dir.path().join(if cfg!(windows) {
-            "tensor.exe"
+            "gopher.exe"
         } else {
-            "tensor"
+            "gopher"
         });
         replace_executable(&dest, b"MZ new").unwrap();
         assert_eq!(fs::read(&dest).unwrap(), b"MZ new");
@@ -1356,9 +1260,9 @@ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  tensor-0.4.0-x
     fn replace_executable_overwrites_file() {
         let dir = tempfile::tempdir().unwrap();
         let exe = dir.path().join(if cfg!(windows) {
-            "tensor.exe"
+            "gopher.exe"
         } else {
-            "tensor"
+            "gopher"
         });
         fs::write(&exe, b"old").unwrap();
         replace_executable(&exe, b"MZ new").unwrap();

@@ -1,4 +1,4 @@
-# <img src="assets/browser-favicon.png" alt="" width="36" height="36"> Tensor
+# <img src="assets/browser-favicon.png" alt="" width="36" height="36"> Gopher
 
 A local, lightweight, open source LLM harness for humanity.
 
@@ -9,11 +9,11 @@ A more permissive alternative to [Open WebUI](https://github.com/open-webui/open
 - Agent mode with approvals, web search, URL fetching, deep research, browser control, filesystem access, terminal access, and custom skills
 - Passphrase-based encryption at rest for chats, preferences, provider credentials, and skills
 
-Tensor does not bundle an inference engine. Connect Ollama, OpenAI, Gemini, Anthropic, or another compatible endpoint.
+Gopher does not bundle an inference engine. Connect Ollama, OpenAI, Gemini, Anthropic, or another compatible endpoint.
 
 ## Install and run
 
-Install the latest GitHub Release with a platform script. The one-liners fetch the installer and the `tensor` archive from that release, not from the development branch. Archives cover Windows x64, Linux x64/ARM64, and macOS Apple Silicon/Intel.
+Install the latest GitHub Release with a platform script. The one-liners fetch the installer and the `gopher` archive from that release, not from the development branch. Archives cover Windows x64, Linux x64/ARM64, and macOS Apple Silicon/Intel.
 
 ### Windows
 
@@ -21,7 +21,7 @@ Install the latest GitHub Release with a platform script. The one-liners fetch t
 irm https://github.com/jacobzymet/tensorUI/releases/latest/download/install.ps1 | iex
 ```
 
-The script installs `tensor.exe` to `%LOCALAPPDATA%\tensor\bin` and adds that directory to your user PATH.
+The script installs `gopher.exe` to `%LOCALAPPDATA%\gopher\bin` and adds that directory to your user PATH.
 
 ### macOS
 
@@ -39,14 +39,14 @@ The Linux desktop window needs WebKitGTK 4.1 at runtime. The script prints the p
 
 Unix scripts install to `~/.local/bin` by default. Inspect a script before piping it to a shell if you prefer.
 
-Pin a version or install directory with `TENSOR_VERSION` and `TENSOR_INSTALL_DIR`, or pass `--version` and `--dir`:
+Pin a version or install directory with `GOPHER_VERSION` and `GOPHER_INSTALL_DIR`, or pass `--version` and `--dir`:
 
 ```sh
 curl -fsSL https://github.com/jacobzymet/tensorUI/releases/latest/download/install-linux.sh | sh -s -- --version 0.3.0
 ```
 
 ```powershell
-$env:TENSOR_VERSION = "0.3.0"
+$env:GOPHER_VERSION = "0.3.0"
 irm https://github.com/jacobzymet/tensorUI/releases/latest/download/install.ps1 | iex
 ```
 
@@ -58,7 +58,7 @@ To run from source:
 cargo run
 ```
 
-This starts a loopback-only control plane and, by default, opens Tensor in a native desktop window. When a newer GitHub Release exists, Tensor downloads that release archive, verifies its checksum, installs the `tensor` binary, and restarts. Source copies install into the user install folder used by the platform scripts. **Settings → App** shows the installed version, the latest GitHub Release, and an Install and restart button when an update can be applied.
+This starts a loopback-only control plane and, by default, opens Gopher in a native desktop window. When a newer GitHub Release exists, Gopher downloads that release archive, verifies its checksum, installs the `gopher` binary, and restarts. Source copies install into the user install folder used by the platform scripts. **Settings → App** shows the installed version, the latest GitHub Release, and an Install and restart button when an update can be applied.
 
 | Option | Behavior |
 | --- | --- |
@@ -67,7 +67,7 @@ This starts a loopback-only control plane and, by default, opens Tensor in a nat
 | `--bind ADDR` | Override the loopback listen address |
 | `--config PATH` | Use another `config.toml`; other data is stored beside it |
 
-Default URL: `http://tensor.localhost:3930`. `/settings` redirects to **Settings → Providers**.
+Default URL: `http://gopher.localhost:3930`. `/settings` redirects to **Settings → Providers**.
 
 ### Platform requirements
 
@@ -96,13 +96,13 @@ Parallel and TinyFish keys can be entered in Settings or supplied as `PARALLEL_A
 
 ## Data and configuration
 
-On-disk paths retain the legacy **`tensorUI`** folder name so upgrades do not orphan existing data:
+On-disk data and configuration use the **`gopher`** folder:
 
 | OS | Default directory |
 | --- | --- |
-| Windows | `%APPDATA%\tensorUI\` |
-| macOS | `~/Library/Application Support/tensorUI/` |
-| Linux | `~/.config/tensorUI/` |
+| Windows | `%APPDATA%\gopher\` |
+| macOS | `~/Library/Application Support/gopher/` |
+| Linux | `~/.config/gopher/` |
 
 | Path | Contents |
 | --- | --- |
@@ -139,7 +139,7 @@ token = ""           # optional for local endpoints
 
 Provider API style is detected when a provider is added or saved. Existing entries without `api_style` default to `openai`.
 
-Bind precedence is `--bind`, then `TENSOR_BIND` (or legacy `TENSORUI_BIND`), then `[ui]`. Network-reachable addresses are refused because the local UI has no authentication.
+Bind precedence is `--bind`, then `GOPHER_BIND`, then `[ui]`. Network-reachable addresses are refused because the local UI has no authentication.
 
 LLM system and tool prompts live under [`prompts/`](prompts/) and are embedded at compile time.
 
@@ -147,11 +147,11 @@ Agent file reads run concurrently in groups of up to eight. Writes, commands, br
 
 `run_terminal` returns a session ID when a command continues beyond the initial wait. `wait_terminal` polls that same process or terminates it explicitly. **Settings → Initial wait** controls the first wait (5–30 seconds), not a kill timeout. Sessions are scoped to the conversation and workspace, limited to eight running commands per conversation and 64 sessions overall, and expire after 30 minutes without polling. Captured output stays bounded at 32 KB and retains the beginning and end; larger output is explicitly marked as omitted. The interactive terminal remains separate.
 
-Agent runs budget their context before each model request. Older complete assistant/tool exchanges move into an encrypted temporary archive retrievable through `read_tool_history` during that run; user, system, and developer messages remain intact. The archive uses a per-run key held only in memory and is deleted on close; its limits are 64 MB and 8192 records. If protected input alone is too large, the run reports an error instead of truncating instructions. Text token counts and image costs are estimates, not a provider tokenizer. The context window comes from the selected model's reported metadata when available. Override it with `TENSOR_AGENT_CONTEXT_TOKENS` (or legacy `TENSORUI_AGENT_CONTEXT_TOKENS`), or pass `context_window_tokens` in the agent request (highest priority). When none is available, defaults are 8192 tokens without an API key and 32768 with one. Tool schemas and a response reserve are deducted, and individual tool output budgets shrink with the available context.
+Agent runs budget their context before each model request. Older complete assistant/tool exchanges move into an encrypted temporary archive retrievable through `read_tool_history` during that run; user, system, and developer messages remain intact. The archive uses a per-run key held only in memory and is deleted on close; its limits are 64 MB and 8192 records. If protected input alone is too large, the run reports an error instead of truncating instructions. Text token counts and image costs are estimates, not a provider tokenizer. The context window comes from the selected model's reported metadata when available. Override it with `GOPHER_AGENT_CONTEXT_TOKENS`, or pass `context_window_tokens` in the agent request (highest priority). When none is available, defaults are 8192 tokens without an API key and 32768 with one. Tool schemas and a response reserve are deducted, and individual tool output budgets shrink with the available context.
 
 ## Encryption at rest
 
-Enable encryption under **Settings → Local Data**. Tensor derives a 256-bit key with Argon2id (64 MiB, three iterations, one lane) and encrypts protected data with AES-256-GCM using random 96-bit nonces and purpose-bound authenticated data. The passphrase and raw key are never stored; the session key remains in memory until **Lock session** or exit and is then zeroized. Writes use private permissions, atomic replacement, and an exclusive data-directory lock.
+Enable encryption under **Settings → Local Data**. Gopher derives a 256-bit key with Argon2id (64 MiB, three iterations, one lane) and encrypts protected data with AES-256-GCM using random 96-bit nonces and purpose-bound authenticated data. The passphrase and raw key are never stored; the session key remains in memory until **Lock session** or exit and is then zeroized. Writes use private permissions, atomic replacement, and an exclusive data-directory lock.
 
 The protection covers offline confidentiality and integrity of chats, preferences, provider definitions and credentials, and skills. It does not protect plaintext copies or backups made before encryption, filesystem snapshots, malware or another process in the logged-in session, rollback to an older complete encrypted data set, memory forensics while unlocked, forgotten passphrases, or hardware failure. Secure deletion cannot be guaranteed on SSDs or copy-on-write filesystems. **Forgotten passphrases cannot be recovered.**
 

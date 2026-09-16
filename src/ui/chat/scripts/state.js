@@ -670,15 +670,16 @@ const chatModelSelect = document.getElementById('chatModelSelect');
 const chatModelSelectWrap = document.getElementById('chatModelSelectWrap');
 const chatModelOriginPill = document.getElementById('chatModelOriginPill');
 const chatModelMenu = document.getElementById('chatModelMenu');
+const chatModelBackdrop = document.getElementById('chatModelBackdrop');
+const chatModelCatalogMeta = document.getElementById('chatModelCatalogMeta');
 const chatModelList = document.getElementById('chatModelList');
 const chatModelSearchWrap = document.getElementById('chatModelSearchWrap');
 const chatModelSearch = document.getElementById('chatModelSearch');
 const chatModelSearchCount = document.getElementById('chatModelSearchCount');
+const chatModelSummary = document.getElementById('chatModelSummary');
 const chatModelEmpty = document.getElementById('chatModelEmpty');
 const RECENT_MODELS_MAX = 12;
 const PINNED_MODELS_MAX = 48;
-/** Below this many models the filter field is more noise than help. */
-const MODEL_SEARCH_MIN_OPTIONS = 6;
 const MODEL_PIN_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1z"/></svg>';
 const MODEL_MARK_ICON = '<svg class="chat-model-option-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>';
 let selectedRemoteModelId = '';
@@ -686,18 +687,12 @@ let selectedChatModel = '';
 let selectedModelMissingPolls = 0;
 let recentModelIds = [];
 let pinnedModelIds = [];
-let collapsedModelProviders = [];
 let modelMenuOptions = [];
 /** Options passing the current filter — what the arrow keys actually walk. */
 let modelMenuMatches = [];
 let modelMenuFilter = '';
 let modelMenuActiveIndex = -1;
-function preferredModelMenuTab() {
-  if (pinnedModelIds.length) return 'pins';
-  if (recentModelIds.length) return 'recents';
-  return 'network';
-}
-let modelMenuTab = preferredModelMenuTab();
+
 let latestState = null;
 
 function normalizeModelIds(ids, limit) {
@@ -754,7 +749,6 @@ function persistModelPickerState() {
     selectedChatModel,
     recentModelIds: recentModelIds.slice(),
     pinnedModelIds: pinnedModelIds.slice(),
-    collapsedModelProviders: collapsedModelProviders.slice(),
   }, { immediate: true });
 }
 
@@ -777,21 +771,6 @@ function isModelPinned(value) {
   return !!value && pinnedModelIds.includes(value);
 }
 
-function isModelProviderCollapsed(key) {
-  return !!key && collapsedModelProviders.includes(key);
-}
-
-function toggleModelProviderCollapsed(key) {
-  if (!key) return;
-  if (isModelProviderCollapsed(key)) {
-    collapsedModelProviders = collapsedModelProviders.filter((id) => id !== key);
-  } else {
-    collapsedModelProviders = normalizeModelIds([key, ...collapsedModelProviders], 64);
-  }
-  persistModelPickerState();
-  if (modelMenuIsOpen()) applyModelFilter({ keepActive: true });
-}
-
 function togglePinnedModel(value) {
   if (!value) return;
   if (isModelPinned(value)) {
@@ -799,10 +778,7 @@ function togglePinnedModel(value) {
   } else {
     savePinnedModelIds([value, ...pinnedModelIds.filter((id) => id !== value)]);
   }
-  if (modelMenuIsOpen()) {
-    syncModelMenuTabs();
-    applyModelFilter({ keepActive: true });
-  }
+  if (modelMenuIsOpen()) applyModelFilter({ keepActive: true });
 }
 
 function hydrateModelPickerState() {
@@ -817,8 +793,6 @@ function hydrateModelPickerState() {
   }
   recentModelIds = normalizeModelIds(settings.recentModelIds, RECENT_MODELS_MAX);
   pinnedModelIds = normalizeModelIds(settings.pinnedModelIds, PINNED_MODELS_MAX);
-  collapsedModelProviders = normalizeModelIds(settings.collapsedModelProviders, 64);
-  modelMenuTab = preferredModelMenuTab();
 }
 
 function newId(prefix) {
@@ -2338,7 +2312,6 @@ function clearMemoryAfterLock() {
   selectedRemoteModelId = '';
   recentModelIds = [];
   pinnedModelIds = [];
-  collapsedModelProviders = [];
   modelMenuOptions = [];
   modelMenuMatches = [];
   profiles = [];
@@ -2437,7 +2410,7 @@ function buildSystemPrompt(projectIdOverride, opts = {}) {
   const excludeConvoId = opts.excludeConvoId || opts.excludeConvoId || null;
   const convo = opts.convo || null;
   const speakerBot = opts.speakerBot || opts.speakerBot || null;
-  const P = window.TENSOR_PROMPTS || {};
+  const P = window.GOPHER_PROMPTS || {};
   const fill = window.fillPrompt || ((t) => t);
   const parts = [];
   const name = settings.name.trim();
@@ -2565,7 +2538,7 @@ function buildProjectContinuityDigest(projectId, excludeConvoId) {
     remaining -= block.length + 2;
   }
   if (!blocks.length) return null;
-  const P = window.TENSOR_PROMPTS || {};
+  const P = window.GOPHER_PROMPTS || {};
   const fill = window.fillPrompt || ((t) => t);
   return fill(P['chat.projectContinuity'] || (
     'Other chats in this project (for multi-chat continuity — prior context from sibling chats, not the current conversation):\n' +

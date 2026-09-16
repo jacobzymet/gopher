@@ -1,0 +1,621 @@
+- generic [ref=f1e2]:
+  - complementary [ref=f1e3]:
+    - generic [ref=f1e5]:
+      - link "Gopher" [ref=f1e6] [cursor=pointer]:
+        - /url: /
+      - 'button "Surface: Agent. Switch surface" [ref=f1e8] [cursor=pointer]':
+        - generic [ref=f1e9]: Agent
+    - generic [ref=f1e14]:
+      - group "New chat" [ref=f1e15]:
+        - button "New chat" [ref=f1e16] [cursor=pointer]
+        - button "New ghost chat" [ref=f1e20] [cursor=pointer]
+      - button "Search chats and projects" [ref=f1e23] [cursor=pointer]:
+        - generic [ref=f1e27]: Search
+        - generic [aria-hidden] [ref=f1e28]: ⌘ K
+    - generic [ref=f1e29]:
+      - generic "Workspace" [ref=f1e30]:
+        - paragraph [ref=f1e31]: Workspace
+        - button "Projects" [ref=f1e32] [cursor=pointer]
+      - generic "Pinned conversations" [ref=f1e37]:
+        - paragraph [ref=f1e38]: Pinned
+        - navigation "Pinned conversations" [ref=f1e39]:
+          - generic "Arrogance Masquerading as Intelligence" [ref=f1e40] [cursor=pointer]:
+            - time [ref=f1e45]: 18d
+            - button "Conversation actions"
+          - generic "The Unfiltered Truth" [ref=f1e46] [cursor=pointer]:
+            - time [ref=f1e51]: 32d
+            - button "Conversation actions"
+      - generic [ref=f1e52]:
+        - paragraph [ref=f1e53]: Recents
+        - button "Select" [ref=f1e54] [cursor=pointer]
+      - navigation "Conversations" [ref=f1e55]:
+        - heading "Today" [level=3] [ref=f1e56]
+        - generic "Generic Greeting Response" [ref=f1e58] [cursor=pointer]:
+          - time [ref=f1e60]: 22m
+          - button "Conversation actions"
+        - heading "Earlier this week" [level=3] [ref=f1e61]
+        - generic "Compare o1 pro and Grok 2" [ref=f1e63] [cursor=pointer]:
+          - time [ref=f1e65]: 2d
+          - button "Conversation actions"
+        - generic "Alternatives to OpenRouter" [ref=f1e66] [cursor=pointer]:
+          - time [ref=f1e68]: 2d
+          - button "Conversation actions"
+        - generic "Diagnose Unreliable Title Generation" [ref=f1e69] [cursor=pointer]:
+          - time [ref=f1e71]: 2d
+          - button "Conversation actions"
+        - heading "Last week" [level=3] [ref=f1e72]
+        - generic "Musk Latest News Update" [ref=f1e74] [cursor=pointer]:
+          - time [ref=f1e76]: 3d
+          - button "Conversation actions"
+        - generic "Greeting" [ref=f1e77] [cursor=pointer]:
+          - time [ref=f1e79]: 3d
+          - button "Conversation actions"
+        - generic "Top Inkling vs DeepSeek V4 Flash" [ref=f1e80] [cursor=pointer]:
+          - time [ref=f1e82]: 3d
+          - button "Conversation actions"
+        - generic "Duke Kunhan Latest News" [ref=f1e83] [cursor=pointer]:
+          - time [ref=f1e85]: 4d
+          - button "Conversation actions"
+        - generic "Student Opinions on Prof Gurol Baba's Grading" [ref=f1e86] [cursor=pointer]:
+          - time [ref=f1e88]: 5d
+          - button "Conversation actions"
+        - generic "Latest News About Elon Musk" [ref=f1e89] [cursor=pointer]:
+          - time [ref=f1e91]: 5d
+          - button "Conversation actions"
+        - generic "Greeting" [ref=f1e92] [cursor=pointer]:
+          - time [ref=f1e94]: 5d
+          - button "Conversation actions"
+        - generic "Greeting User" [ref=f1e95] [cursor=pointer]:
+          - time [ref=f1e97]: 5d
+          - button "Conversation actions"
+        - generic "are you a harness" [ref=f1e98] [cursor=pointer]:
+          - time [ref=f1e100]: 5d
+          - button "Conversation actions"
+        - generic "Popular GUI Alternatives to Hermes Desktop" [ref=f1e101] [cursor=pointer]:
+          - time [ref=f1e103]: 5d
+          - button "Conversation actions"
+        - generic "Best Cheap OpenRouter Model" [ref=f1e104] [cursor=pointer]:
+          - time [ref=f1e106]: 5d
+          - button "Conversation actions"
+        - generic "Best Value Cheap OpenRouter Model" [ref=f1e107] [cursor=pointer]:
+          - time [ref=f1e109]: 5d
+          - button "Conversation actions"
+        - generic "Forced Chinese Citizenship Restoration Cases" [ref=f1e110] [cursor=pointer]:
+          - time [ref=f1e112]: 5d
+          - button "Conversation actions"
+        - generic "Acknowledge Greeting" [ref=f1e113] [cursor=pointer]:
+          - time [ref=f1e115]: 5d
+          - button "Conversation actions"
+        - generic "American Cultural Cringe Explained" [ref=f1e116] [cursor=pointer]:
+          - time [ref=f1e118]: 6d
+          - button "Conversation actions"
+        - generic "Acknowledgment of Greeting" [ref=f1e119] [cursor=pointer]:
+          - time [ref=f1e121]: 6d
+          - button "Conversation actions"
+        - generic "tell me a story" [ref=f1e122] [cursor=pointer]:
+          - time [ref=f1e124]: 6d
+          - button "Conversation actions"
+        - generic "Greeting" [ref=f1e125] [cursor=pointer]:
+          - time [ref=f1e127]: 6d
+          - button "Conversation actions"
+        - generic "Greeting User" [ref=f1e128] [cursor=pointer]:
+          - time [ref=f1e130]: 6d
+          - button "Conversation actions"
+        - generic "tell me a story" [ref=f1e131] [cursor=pointer]:
+          - time [ref=f1e133]: 7d
+          - button "Conversation actions"
+        - generic "latest grok news" [ref=f1e134] [cursor=pointer]:
+          - time [ref=f1e136]: 7d
+          - button "Conversation actions"
+        - generic "Evening Greeting" [ref=f1e137] [cursor=pointer]:
+          - time [ref=f1e139]: 8d
+          - button "Conversation actions"
+        - generic "latest news on grok" [ref=f1e140] [cursor=pointer]:
+          - time [ref=f1e142]: 8d
+          - button "Conversation actions"
+        - generic "The Lost Kingdom of Eldoria" [ref=f1e143] [cursor=pointer]:
+          - time [ref=f1e145]: 8d
+          - button "Conversation actions"
+        - generic "Quick Chat Title Request" [ref=f1e146] [cursor=pointer]:
+          - time [ref=f1e148]: 8d
+          - button "Conversation actions"
+        - generic "Quick Chat Request" [ref=f1e149] [cursor=pointer]:
+          - time [ref=f1e151]: 8d
+          - button "Conversation actions"
+        - generic "The Last Light in the Forest" [ref=f1e152] [cursor=pointer]:
+          - time [ref=f1e154]: 9d
+          - button "Conversation actions"
+        - generic "Duke Kunshan University News Update" [ref=f1e155] [cursor=pointer]:
+          - time [ref=f1e157]: 9d
+          - button "Conversation actions"
+        - generic "Duke Kunshan Partnership Future Uncertain" [ref=f1e158] [cursor=pointer]:
+          - time [ref=f1e160]: 10d
+          - button "Conversation actions"
+        - generic "A Simple Greeting" [ref=f1e161] [cursor=pointer]:
+          - time [ref=f1e163]: 10d
+          - button "Conversation actions"
+        - heading "September" [level=3] [ref=f1e164]
+        - generic "Musk latest news updates" [ref=f1e166] [cursor=pointer]:
+          - time [ref=f1e168]: 10d
+          - button "Conversation actions"
+        - generic "Latest News on Xi Jinping" [ref=f1e169] [cursor=pointer]:
+          - time [ref=f1e171]: 10d
+          - button "Conversation actions"
+        - generic "American Beauty Standards Debate" [ref=f1e172] [cursor=pointer]:
+          - time [ref=f1e174]: 11d
+          - button "Conversation actions"
+        - generic "Google AI Pro Student Offer End" [ref=f1e175] [cursor=pointer]:
+          - time [ref=f1e177]: 11d
+          - button "Conversation actions"
+        - generic "Unidentified Serial Killers Still At Large" [ref=f1e178] [cursor=pointer]:
+          - time [ref=f1e180]: 11d
+          - button "Conversation actions"
+        - generic "OpenAI Models Leaving Cursor Timeline" [ref=f1e181] [cursor=pointer]:
+          - time [ref=f1e183]: 11d
+          - button "Conversation actions"
+        - generic "Quick Story Request" [ref=f1e184] [cursor=pointer]:
+          - time [ref=f1e186]: 14d
+          - button "Conversation actions"
+        - generic "Daallo Flight 159 Photos" [ref=f1e187] [cursor=pointer]:
+          - time [ref=f1e189]: 15d
+          - button "Conversation actions"
+        - generic "Reacher Season 4 Episode 6 Status" [ref=f1e190] [cursor=pointer]:
+          - time [ref=f1e192]: 15d
+          - button "Conversation actions"
+        - heading "August" [level=3] [ref=f1e193]
+        - generic "Meridian Research Verification Protocol" [ref=f1e195] [cursor=pointer]:
+          - time [ref=f1e197]: 16d
+          - button "Conversation actions"
+        - generic "Good Morning News" [ref=f1e198] [cursor=pointer]:
+          - time [ref=f1e200]: 17d
+          - button "Conversation actions"
+        - generic "China's Response to September 11" [ref=f1e201] [cursor=pointer]:
+          - time [ref=f1e203]: 17d
+          - button "Conversation actions"
+        - 'generic "Anthropic vs OpenAI: Latest Updates" [ref=f1e204] [cursor=pointer]':
+          - time [ref=f1e206]: 17d
+          - button "Conversation actions"
+        - generic "Anthropic Claude Latest Updates" [ref=f1e207] [cursor=pointer]:
+          - time [ref=f1e209]: 17d
+          - button "Conversation actions"
+        - generic "Living in China as a Foreigner" [ref=f1e210] [cursor=pointer]:
+          - time [ref=f1e212]: 17d
+          - button "Conversation actions"
+        - generic "Grok's Latest News Roundup" [ref=f1e213] [cursor=pointer]:
+          - time [ref=f1e215]: 17d
+          - button "Conversation actions"
+        - generic "Grok News and Model Updates" [ref=f1e216] [cursor=pointer]:
+          - time [ref=f1e218]: 18d
+          - button "Conversation actions"
+        - generic "OpenAI Cursor Access Termination Reasons" [ref=f1e219] [cursor=pointer]:
+          - time [ref=f1e221]: 18d
+          - button "Conversation actions"
+        - generic "Grok 4.7 Release Date Inquiry" [ref=f1e222] [cursor=pointer]:
+          - time [ref=f1e224]: 18d
+          - button "Conversation actions"
+        - generic "Story Requested and Told" [ref=f1e225] [cursor=pointer]:
+          - time [ref=f1e227]: 18d
+          - button "Conversation actions"
+        - generic "Good Morning Greeting" [ref=f1e228] [cursor=pointer]:
+          - time [ref=f1e230]: 18d
+          - button "Conversation actions"
+        - generic "The Whispering Library" [ref=f1e231] [cursor=pointer]:
+          - time [ref=f1e233]: 18d
+          - button "Conversation actions"
+        - generic "A Long Story with Markdown Formatting" [ref=f1e234] [cursor=pointer]:
+          - time [ref=f1e236]: 18d
+          - button "Conversation actions"
+        - generic "South Korea’s AI Public Utility Plan" [ref=f1e237] [cursor=pointer]:
+          - time [ref=f1e239]: 18d
+          - button "Conversation actions"
+        - generic "Casual Greeting Chat" [ref=f1e240] [cursor=pointer]:
+          - time [ref=f1e242]: 18d
+          - button "Conversation actions"
+        - generic "NVIDIA API Compatibility Question" [ref=f1e243] [cursor=pointer]:
+          - time [ref=f1e245]: 18d
+          - button "Conversation actions"
+        - generic "Grok 4.7 Release Date" [ref=f1e246] [cursor=pointer]:
+          - time [ref=f1e248]: 19d
+          - button "Conversation actions"
+        - generic "Python Website Screenshot" [ref=f1e249] [cursor=pointer]:
+          - time [ref=f1e251]: 19d
+          - button "Conversation actions"
+        - generic "Static Multipage Website Creation" [ref=f1e252] [cursor=pointer]:
+          - time [ref=f1e254]: 19d
+          - button "Conversation actions"
+        - generic "Whats up chat" [ref=f1e255] [cursor=pointer]:
+          - time [ref=f1e257]: 19d
+          - button "Conversation actions"
+        - generic "Grok 3 Launch and Updates" [ref=f1e258] [cursor=pointer]:
+          - time [ref=f1e260]: 19d
+          - button "Conversation actions"
+        - generic "Musk Bezos Space Race Updates" [ref=f1e261] [cursor=pointer]:
+          - time [ref=f1e263]: 19d
+          - button "Conversation actions"
+        - generic "Elon Musk and Jeff Bezos News" [ref=f1e264] [cursor=pointer]:
+          - time [ref=f1e266]: 19d
+          - button "Conversation actions"
+        - generic "Opus 5 vs Grok 4.6" [ref=f1e267] [cursor=pointer]:
+          - time [ref=f1e269]: 19d
+          - button "Conversation actions"
+        - generic "Grok 4.6 vs GPT 5.6" [ref=f1e270] [cursor=pointer]:
+          - time [ref=f1e272]: 19d
+          - button "Conversation actions"
+        - generic "GLM 5.3 vs Qwen 3.8" [ref=f1e273] [cursor=pointer]:
+          - time [ref=f1e275]: 19d
+          - button "Conversation actions"
+        - generic "Grok News Update Briefing" [ref=f1e276] [cursor=pointer]:
+          - time [ref=f1e278]: 20d
+          - button "Conversation actions"
+        - generic "Grok News Update Roundup" [ref=f1e279] [cursor=pointer]:
+          - time [ref=f1e281]: 20d
+          - button "Conversation actions"
+        - generic "latest news on grok" [ref=f1e282] [cursor=pointer]:
+          - time [ref=f1e284]: 20d
+          - button "Conversation actions"
+        - generic "Elon Musk Spacex Tesla Updates" [ref=f1e285] [cursor=pointer]:
+          - time [ref=f1e287]: 20d
+          - button "Conversation actions"
+        - generic "Evening Chat Start" [ref=f1e288] [cursor=pointer]:
+          - time [ref=f1e290]: 20d
+          - button "Conversation actions"
+        - generic "Tokaimura Criticality Accident" [ref=f1e291] [cursor=pointer]:
+          - time [ref=f1e293]: 32d
+          - button "Conversation actions"
+        - generic "Japanese Trap Music Explained" [ref=f1e294] [cursor=pointer]:
+          - time [ref=f1e296]: 32d
+          - button "Conversation actions"
+        - generic "Storytelling Request" [ref=f1e297] [cursor=pointer]:
+          - time [ref=f1e299]: 32d
+          - button "Conversation actions"
+        - generic "Greeting Chat" [ref=f1e300] [cursor=pointer]:
+          - time [ref=f1e302]: 32d
+          - button "Conversation actions"
+        - generic "S25 Ultra CPU Idle Behavior" [ref=f1e303] [cursor=pointer]:
+          - time [ref=f1e305]: 32d
+          - button "Conversation actions"
+        - generic "Hetzner Cloud Hosting Review" [ref=f1e306] [cursor=pointer]:
+          - time [ref=f1e308]: 32d
+          - button "Conversation actions"
+        - 'generic "Islam: Aisha''s Marriage in Hadith" [ref=f1e309] [cursor=pointer]':
+          - time [ref=f1e311]: 32d
+          - button "Conversation actions"
+        - generic "Jacob Zymet Research Profile" [ref=f1e312] [cursor=pointer]:
+          - time [ref=f1e314]: 32d
+          - button "Conversation actions"
+        - generic "Hitler Socialism Debate Musk" [ref=f1e315] [cursor=pointer]:
+          - time [ref=f1e317]: 32d
+          - button "Conversation actions"
+        - generic "Greeting User" [ref=f1e318] [cursor=pointer]:
+          - time [ref=f1e320]: 33d
+          - button "Conversation actions"
+        - generic "Greeting User" [ref=f1e321] [cursor=pointer]:
+          - time [ref=f1e323]: 33d
+          - button "Conversation actions"
+        - generic "Greeting" [ref=f1e324] [cursor=pointer]:
+          - time [ref=f1e326]: 33d
+          - button "Conversation actions"
+        - generic "Thinking Process" [ref=f1e327] [cursor=pointer]:
+          - time [ref=f1e329]: 33d
+          - button "Conversation actions"
+        - generic "Latest Grok Updates" [ref=f1e330] [cursor=pointer]:
+          - time [ref=f1e332]: 33d
+          - button "Conversation actions"
+        - generic "Hello" [ref=f1e333] [cursor=pointer]:
+          - time [ref=f1e335]: 33d
+          - button "Conversation actions"
+        - generic "Greeting" [ref=f1e336] [cursor=pointer]:
+          - time [ref=f1e338]: 33d
+          - button "Conversation actions"
+        - generic "latest on grok" [ref=f1e339] [cursor=pointer]:
+          - time [ref=f1e341]: 33d
+          - button "Conversation actions"
+        - generic "Casual Greeting Chat" [ref=f1e342] [cursor=pointer]:
+          - time [ref=f1e344]: 33d
+          - button "Conversation actions"
+        - generic "Modern Alternatives to Nextcloud" [ref=f1e345] [cursor=pointer]:
+          - time [ref=f1e347]: 33d
+          - button "Conversation actions"
+        - generic "Cloudflare Admin Privileges and Email Routing" [ref=f1e348] [cursor=pointer]:
+          - time [ref=f1e350]: 33d
+          - button "Conversation actions"
+        - generic "Cloudflare Admin Email Routing Access" [ref=f1e351] [cursor=pointer]:
+          - time [ref=f1e353]: 33d
+          - button "Conversation actions"
+        - generic "Floyd Mayweather Next Fight Date" [ref=f1e354] [cursor=pointer]:
+          - time [ref=f1e356]: 33d
+          - button "Conversation actions"
+        - generic "Longevity AI Startup Breakthroughs" [ref=f1e357] [cursor=pointer]:
+          - time [ref=f1e359]: 33d
+          - button "Conversation actions"
+        - generic "Windows Quality Commitment Summary" [ref=f1e360] [cursor=pointer]:
+          - time [ref=f1e362]: 33d
+          - button "Conversation actions"
+        - generic "System prompt disclosure request" [ref=f1e363] [cursor=pointer]:
+          - time [ref=f1e365]: 33d
+          - button "Conversation actions"
+        - generic "Orville Season 4 Update News" [ref=f1e366] [cursor=pointer]:
+          - time [ref=f1e368]: 34d
+          - button "Conversation actions"
+        - generic "The Orville Overview" [ref=f1e369] [cursor=pointer]:
+          - time [ref=f1e371]: 34d
+          - button "Conversation actions"
+        - 'generic "The Orville: A Sci-Fi Overview" [ref=f1e372] [cursor=pointer]':
+          - time [ref=f1e374]: 34d
+          - button "Conversation actions"
+        - generic "The Orville Research Hub" [ref=f1e375] [cursor=pointer]:
+          - time [ref=f1e377]: 34d
+          - button "Conversation actions"
+        - generic "Cursor SQLite to Rust Pitfalls" [ref=f1e378] [cursor=pointer]:
+          - time [ref=f1e380]: 34d
+          - button "Conversation actions"
+        - generic "Wells Fargo vs Amex Size" [ref=f1e381] [cursor=pointer]:
+          - time [ref=f1e383]: 35d
+          - button "Conversation actions"
+        - generic "Coffee Chat Greetings" [ref=f1e384] [cursor=pointer]:
+          - time [ref=f1e386]: 35d
+          - button "Conversation actions"
+        - generic "Quick Chat Title" [ref=f1e387] [cursor=pointer]:
+          - time [ref=f1e389]: 35d
+          - button "Conversation actions"
+        - generic "Andrew Tate Legal Case Updates" [ref=f1e390] [cursor=pointer]:
+          - time [ref=f1e392]: 35d
+          - button "Conversation actions"
+        - generic "Andrew Tate Legal Case Updates" [ref=f1e393] [cursor=pointer]:
+          - time [ref=f1e395]: 35d
+          - button "Conversation actions"
+        - generic "Greeting User" [ref=f1e396] [cursor=pointer]:
+          - time [ref=f1e398]: 35d
+          - button "Conversation actions"
+        - generic "Late Night Chat Vibes" [ref=f1e399] [cursor=pointer]:
+          - time [ref=f1e401]: 35d
+          - button "Conversation actions"
+        - generic "Andrew Tate Legal Case Updates" [ref=f1e402] [cursor=pointer]:
+          - time [ref=f1e404]: 35d
+          - button "Conversation actions"
+        - generic "Andrew Tate's Criminal Status Update" [ref=f1e405] [cursor=pointer]:
+          - time [ref=f1e407]: 35d
+          - button "Conversation actions"
+        - generic "Andrew Tate Criminal Status Update" [ref=f1e408] [cursor=pointer]:
+          - time [ref=f1e410]: 35d
+          - button "Conversation actions"
+        - generic "Andrew Tate's Criminal Situation" [ref=f1e411] [cursor=pointer]:
+          - time [ref=f1e413]: 35d
+          - button "Conversation actions"
+        - generic "Elon Musk Background and Overview" [ref=f1e414] [cursor=pointer]:
+          - time [ref=f1e416]: 35d
+          - button "Conversation actions"
+        - generic "Supergrok Lite vs ChatGPT Plus Limits" [ref=f1e417] [cursor=pointer]:
+          - time [ref=f1e419]: 35d
+          - button "Conversation actions"
+        - generic "Claude Fable 5 Benchmark Rivals" [ref=f1e420] [cursor=pointer]:
+          - time [ref=f1e422]: 36d
+          - button "Conversation actions"
+        - generic "Anthropic Text Watermark Feature" [ref=f1e423] [cursor=pointer]:
+          - time [ref=f1e425]: 36d
+          - button "Conversation actions"
+        - generic "Trump Administration Research Status" [ref=f1e426] [cursor=pointer]:
+          - time [ref=f1e428]: 36d
+          - button "Conversation actions"
+        - generic "AI Text Watermarking in the EU" [ref=f1e429] [cursor=pointer]:
+          - time [ref=f1e431]: 36d
+          - button "Conversation actions"
+        - generic "tell me a story" [ref=f1e432] [cursor=pointer]:
+          - time [ref=f1e434]: 36d
+          - button "Conversation actions"
+        - generic "Request for a long story" [ref=f1e435] [cursor=pointer]:
+          - time [ref=f1e437]: 36d
+          - button "Conversation actions"
+        - generic "Good Morning Coffee Chat" [ref=f1e438] [cursor=pointer]:
+          - time [ref=f1e440]: 36d
+          - button "Conversation actions"
+        - generic "Casual Greeting Exchange" [ref=f1e441] [cursor=pointer]:
+          - time [ref=f1e443]: 36d
+          - button "Conversation actions"
+        - generic "Greeting User" [ref=f1e444] [cursor=pointer]:
+          - time [ref=f1e446]: 36d
+          - button "Conversation actions"
+        - generic "Greetings" [ref=f1e447] [cursor=pointer]:
+          - time [ref=f1e449]: 36d
+          - button "Conversation actions"
+        - generic "Greeting Inquiry" [ref=f1e450] [cursor=pointer]:
+          - time [ref=f1e452]: 36d
+          - button "Conversation actions"
+        - generic "海飞丝洗发水怎么说" [ref=f1e453] [cursor=pointer]:
+          - time [ref=f1e455]: 36d
+          - button "Conversation actions"
+        - generic "Tall Human Being Chronicles" [ref=f1e456] [cursor=pointer]:
+          - time [ref=f1e458]: 36d
+          - button "Conversation actions"
+        - generic "The Tall Human Chronicles" [ref=f1e459] [cursor=pointer]:
+          - time [ref=f1e461]: 36d
+          - button "Conversation actions"
+        - generic "Tall Person Club Chat" [ref=f1e462] [cursor=pointer]:
+          - time [ref=f1e464]: 36d
+          - button "Conversation actions"
+        - generic "Jeffrey Epstein Case Breaking Developments" [ref=f1e465] [cursor=pointer]:
+          - time [ref=f1e467]: 36d
+          - button "Conversation actions"
+        - generic "Duke Kunshan Class of 2030 Updates" [ref=f1e468] [cursor=pointer]:
+          - time [ref=f1e470]: 36d
+          - button "Conversation actions"
+        - generic "Greeting" [ref=f1e471] [cursor=pointer]:
+          - time [ref=f1e473]: 37d
+          - button "Conversation actions"
+        - generic "Jeffrey Epstein Search Update" [ref=f1e474] [cursor=pointer]:
+          - time [ref=f1e476]: 37d
+          - button "Conversation actions"
+        - generic "Jeffrey Epstein Search News Update" [ref=f1e477] [cursor=pointer]:
+          - time [ref=f1e479]: 37d
+          - button "Conversation actions"
+        - generic "Jeffrey Epstein News Update" [ref=f1e480] [cursor=pointer]:
+          - time [ref=f1e482]: 37d
+          - button "Conversation actions"
+        - generic "Jeffrey Epstein News Update" [ref=f1e483] [cursor=pointer]:
+          - time [ref=f1e485]: 37d
+          - button "Conversation actions"
+        - generic "Jeff Epstein Latest News" [ref=f1e486] [cursor=pointer]:
+          - time [ref=f1e488]: 37d
+          - button "Conversation actions"
+        - generic "Epstein News Update" [ref=f1e489] [cursor=pointer]:
+          - time [ref=f1e491]: 37d
+          - button "Conversation actions"
+        - 'generic "Jeffrey Epstein: Latest News & Updates" [ref=f1e492] [cursor=pointer]':
+          - time [ref=f1e494]: 37d
+          - button "Conversation actions"
+        - generic "The Absurdly Random Tale" [ref=f1e495] [cursor=pointer]:
+          - time [ref=f1e497]: 37d
+          - button "Conversation actions"
+        - generic "Greeting Message" [ref=f1e498] [cursor=pointer]:
+          - time [ref=f1e500]: 37d
+          - button "Conversation actions"
+        - generic "best programming language debate" [ref=f1e501] [cursor=pointer]:
+          - time [ref=f1e503]: 37d
+          - button "Conversation actions"
+        - generic "Best Programming Language Debate" [ref=f1e504] [cursor=pointer]:
+          - time [ref=f1e506]: 37d
+          - button "Conversation actions"
+        - generic "Best Programming Language Debate" [ref=f1e507] [cursor=pointer]:
+          - time [ref=f1e509]: 37d
+          - button "Conversation actions"
+        - generic "latest on jeffrey epstein" [ref=f1e510] [cursor=pointer]:
+          - time [ref=f1e512]: 37d
+          - button "Conversation actions"
+        - generic "Trump News Update" [ref=f1e513] [cursor=pointer]:
+          - time [ref=f1e515]: 37d
+          - button "Conversation actions"
+        - generic "Trump News Update" [ref=f1e516] [cursor=pointer]:
+          - time [ref=f1e518]: 37d
+          - button "Conversation actions"
+        - generic "Good Morning Greetings" [ref=f1e519] [cursor=pointer]:
+          - time [ref=f1e521]: 37d
+          - button "Conversation actions"
+        - generic "What's Up" [ref=f1e522] [cursor=pointer]:
+          - time [ref=f1e524]: 37d
+          - button "Conversation actions"
+        - generic "Epstein Files Update" [ref=f1e525] [cursor=pointer]:
+          - time [ref=f1e527]: 37d
+          - button "Conversation actions"
+        - generic "Epstein Files Update" [ref=f1e528] [cursor=pointer]:
+          - time [ref=f1e530]: 37d
+          - button "Conversation actions"
+        - generic "Grok Updates" [ref=f1e531] [cursor=pointer]:
+          - time [ref=f1e533]: 37d
+          - button "Conversation actions"
+        - generic "Morning Greetings" [ref=f1e534] [cursor=pointer]:
+          - time [ref=f1e536]: 37d
+          - button "Conversation actions"
+        - generic "Good Morning Greeting" [ref=f1e537] [cursor=pointer]:
+          - time [ref=f1e539]: 37d
+          - button "Conversation actions"
+        - generic "Greeting User" [ref=f1e540] [cursor=pointer]:
+          - time [ref=f1e542]: 37d
+          - button "Conversation actions"
+        - generic "Greeting" [ref=f1e543] [cursor=pointer]:
+          - time [ref=f1e545]: 37d
+          - button "Conversation actions"
+        - generic "Greeting Exchange" [ref=f1e546] [cursor=pointer]:
+          - time [ref=f1e548]: 37d
+          - button "Conversation actions"
+        - generic "Greeting User" [ref=f1e549] [cursor=pointer]:
+          - time [ref=f1e551]: 37d
+          - button "Conversation actions"
+        - generic "Greeting" [ref=f1e552] [cursor=pointer]:
+          - time [ref=f1e554]: 37d
+          - button "Conversation actions"
+        - generic "Greeting" [ref=f1e555] [cursor=pointer]:
+          - time [ref=f1e557]: 37d
+          - button "Conversation actions"
+        - generic "Greeting" [ref=f1e558] [cursor=pointer]:
+          - time [ref=f1e560]: 37d
+          - button "Conversation actions"
+        - generic "Greeting User" [ref=f1e561] [cursor=pointer]:
+          - time [ref=f1e563]: 37d
+          - button "Conversation actions"
+        - generic "Greeting" [ref=f1e564] [cursor=pointer]:
+          - time [ref=f1e566]: 37d
+          - button "Conversation actions"
+        - generic "Greeting" [ref=f1e567] [cursor=pointer]:
+          - time [ref=f1e569]: 37d
+          - button "Conversation actions"
+        - generic "Greeting" [ref=f1e570] [cursor=pointer]:
+          - time [ref=f1e572]: 37d
+          - button "Conversation actions"
+        - generic "Greeting" [ref=f1e573] [cursor=pointer]:
+          - time [ref=f1e575]: 37d
+          - button "Conversation actions"
+        - generic "Good Morning Greeting" [ref=f1e576] [cursor=pointer]:
+          - time [ref=f1e578]: 37d
+          - button "Conversation actions"
+        - generic "Good Morning Greeting" [ref=f1e579] [cursor=pointer]:
+          - time [ref=f1e581]: 37d
+          - button "Conversation actions"
+        - generic "Latest News on Grok" [ref=f1e582] [cursor=pointer]:
+          - time [ref=f1e584]: 37d
+          - button "Conversation actions"
+        - generic "Greetings" [ref=f1e585] [cursor=pointer]:
+          - time [ref=f1e587]: 37d
+          - button "Conversation actions"
+  - main [ref=f1e588]:
+    - generic [ref=f1e589]:
+      - generic [ref=f1e590]:
+        - button "Hide sidebar" [expanded] [pressed] [ref=f1e591] [cursor=pointer]
+        - 'button "Account: Jacob Zymet. Active profile: Personal. Switch profile" [ref=f1e596] [cursor=pointer]':
+          - generic [aria-hidden] [ref=f1e597]: JZ
+          - generic [ref=f1e599]:
+            - strong [ref=f1e600]: Jacob Zymet
+            - generic [ref=f1e601]: Personal
+      - generic [ref=f1e605]:
+        - button "Turn on privacy mode" [ref=f1e606] [cursor=pointer]
+        - button "Notifications" [ref=f1e612] [cursor=pointer]
+        - button "Open settings" [ref=f1e615] [cursor=pointer]
+        - button "Show activity sidebar" [ref=f1e619] [cursor=pointer]
+    - generic [ref=f1e623]:
+      - generic [ref=f1e624]:
+        - generic [ref=f1e628]:
+          - img "Gopher" [ref=f1e629]
+          - heading "Still up?, Jacob Zymet" [level=1] [ref=f1e630]
+          - paragraph [ref=f1e631]:
+            - text: Chatting with inclusionai/ling-3.0-flash-vl:free via
+            - generic [ref=f1e632]: OpenRouter
+          - generic [ref=f1e633]:
+            - generic [ref=f1e634]:
+              - textbox "How can I help you today? Type @ to mention" [active] [ref=f1e635]
+              - generic [ref=f1e636]:
+                - generic [ref=f1e637]:
+                  - button "Add files and capabilities" [ref=f1e639] [cursor=pointer]
+                  - button "Think" [ref=f1e642] [cursor=pointer]:
+                    - generic [aria-hidden] [ref=f1e645]: ▾
+                  - button "Open terminal" [ref=f1e646] [cursor=pointer]
+                  - button "Choose workspace folder" [ref=f1e649] [cursor=pointer]
+                - generic [ref=f1e653]:
+                  - button "Voice input" [ref=f1e654] [cursor=pointer]
+                  - button "Branch into a new chat" [disabled] [ref=f1e658]:
+                    - generic [ref=f1e664]: Branch
+                  - button "Send message" [disabled] [ref=f1e665]
+            - generic [ref=f1e668]:
+              - generic "Recommended — all agent skills are available; the model uses them when needed" [ref=f1e671]:
+                - generic [ref=f1e672]: Agent · skills when needed
+                - button "Turn off agent mode" [ref=f1e673] [cursor=pointer]: ×
+              - button "Model" [ref=f1e675] [cursor=pointer]: inclusionai/ling-3.0-flash-vl:free
+        - generic [aria-hidden]:
+          - generic:
+            - button
+            - generic:
+              - generic: Terminal
+              - textbox:
+                - /placeholder: Folder for this chat
+              - button
+              - button
+              - button
+            - generic:
+              - generic:
+                - paragraph: Choose a folder for this chat. The model and terminal stay inside it.
+              - complementary:
+                - list
+      - complementary "Turn activity":
+        - generic: Activity
+        - generic:
+          - generic:
+            - generic:
+              - paragraph: Select an assistant reply to inspect reasoning and tool steps.
