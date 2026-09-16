@@ -298,6 +298,10 @@ function modelMenuTriggerEl() {
   return (modelMenuContext && modelMenuContext.trigger) || chatModelSelect;
 }
 
+function modelMenuHasNetwork() {
+  return !!chatModelMenu?.querySelector('[data-model-tab="network"]');
+}
+
 function modelSearchEnabled() {
   return modelMenuOptions.length > 0;
 }
@@ -478,7 +482,7 @@ function renderModelMenuList() {
   syncModelMenuSummary();
   chatModelList.setAttribute(
     'aria-label',
-    terms.length ? 'Matching models' : 'All available models'
+    terms.length ? 'Matching models' : (modelMenuHasNetwork() ? 'Network models' : 'All available models')
   );
 }
 
