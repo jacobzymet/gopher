@@ -820,8 +820,7 @@ async fn run_agent_loop(
     let context_window = request
         .context_window_tokens
         .or_else(|| {
-            std::env::var("TENSOR_AGENT_CONTEXT_TOKENS")
-                .or_else(|_| std::env::var("TENSORUI_AGENT_CONTEXT_TOKENS"))
+            std::env::var("GOPHER_AGENT_CONTEXT_TOKENS")
                 .ok()
                 .and_then(|value| value.parse().ok())
         })
@@ -4526,12 +4525,12 @@ mod tests {
     #[test]
     fn fetch_decodes_json_and_markdown() {
         let json = decode_fetched_body(
-            br#"{"name":"tensor","ok":true}"#,
+            br#"{"name":"gopher","ok":true}"#,
             "application/json; charset=utf-8",
             "https://example.com/api/v1/models",
         )
         .unwrap();
-        assert!(json.contains("\"name\": \"tensor\""));
+        assert!(json.contains("\"name\": \"gopher\""));
         assert!(json.contains("\"ok\": true"));
 
         let markdown = decode_fetched_body(

@@ -730,7 +730,7 @@ pub(super) fn atomic_write_with_permissions(
         .map(|byte| format!("{byte:02x}"))
         .collect::<String>();
     let tmp = parent.join(format!(
-        ".{file_name}.{}.{}.tensor-tmp",
+        ".{file_name}.{}.{}.gopher-tmp",
         std::process::id(),
         suffix
     ));
@@ -1103,12 +1103,12 @@ mod tests {
             &json!({
                 "path": "hello.txt",
                 "old_string": "world",
-                "new_string": "tensor"
+                "new_string": "gopher"
             }),
         )
         .unwrap();
         let read = read_file(&ws, &json!({ "path": "hello.txt" })).unwrap();
-        assert!(read.contains("hello tensor"));
+        assert!(read.contains("hello gopher"));
         delete_file(&ws, &json!({ "path": "hello.txt" })).unwrap();
         assert!(read_file(&ws, &json!({ "path": "hello.txt" })).is_err());
     }

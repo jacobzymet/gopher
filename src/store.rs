@@ -63,11 +63,11 @@ impl From<anyhow::Error> for StoreError {
 }
 
 pub fn data_dir() -> PathBuf {
-    // Keep the on-disk folder as `tensorUI` forever — product branding (Tensor)
+    // Keep the on-disk folder as `gopher` forever — product branding (Gopher)
     // must not move chats/config and orphan existing installs.
-    ProjectDirs::from("", "", "tensorUI")
+    ProjectDirs::from("", "", "gopher")
         .map(|dirs| dirs.config_dir().to_path_buf())
-        .unwrap_or_else(|| PathBuf::from("tensorUI-data"))
+        .unwrap_or_else(|| PathBuf::from("gopher-data"))
 }
 
 pub fn chats_path(root: &Path) -> PathBuf {

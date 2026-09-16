@@ -327,7 +327,7 @@ fn spawn_pty(
     let replay_out = Arc::clone(&replay);
     let out_for_reader = out_tx;
     std::thread::Builder::new()
-        .name("tensor-pty-out".into())
+        .name("gopher-pty-out".into())
         .spawn(move || {
             let mut buf = [0u8; 8192];
             loop {
@@ -349,7 +349,7 @@ fn spawn_pty(
         .map_err(|err| format!("Could not start terminal reader: {err}"))?;
 
     std::thread::Builder::new()
-        .name("tensor-pty-in".into())
+        .name("gopher-pty-in".into())
         .spawn(move || {
             let mut child = child;
             loop {
@@ -386,9 +386,7 @@ fn live_command(cwd: &Path) -> CommandBuilder {
     #[cfg(windows)]
     {
         cmd.arg("-NoLogo");
-        if std::env::var_os("TENSOR_TERMINAL_NOPROFILE").is_some()
-            || std::env::var_os("TENSORUI_TERMINAL_NOPROFILE").is_some()
-        {
+        if std::env::var_os("GOPHER_TERMINAL_NOPROFILE").is_some() {
             cmd.arg("-NoProfile");
         }
     }
@@ -700,7 +698,7 @@ mod tests {
     #[tokio::test]
     async fn pty_session_runs_a_command() {
         unsafe {
-            std::env::set_var("TENSOR_TERMINAL_NOPROFILE", "1");
+            std::env::set_var("GOPHER_TERMINAL_NOPROFILE", "1");
         }
         let dir = tempfile::tempdir().expect("temp dir");
         let ws = Workspace::open(&dir.path().display().to_string()).expect("workspace");
@@ -709,9 +707,9 @@ mod tests {
             .expect("open session");
         let io = attach_session(&opened.id).await.expect("attach");
         let probe = if cfg!(windows) {
-            "Write-Output 'tensor-shell-ok'\r"
+            "Write-Output 'gopher-shell-ok'\r"
         } else {
-            "echo tensor-shell-ok\r"
+            "echo gopher-shell-ok\r"
         };
         let mut buf = String::from_utf8_lossy(&io.replay).into_owned();
         let mut dsr_at = 0usize;
@@ -722,7 +720,7 @@ mod tests {
         let deadline = start + Duration::from_secs(20);
         let mut sent = false;
         while std::time::Instant::now() < deadline
-            && !buf.to_ascii_lowercase().contains("tensor-shell-ok")
+            && !buf.to_ascii_lowercase().contains("gopher-shell-ok")
         {
             if !sent && start.elapsed() > Duration::from_millis(400) {
                 to_pty
@@ -742,7 +740,7 @@ mod tests {
         }
         close_session(&opened.id).await;
         assert!(
-            buf.to_ascii_lowercase().contains("tensor-shell-ok"),
+            buf.to_ascii_lowercase().contains("gopher-shell-ok"),
             "unexpected PTY output: {buf:?}"
         );
     }

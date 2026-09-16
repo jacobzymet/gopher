@@ -241,53 +241,39 @@ function modelProviderLabel(option) {
   return String(option?.provider || '').trim() || 'Provider';
 }
 
-function modelMenuHasLocal() {
-  return modelMenuOptions.some(modelLooksLocal);
+function orderedUnifiedModelOptions() {
+  const byValue = new Map(modelMenuOptions.map((option) => [option.value, option]));
+  const ordered = [];
+  const seen = new Set();
+  const add = (value) => {
+    const option = byValue.get(value);
+    if (!option || seen.has(value)) return;
+    seen.add(value);
+    ordered.push(option);
+  };
+  add(modelMenuSelectedId());
+  pinnedModelIds.forEach(add);
+  recentModelIds.forEach(add);
+  modelMenuOptions.forEach((option) => add(option.value));
+  return ordered;
 }
 
-function modelMenuHasNetwork() {
-  return modelMenuOptions.some((option) => !modelLooksLocal(option));
+function modelMenuSection(option) {
+  if (option.value === modelMenuSelectedId()) return 'current';
+  if (isModelPinned(option.value)) return 'pinned';
+  if (recentModelIds.includes(option.value)) return 'recent';
+  return 'provider:' + modelProviderKey(option);
 }
 
-function fallbackModelMenuTab() {
-  if (pinnedModelIds.length) return 'pins';
-  if (recentModelIds.length) return 'recents';
-  if (modelMenuHasNetwork()) return 'network';
-  if (modelMenuHasLocal()) return 'local';
-  return 'recents';
-}
-
-function normalizeModelMenuTab(tab) {
-  if (tab === 'recents' || tab === 'pins' || tab === 'local' || tab === 'network') return tab;
-  return fallbackModelMenuTab();
-}
-
-function modelMenuUsesProviderGroups() {
-  return !modelFilterTerms().length && (modelMenuTab === 'local' || modelMenuTab === 'network');
-}
-
-function groupModelOptions(options) {
-  const groups = [];
-  const byKey = new Map();
-  options.forEach((option) => {
-    const key = modelProviderKey(option);
-    let group = byKey.get(key);
-    if (!group) {
-      group = { key, label: modelProviderLabel(option), options: [] };
-      byKey.set(key, group);
-      groups.push(group);
-    }
-    group.options.push(option);
-  });
-  return groups;
+function modelMenuSectionLabel(section, option) {
+  if (section === 'current') return 'Current';
+  if (section === 'pinned') return 'Pinned';
+  if (section === 'recent') return 'Recent';
+  return modelProviderLabel(option);
 }
 
 function visibleModelMenuOptions() {
-  if (!modelMenuUsesProviderGroups()) return modelMenuMatches;
-  const forceOpen = modelFilterTerms().length > 0;
-  return groupModelOptions(modelMenuMatches).flatMap((group) => (
-    forceOpen || !isModelProviderCollapsed(group.key) ? group.options : []
-  ));
+  return modelMenuMatches;
 }
 
 function modelMenuIsOpen() {
@@ -313,8 +299,7 @@ function modelMenuTriggerEl() {
 }
 
 function modelSearchEnabled() {
-  if (modelMenuContext) return modelMenuOptions.length > 0;
-  return modelMenuOptions.length >= MODEL_SEARCH_MIN_OPTIONS;
+  return modelMenuOptions.length > 0;
 }
 
 function modelFilterTerms() {
@@ -322,51 +307,25 @@ function modelFilterTerms() {
 }
 
 function modelMenuSourceOptions() {
-  if (modelFilterTerms().length) return modelMenuOptions;
-  if (modelMenuTab === 'local') return modelMenuOptions.filter(modelLooksLocal);
-  if (modelMenuTab === 'network') return modelMenuOptions.filter((option) => !modelLooksLocal(option));
-  const byValue = new Map(modelMenuOptions.map((option) => [option.value, option]));
-  const order = modelMenuTab === 'pins' ? pinnedModelIds : recentModelIds;
-  return order
-    .map((id) => byValue.get(id))
-    .filter(Boolean);
+  return orderedUnifiedModelOptions();
 }
 
-function syncModelMenuTabs() {
-  const tabs = chatModelMenu?.querySelectorAll('[data-model-tab]');
-  if (!tabs) return;
-  const hasLocal = modelMenuHasLocal();
-  const hasNetwork = modelMenuHasNetwork();
-  tabs.forEach((tab) => {
-    const name = tab.getAttribute('data-model-tab');
-    if (name === 'local') tab.classList.toggle('is-hidden', !hasLocal);
-    if (name === 'network') tab.classList.toggle('is-hidden', !hasNetwork);
-    const active = name === modelMenuTab;
-    tab.classList.toggle('is-active', active);
-    tab.setAttribute('aria-selected', active ? 'true' : 'false');
-    tab.tabIndex = active ? 0 : -1;
-  });
-  if (chatModelList) {
-    const label = modelMenuTab === 'recents'
-      ? 'Recent models'
-      : (modelMenuTab === 'pins'
-        ? 'Pinned models'
-        : (modelMenuTab === 'local' ? 'Local models' : 'Network models'));
-    chatModelList.setAttribute('aria-label', label);
+function syncModelMenuSummary() {
+  const selected = modelMenuOptions.find((option) => option.value === modelMenuSelectedId());
+  if (chatModelSummary) {
+    const prefix = modelMenuContext ? 'Selected' : 'Current';
+    chatModelSummary.textContent = selected
+      ? prefix + ' · ' + selected.label + ' · ' + modelProviderLabel(selected)
+      : 'Search every available model';
   }
-}
-
-function setModelMenuTab(tab, { keepActive = false } = {}) {
-  const next = normalizeModelMenuTab(tab);
-  modelMenuFilter = '';
-  if (chatModelSearch) chatModelSearch.value = '';
-  if (modelMenuTab === next && modelMenuIsOpen()) {
-    applyModelFilter({ keepActive });
-    return;
+  const providers = new Set(modelMenuOptions.map(modelProviderKey)).size;
+  const local = modelMenuOptions.filter(modelLooksLocal).length;
+  if (chatModelCatalogMeta) {
+    chatModelCatalogMeta.textContent = modelMenuOptions.length + ' models · '
+      + providers + (providers === 1 ? ' provider' : ' providers')
+      + (local ? ' · ' + local + ' local' : '');
   }
-  modelMenuTab = next;
-  syncModelMenuTabs();
-  if (modelMenuIsOpen()) applyModelFilter({ keepActive });
+  chatModelList?.setAttribute('aria-label', 'All available models');
 }
 
 /**
@@ -423,39 +382,43 @@ function highlightModelText(value, terms) {
   return out;
 }
 
-function renderModelOptionHtml(option, index, { showProvider, terms }) {
+function renderModelOptionHtml(option, index, { terms }) {
   const isSelected = option.value === modelMenuSelectedId();
   const picking = !!modelMenuContext;
   const pinned = isModelPinned(option.value);
-  const badge = showProvider && option.provider
-    ? '<span class="chat-model-origin-pill" title="'
-      + escapeModelAttr(chatShell.classList.contains('privacy-mode') ? '' : option.provider) + '">'
-      + highlightModelText(option.provider, terms) + '</span>'
-    : '';
+  const local = modelLooksLocal(option);
   const defaultBadge = isSelected && !picking
     ? '<span class="chat-model-default-pill" title="Default model">Default</span>'
+    : '';
+  const thinkingBadge = option.thinking
+    ? '<span class="chat-model-capability">Reasoning</span>'
+    : '';
+  const localityBadge = local
+    ? '<span class="chat-model-capability">Local</span>'
     : '';
   const prefix = picking
     ? (isSelected ? 'Selected · ' : '')
     : (isSelected ? 'Default · ' : 'Set as default · ');
   return '<div class="chat-model-option' + (isSelected ? ' is-selected' : '')
-    + '" role="option" id="chat-model-option-' + index + '"'
+    + (local ? ' is-local' : '') + '" role="option" id="chat-model-option-' + index + '"'
     + ' data-value="' + escapeModelAttr(option.value) + '"'
-    + ' title="' + escapeModelAttr(
-      prefix + modelOptionTitle(option.label, option.provider)
-    ) + '"'
+    + ' title="' + escapeModelAttr(prefix + modelOptionTitle(option.label, option.provider)) + '"'
     + ' aria-selected="' + (isSelected ? 'true' : 'false') + '" tabindex="-1">'
-    + '<button type="button" class="chat-model-option-main" data-model-pick="'
+    + '<button type="button" class="chat-model-option-main" tabindex="-1" data-model-pick="'
     + escapeModelAttr(option.value) + '">'
-    + '<span class="chat-model-option-lead">'
-    + MODEL_MARK_ICON
-    + '<span class="chat-model-option-name">' + highlightModelText(option.label, terms) + '</span>'
-    + defaultBadge
-    + '</span>'
-    + badge
+    + '<span class="chat-model-option-icon" aria-hidden="true">'
+    + MODEL_MARK_ICON + '</span>'
+    + '<span class="chat-model-option-copy">'
+    + '<span class="chat-model-option-name-row"><span class="chat-model-option-name">'
+    + highlightModelText(option.label, terms) + '</span>' + defaultBadge + '</span>'
+    + '<span class="chat-model-option-meta">'
+    + '<span class="chat-model-provider">' + highlightModelText(modelProviderLabel(option), terms) + '</span>'
+    + localityBadge
+    + thinkingBadge
+    + '</span></span>'
     + '</button>'
     + '<button type="button" class="chat-model-pin' + (pinned ? ' is-pinned' : '') + '"'
-    + ' data-model-pin="' + escapeModelAttr(option.value) + '"'
+    + ' tabindex="-1" data-model-pin="' + escapeModelAttr(option.value) + '"'
     + ' aria-label="' + (pinned ? 'Unpin model' : 'Pin model') + '"'
     + ' aria-pressed="' + (pinned ? 'true' : 'false') + '"'
     + ' title="' + (pinned ? 'Unpin' : 'Pin') + '">'
@@ -466,44 +429,27 @@ function renderModelOptionHtml(option, index, { showProvider, terms }) {
 
 function renderModelMenuList() {
   const terms = modelFilterTerms();
-  const grouped = modelMenuUsesProviderGroups();
-  const forceOpen = !!terms.length;
-  let html = '';
-  let optionIndex = 0;
-  if (grouped) {
-    groupModelOptions(modelMenuMatches).forEach((group) => {
-      const collapsed = !forceOpen && isModelProviderCollapsed(group.key);
-      html += '<section class="chat-model-group' + (collapsed ? ' is-collapsed' : '') + '"'
-        + ' data-provider-key="' + escapeModelAttr(group.key) + '">'
-        + '<button type="button" class="chat-model-group-toggle" data-model-group="'
-        + escapeModelAttr(group.key) + '"'
-        + ' aria-expanded="' + (collapsed ? 'false' : 'true') + '">'
-        + THINK_CHEVRON
-        + '<span class="chat-model-group-name">' + highlightModelText(group.label, terms) + '</span>'
-        + '<span class="chat-model-group-count">' + group.options.length + '</span>'
-        + '</button>'
-        + '<div class="chat-model-group-list" role="group" aria-label="'
-        + escapeModelAttr(group.label) + '">';
-      if (!collapsed) {
-        group.options.forEach((option) => {
-          html += renderModelOptionHtml(option, optionIndex, { showProvider: false, terms });
-          optionIndex += 1;
-        });
-      }
-      html += '</div></section>';
-    });
-  } else {
-    html = modelMenuMatches.map((option, index) => (
-      renderModelOptionHtml(option, index, { showProvider: true, terms })
-    )).join('');
-  }
-  chatModelList.innerHTML = html;
-  chatModelList.querySelectorAll('.chat-model-origin-pill').forEach((badge) => {
-    applyPrivacyMosaic(badge, 'model-menu-provider:' + badge.textContent);
-    setIdentityTitle(badge, badge.textContent);
+  const counts = new Map();
+  modelMenuMatches.forEach((option) => {
+    const section = modelMenuSection(option);
+    counts.set(section, (counts.get(section) || 0) + 1);
   });
-  chatModelList.querySelectorAll('.chat-model-group-name').forEach((label) => {
-    applyPrivacyMosaic(label, 'model-menu-provider-group:' + label.textContent);
+  let previousSection = '';
+  let html = '';
+  modelMenuMatches.forEach((option, index) => {
+    const section = terms.length ? 'results' : modelMenuSection(option);
+    if (!terms.length && section !== previousSection) {
+      html += '<div class="chat-model-section-label" role="presentation">'
+        + '<span>' + escapeModelText(modelMenuSectionLabel(section, option)) + '</span>'
+        + '<span>' + counts.get(section) + '</span></div>';
+      previousSection = section;
+    }
+    html += renderModelOptionHtml(option, index, { terms });
+  });
+  chatModelList.innerHTML = html;
+  chatModelList.querySelectorAll('.chat-model-provider').forEach((label) => {
+    applyPrivacyMosaic(label, 'model-menu-provider:' + label.textContent);
+    setIdentityTitle(label, label.textContent);
   });
   chatModelList.querySelectorAll('.chat-model-option').forEach((optionEl) => {
     const option = modelMenuOptions.find((item) => item.value === optionEl.dataset.value);
@@ -519,28 +465,21 @@ function renderModelMenuList() {
   chatModelEmpty.classList.toggle('is-hidden', !empty);
   chatModelList.classList.toggle('is-hidden', empty);
   if (empty) {
-    if (modelMenuTab === 'recents' && !terms.length) {
-      chatModelEmpty.textContent = 'Pick a model from Local or Network to set your default.';
-    } else if (modelMenuTab === 'pins' && !terms.length) {
-      chatModelEmpty.textContent = 'No pinned models yet. Pin any model to keep it here.';
-    } else if (modelMenuTab === 'local' && !terms.length) {
-      chatModelEmpty.textContent = 'No local models.';
-    } else if (modelMenuTab === 'network' && !terms.length) {
-      chatModelEmpty.textContent = 'No network models.';
-    } else if (terms.length) {
-      chatModelEmpty.textContent = 'No matches for “' + modelMenuFilter.trim() + '”.';
-    } else {
-      chatModelEmpty.textContent = 'No models available.';
-    }
+    chatModelEmpty.textContent = terms.length
+      ? 'No models match “' + modelMenuFilter.trim() + '”. Try a model or provider name.'
+      : 'No models are available. Add or reconnect a provider in Settings.';
   }
   if (chatModelSearchCount) {
     chatModelSearchCount.textContent = terms.length
       ? modelMenuMatches.length + (modelMenuMatches.length === 1 ? ' result' : ' results')
-      : '';
-    chatModelSearchCount.classList.toggle('is-hidden', !terms.length);
+      : modelMenuOptions.length + (modelMenuOptions.length === 1 ? ' model' : ' models');
+    chatModelSearchCount.classList.toggle('is-hidden', false);
   }
-  if (terms.length) chatModelList.setAttribute('aria-label', 'Search results across all models');
-  else syncModelMenuTabs();
+  syncModelMenuSummary();
+  chatModelList.setAttribute(
+    'aria-label',
+    terms.length ? 'Matching models' : 'All available models'
+  );
 }
 
 /** Re-filter and repaint the open menu after the query changed. */
@@ -591,50 +530,19 @@ function positionModelMenu() {
     closeModelMenu();
     return false;
   }
-  const rect = anchor.getBoundingClientRect();
   const view = modelMenuViewport();
-  const pad = 8;
-  const gap = 6;
-  const viewRight = view.left + view.width;
-  const viewBottom = view.top + view.height;
-  const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-  // Match CSS max-height: min(23rem, 60vh), then shrink to the open side.
-  const preferred = Math.min(23 * rem, view.height * 0.6);
-
-  const menuWidth = Math.min(
-    chatModelMenu.offsetWidth || 352,
-    Math.max(0, view.width - pad * 2)
-  );
-  const maxLeft = viewRight - menuWidth - pad;
-  const idealLeft = rect.left + (rect.width - menuWidth) / 2;
-  const left = Math.min(Math.max(view.left + pad, idealLeft), Math.max(view.left + pad, maxLeft));
-
-  const spaceBelow = viewBottom - rect.bottom - pad - gap;
-  const spaceAbove = rect.top - view.top - pad - gap;
-  const openAbove = spaceBelow < preferred && spaceAbove > spaceBelow;
-  const available = Math.max(0, openAbove ? spaceAbove : spaceBelow);
-  const maxHeight = Math.max(8, Math.min(preferred, available));
+  const pad = view.width < 560 ? 8 : 20;
+  const width = Math.min(672, Math.max(0, view.width - pad * 2));
+  const maxHeight = Math.min(680, Math.max(0, view.height - pad * 2));
+  chatModelMenu.style.width = Math.round(width) + 'px';
   chatModelMenu.style.maxHeight = Math.round(maxHeight) + 'px';
-
-  const menuHeight = Math.min(chatModelMenu.offsetHeight || maxHeight, maxHeight);
-  let top;
-  if (openAbove) {
-    top = Math.max(view.top + pad, rect.top - gap - menuHeight);
-  } else {
-    top = rect.bottom + gap;
-    if (top + menuHeight > viewBottom - pad) {
-      top = Math.max(view.top + pad, viewBottom - pad - menuHeight);
-    }
-  }
-
-  chatModelMenu.style.top = Math.round(top) + 'px';
-  chatModelMenu.style.left = Math.round(left) + 'px';
-  chatModelMenu.style.width = Math.round(menuWidth) + 'px';
+  const height = Math.min(chatModelMenu.offsetHeight || maxHeight, maxHeight);
+  chatModelMenu.style.left = Math.round(view.left + (view.width - width) / 2) + 'px';
+  chatModelMenu.style.top = Math.round(view.top + Math.max(pad, (view.height - height) / 2)) + 'px';
   chatModelMenu.style.right = 'auto';
-  chatModelMenu.style.transformOrigin = openAbove ? 'bottom center' : 'top center';
+  chatModelMenu.style.transformOrigin = 'center center';
   return true;
 }
-
 function closeModelMenu({ restoreFocus = false } = {}) {
   const trigger = modelMenuTriggerEl();
   const customAnchor = modelMenuContext && modelMenuContext.anchor;
@@ -651,9 +559,14 @@ function closeModelMenu({ restoreFocus = false } = {}) {
   clearTimeout(modelMenuCloseTimer);
   modelMenuCloseTimer = null;
   chatModelMenu.classList.remove('is-open');
+  chatModelBackdrop?.classList.remove('is-open');
   const finish = () => {
     chatModelMenu.classList.add('is-hidden');
+    chatModelBackdrop?.classList.add('is-hidden');
     chatModelMenu.style.maxHeight = '';
+    if (chatModelBackdrop && chatModelBackdrop.parentElement !== chatModelSelectWrap) {
+      chatModelSelectWrap.appendChild(chatModelBackdrop);
+    }
     if (chatModelMenu.parentElement !== chatModelSelectWrap) {
       chatModelSelectWrap.appendChild(chatModelMenu);
     }
@@ -695,23 +608,17 @@ function openModelMenu(opts) {
     modelMenuContext.trigger?.setAttribute('aria-expanded', 'false');
   }
   modelMenuContext = context;
+  if (chatModelBackdrop && chatModelBackdrop.parentElement !== document.body) {
+    document.body.appendChild(chatModelBackdrop);
+  }
   if (chatModelMenu.parentElement !== document.body) {
     document.body.appendChild(chatModelMenu);
   }
+  chatModelBackdrop?.classList.remove('is-hidden');
   const searchable = modelSearchEnabled();
   chatModelSearchWrap.classList.toggle('is-hidden', !searchable);
   modelMenuFilter = '';
   if (chatModelSearch) chatModelSearch.value = '';
-  if (modelMenuTab === 'recents' && !recentModelIds.length) {
-    modelMenuTab = pinnedModelIds.length ? 'pins' : fallbackModelMenuTab();
-  } else if (modelMenuTab === 'pins' && !pinnedModelIds.length) {
-    modelMenuTab = recentModelIds.length ? 'recents' : fallbackModelMenuTab();
-  } else if (modelMenuTab === 'local' && !modelMenuHasLocal()) {
-    modelMenuTab = fallbackModelMenuTab();
-  } else if (modelMenuTab === 'network' && !modelMenuHasNetwork()) {
-    modelMenuTab = fallbackModelMenuTab();
-  }
-  syncModelMenuTabs();
   chatModelMenu.classList.remove('is-hidden');
   chatModelSelectWrap.classList.toggle('is-open', !context);
   chatModelSelect.setAttribute('aria-expanded', context ? 'false' : 'true');
@@ -732,6 +639,7 @@ function openModelMenu(opts) {
     const currentTrigger = modelMenuTriggerEl();
     if (!currentTrigger || currentTrigger.getAttribute('aria-expanded') !== 'true') return;
     if (!positionModelMenu()) return;
+    chatModelBackdrop?.classList.add('is-open');
     chatModelMenu.classList.add('is-open');
   });
 }
@@ -748,7 +656,6 @@ function chooseModelOption(value) {
     closeModelMenu({ restoreFocus: true });
     return;
   }
-  rememberRecentModel(value);
   if (value !== selectedChatModel) {
     selectedChatModel = value;
     selectedRemoteModelId = selectedChatModel;
@@ -858,29 +765,6 @@ function modelCatalogIsComplete(network, options) {
     && !network?.remote_catalog_pending;
 }
 
-function resolveCollapsedProviderKey(savedKey, options) {
-  const key = String(savedKey || '').trim();
-  if (!key || !options.length) return key;
-  if (options.some((option) => modelProviderKey(option) === key)) return key;
-  const nameHits = options.filter((option) => option.provider === key);
-  if (nameHits.length) return modelProviderKey(nameHits[0]);
-  const baseHits = options.filter((option) => option.base === key);
-  if (baseHits.length) return modelProviderKey(baseHits[0]);
-  return key;
-}
-
-function remapCollapsedProviderKeys(keys, options) {
-  const seen = new Set();
-  const next = [];
-  (Array.isArray(keys) ? keys : []).forEach((key) => {
-    const resolved = resolveCollapsedProviderKey(key, options);
-    if (!resolved || seen.has(resolved)) return;
-    seen.add(resolved);
-    next.push(resolved);
-  });
-  return next;
-}
-
 function syncModelSelector(data) {
   const network = data.network || {};
   const remoteModels = network.remote_models || [];
@@ -915,13 +799,10 @@ function syncModelSelector(data) {
   modelMenuOptions = remoteOptions;
   const remappedPins = remapSavedModelIds(pinnedModelIds, remoteOptions);
   const remappedRecents = remapSavedModelIds(recentModelIds, remoteOptions);
-  const remappedCollapsed = remapCollapsedProviderKeys(collapsedModelProviders, remoteOptions);
   let pickerChanged = !sameIdList(remappedPins, pinnedModelIds)
-    || !sameIdList(remappedRecents, recentModelIds)
-    || !sameIdList(remappedCollapsed, collapsedModelProviders);
+    || !sameIdList(remappedRecents, recentModelIds);
   pinnedModelIds = remappedPins;
   recentModelIds = remappedRecents;
-  collapsedModelProviders = remappedCollapsed;
   if (!recentModelIds.length && selectedChatModel && remoteOptions.some((o) => o.value === selectedChatModel)) {
     recentModelIds = [selectedChatModel];
     pickerChanged = true;
@@ -3357,7 +3238,7 @@ function paintWordmarkSurface(id) {
   const changed = appSurface !== next;
   appSurface = next;
   document.getElementById('chatShell')?.setAttribute('data-surface', next);
-  document.title = 'Tensor | ' + label;
+  document.title = 'Gopher | ' + label;
   if (btn) btn.setAttribute('aria-label', 'Surface: ' + label + '. Switch surface');
   menu?.querySelectorAll('[data-surface]').forEach((item) => {
     const on = item.dataset.surface === next;
@@ -3603,9 +3484,6 @@ function syncPrivacyModeUi(enabled) {
     setIdentityTitle(optionEl, option ? prefix + modelOptionTitle(option.label, option.provider) : '');
     const badge = optionEl.querySelector('.chat-model-origin-pill');
     if (badge) setIdentityTitle(badge, badge.textContent);
-  });
-  chatModelList?.querySelectorAll('.chat-model-group-name').forEach((label) => {
-    applyPrivacyMosaic(label, 'model-menu-provider-group:' + label.textContent);
   });
   if (!btnPrivacyMode) return;
   btnPrivacyMode.classList.toggle('is-active', enabled);
@@ -4409,21 +4287,32 @@ chatModelSearchWrap.addEventListener('click', (event) => {
   event.stopPropagation();
   chatModelSearch.focus();
 });
+chatModelBackdrop?.addEventListener('click', () => closeModelMenu({ restoreFocus: true }));
+document.getElementById('btnModelMenuClose')?.addEventListener('click', () => closeModelMenu({ restoreFocus: true }));
+document.getElementById('btnModelClose')?.addEventListener('click', () => closeModelMenu({ restoreFocus: true }));
+document.getElementById('btnModelProviders')?.addEventListener('click', () => {
+  closeModelMenu();
+  openSettings('providers');
+});
+chatModelMenu.addEventListener('keydown', (event) => {
+  if (event.key !== 'Tab') return;
+  const focusable = [...chatModelMenu.querySelectorAll(
+    'button:not([disabled]):not([tabindex="-1"]), input:not([disabled]):not([tabindex="-1"])'
+  )].filter((element) => element.getClientRects().length > 0);
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+});
+
 chatModelMenu.addEventListener('click', (event) => {
-  const tab = event.target.closest('[data-model-tab]');
-  if (tab) {
-    event.preventDefault();
-    event.stopPropagation();
-    setModelMenuTab(tab.getAttribute('data-model-tab'));
-    return;
-  }
-  const group = event.target.closest('[data-model-group]');
-  if (group) {
-    event.preventDefault();
-    event.stopPropagation();
-    toggleModelProviderCollapsed(group.getAttribute('data-model-group') || '');
-    return;
-  }
+
   const pin = event.target.closest('[data-model-pin]');
   if (pin) {
     event.preventDefault();
@@ -4434,9 +4323,7 @@ chatModelMenu.addEventListener('click', (event) => {
     togglePinnedModel(value);
     const after = [...chatModelList.querySelectorAll('[data-model-pin]')];
     const same = after.find((item) => item.getAttribute('data-model-pin') === value);
-    const fallback = modelSearchEnabled()
-      ? chatModelSearch
-      : chatModelMenu.querySelector('[data-model-tab].is-active');
+        const fallback = chatModelSearch;
     (same || after[Math.min(Math.max(index, 0), after.length - 1)] || fallback)?.focus();
     return;
   }
@@ -4451,22 +4338,10 @@ chatModelMenu.addEventListener('click', (event) => {
   chooseModelOption(value);
 });
 chatModelMenu.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') {
-    event.preventDefault();
-    event.stopPropagation();
-    closeModelMenu({ restoreFocus: true });
-    return;
-  }
-  const tab = event.target.closest('[data-model-tab]');
-  if (!tab || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+  if (event.key !== 'Escape') return;
   event.preventDefault();
-  const tabs = [...chatModelMenu.querySelectorAll('[data-model-tab]')]
-    .filter((item) => !item.classList.contains('is-hidden'));
-  const index = tabs.indexOf(tab);
-  const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1
-    : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
-  setModelMenuTab(tabs[next].getAttribute('data-model-tab'));
-  tabs[next].focus();
+  event.stopPropagation();
+  closeModelMenu({ restoreFocus: true });
 });
 document.addEventListener('click', (event) => {
   if (!modelMenuIsOpen()) return;
@@ -4664,7 +4539,7 @@ function renderAppUpdatePane(status) {
   const currentRaw = String(status?.current || latestState?.version || '').replace(/^v/i, '');
   const currentLabel = currentRaw ? ('v' + currentRaw) : 'this build';
   if (appUpdateCurrent) {
-    appUpdateCurrent.textContent = currentRaw ? ('Tensor ' + currentLabel) : 'Tensor';
+    appUpdateCurrent.textContent = currentRaw ? ('Gopher ' + currentLabel) : 'Gopher';
   }
   if (btnAppUpdateNotes) {
     btnAppUpdateNotes.href = status?.release_url || 'https://github.com/jacobzymet/tensorUI/releases';
@@ -4690,7 +4565,7 @@ function renderAppUpdatePane(status) {
   const latestLabel = versionLabel(status.latest);
   if (status.update_available) {
     if (canInstall) {
-      appUpdateStatus.textContent = 'You’re on ' + currentLabel + '. Install ' + latestLabel + ' from GitHub and Tensor will restart.';
+      appUpdateStatus.textContent = 'You’re on ' + currentLabel + '. Install ' + latestLabel + ' from GitHub and Gopher will restart.';
     } else if (status.install_blocked) {
       appUpdateStatus.textContent = 'You’re on ' + currentLabel + '. ' + latestLabel + ' is available. ' + String(status.install_blocked);
     } else {
@@ -4719,12 +4594,12 @@ function showUpdateToast(status) {
   if (updateToastTitle) {
     updateToastTitle.textContent = status.release_name
       ? String(status.release_name)
-      : ('Tensor ' + latestLabel);
+      : ('Gopher ' + latestLabel);
   }
   if (updateToastBody) {
     if (canInstall) {
       updateToastBody.textContent =
-        'You’re on ' + currentLabel + '. Install ' + latestLabel + ' and Tensor will restart.';
+        'You’re on ' + currentLabel + '. Install ' + latestLabel + ' and Gopher will restart.';
     } else if (status.install_blocked) {
       updateToastBody.textContent =
         'You’re on ' + currentLabel + '. ' + latestLabel + ' is available. ' + String(status.install_blocked);
@@ -4790,7 +4665,7 @@ async function installAppUpdate() {
     updateToast.classList.add('is-busy');
     updateToast.setAttribute('aria-busy', 'true');
   }
-  const installingLabel = 'Downloading and installing ' + versionLabel(updateToast?.dataset?.latest || lastAppUpdateStatus?.latest) + '. Tensor will restart when it is done.';
+  const installingLabel = 'Downloading and installing ' + versionLabel(updateToast?.dataset?.latest || lastAppUpdateStatus?.latest) + '. Gopher will restart when it is done.';
   if (updateToastBody) updateToastBody.textContent = installingLabel;
   if (appUpdateStatus) appUpdateStatus.textContent = installingLabel;
   setUpdateInstallButtons(true, 'Installing…');
@@ -4800,8 +4675,8 @@ async function installAppUpdate() {
     if (!response.ok) {
       throw new Error(body.error || 'Could not install the update');
     }
-    if (updateToastBody) updateToastBody.textContent = 'Restarting Tensor…';
-    if (appUpdateStatus) appUpdateStatus.textContent = 'Restarting Tensor…';
+    if (updateToastBody) updateToastBody.textContent = 'Restarting Gopher…';
+    if (appUpdateStatus) appUpdateStatus.textContent = 'Restarting Gopher…';
     setUpdateInstallButtons(true, 'Restarting…');
   } catch (error) {
     updateInstallInFlight = false;
@@ -4851,7 +4726,7 @@ btnAppUpdateCheck?.addEventListener('click', () => {
     openSettings('providers');
     startupUrl.searchParams.delete('settings');
     history.replaceState(
-      { tensor: 1 },
+      { gopher: 1 },
       '',
       startupUrl.pathname + startupUrl.search + startupUrl.hash
     );

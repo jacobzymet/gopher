@@ -1,11 +1,11 @@
-# Tensor installer for Windows.
+# Gopher installer for Windows.
 # Usage: irm https://github.com/jacobzymet/tensorUI/releases/latest/download/install.ps1 | iex
 & {
     $ErrorActionPreference = 'Stop'
 
     $Repo = 'jacobzymet/tensorUI'
     $GitHub = "https://github.com/$Repo"
-    $BinName = 'tensor.exe'
+    $BinName = 'gopher.exe'
 
     function Write-Info([string]$Message) {
         Write-Host $Message
@@ -25,7 +25,7 @@
         if (-not (Get-Command curl.exe -ErrorAction SilentlyContinue)) {
             Write-InstallError 'missing required command: curl.exe'
         }
-        $all = @('-H', 'User-Agent: tensor-install')
+        $all = @('-H', 'User-Agent: gopher-install')
         if ($env:GITHUB_TOKEN) {
             $all += @('-H', "Authorization: Bearer $($env:GITHUB_TOKEN)")
         }
@@ -74,7 +74,7 @@
 
     function Show-Help {
         @"
-Install Tensor from GitHub Releases (Windows).
+Install Gopher from GitHub Releases (Windows).
 
 Usage:
   install.ps1 [options]
@@ -82,14 +82,14 @@ Usage:
 
 Options:
   --version, -v <ver>  Release to install (default: latest)
-  --dir, -d <path>     Install directory (default: %LOCALAPPDATA%\tensor\bin)
+  --dir, -d <path>     Install directory (default: %LOCALAPPDATA%\gopher\bin)
   --no-path            Do not add the install directory to your user PATH
   -h, --help           Show this help
 
 Environment:
-  TENSOR_VERSION       Same as --version
-  TENSOR_INSTALL_DIR   Same as --dir
-  TENSOR_NO_PATH       Set to 1 to skip PATH changes
+  GOPHER_VERSION       Same as --version
+  GOPHER_INSTALL_DIR   Same as --dir
+  GOPHER_NO_PATH       Set to 1 to skip PATH changes
   GITHUB_TOKEN         Optional token if GitHub rate-limits you
 "@ | Write-Host
     }
@@ -109,13 +109,13 @@ Environment:
     }
 
     $version = Get-ArgValue @('--version', '-v')
-    if (-not $version) { $version = $env:TENSOR_VERSION }
+    if (-not $version) { $version = $env:GOPHER_VERSION }
 
     $installDir = Get-ArgValue @('--dir', '-d')
-    if (-not $installDir) { $installDir = $env:TENSOR_INSTALL_DIR }
-    if (-not $installDir) { $installDir = Join-Path $env:LOCALAPPDATA 'tensor\bin' }
+    if (-not $installDir) { $installDir = $env:GOPHER_INSTALL_DIR }
+    if (-not $installDir) { $installDir = Join-Path $env:LOCALAPPDATA 'gopher\bin' }
 
-    $noPath = (Test-Flag @('--no-path')) -or ($env:TENSOR_NO_PATH -eq '1')
+    $noPath = (Test-Flag @('--no-path')) -or ($env:GOPHER_NO_PATH -eq '1')
 
     $arch = $env:PROCESSOR_ARCHITECTURE
     if ($arch -eq 'ARM64') {
@@ -128,8 +128,8 @@ Environment:
     }
 
     if (-not $version) {
-        Write-Info 'Looking up the latest Tensor release...'
-        $lookupArgs = @('-H', 'User-Agent: tensor-install')
+        Write-Info 'Looking up the latest Gopher release...'
+        $lookupArgs = @('-H', 'User-Agent: gopher-install')
         if ($env:GITHUB_TOKEN) {
             $lookupArgs += @('-H', "Authorization: Bearer $($env:GITHUB_TOKEN)")
         }
@@ -153,16 +153,16 @@ Environment:
     if ($tag -notlike 'v*') { $tag = "v$tag" }
     $version = $tag.TrimStart('v')
     if (-not $version) { Write-InstallError 'could not determine a release version' }
-    Write-Info "Installing Tensor $version ($target)..."
+    Write-Info "Installing Gopher $version ($target)..."
 
-    $workDir = Join-Path ([IO.Path]::GetTempPath()) ("tensor-install-" + [guid]::NewGuid().ToString('n'))
+    $workDir = Join-Path ([IO.Path]::GetTempPath()) ("gopher-install-" + [guid]::NewGuid().ToString('n'))
     New-Item -ItemType Directory -Path $workDir | Out-Null
     try {
-        $archive = Join-Path $workDir 'tensor.zip'
+        $archive = Join-Path $workDir 'gopher.zip'
         $base = "$GitHub/releases/download/$tag"
         $asset = $null
         $url = $null
-        foreach ($prefix in @('tensor', 'tensorui')) {
+        foreach ($prefix in @('gopher')) {
             $candidate = "$prefix-$version-$target.zip"
             $candidateUrl = "$base/$candidate"
             $probe = Invoke-Curl -AllowFail -Quiet -CurlArgs @('-fsSLI', '--connect-timeout', '20', '--max-time', '30', '-o', 'NUL', $candidateUrl)
@@ -201,10 +201,10 @@ Environment:
         $extract = Join-Path $workDir 'extract'
         Expand-Archive -Path $archive -DestinationPath $extract -Force
         $src = Get-ChildItem -Path $extract -Recurse -File | Where-Object {
-            $_.Name -eq 'tensor.exe' -or $_.Name -eq 'tensorui.exe'
-        } | Sort-Object { if ($_.Name -eq 'tensor.exe') { 0 } else { 1 } } | Select-Object -First 1
+            $_.Name -eq 'gopher.exe'
+        } | Select-Object -First 1
         if (-not $src) {
-            Write-InstallError 'archive did not contain a tensor executable'
+            Write-InstallError 'archive did not contain a gopher executable'
         }
 
         New-Item -ItemType Directory -Path $installDir -Force | Out-Null
@@ -212,10 +212,10 @@ Environment:
         try {
             Copy-Item -Path $src.FullName -Destination $dest -Force
         } catch {
-            Write-InstallError "could not write $dest. Quit Tensor if it is running, then retry."
+            Write-InstallError "could not write $dest. Quit Gopher if it is running, then retry."
         }
 
-        Write-Info "Installed tensor $version to $dest"
+        Write-Info "Installed gopher $version to $dest"
 
         try {
             & $dest --version
@@ -234,7 +234,7 @@ Environment:
         }
         if (-not $hasWebView2) {
             Write-Info ''
-            Write-Info 'Microsoft Edge WebView2 was not found. Install it for the desktop window, or run: tensor --browser'
+            Write-Info 'Microsoft Edge WebView2 was not found. Install it for the desktop window, or run: gopher --browser'
             Write-Info '  https://developer.microsoft.com/microsoft-edge/webview2/'
         }
 
@@ -261,10 +261,10 @@ Environment:
         }
 
         Write-Info ''
-        Write-Info 'Launch Tensor with:  tensor'
-        Write-Info 'Browser UI:          tensor --browser'
-        Write-Info 'Headless:            tensor --headless'
-        Write-Info 'Open a new terminal if this session still cannot find tensor.'
+        Write-Info 'Launch Gopher with:  gopher'
+        Write-Info 'Browser UI:          gopher --browser'
+        Write-Info 'Headless:            gopher --headless'
+        Write-Info 'Open a new terminal if this session still cannot find gopher.'
     } finally {
         if (Test-Path $workDir) {
             Remove-Item -Recurse -Force $workDir -ErrorAction SilentlyContinue
