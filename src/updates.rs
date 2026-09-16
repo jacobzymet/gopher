@@ -17,7 +17,7 @@ use tokio::sync::{Mutex as TokioMutex, Notify};
 use crate::http;
 
 const GITHUB_OWNER: &str = "jacobzymet";
-const GITHUB_REPO: &str = "tensorUI";
+const GITHUB_REPO: &str = "gopher";
 const CACHE_TTL: Duration = Duration::from_secs(6 * 60 * 60);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(12);
 const DOWNLOAD_CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
@@ -1146,12 +1146,12 @@ aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  gopher-0.4.0-x
             "assets": [
                 {
                     "name": "gopher-0.4.0-x86_64-linux-gnu.tar.gz",
-                    "browser_download_url": "https://github.com/jacobzymet/tensorUI/releases/download/v0.4.0/gopher-0.4.0-x86_64-linux-gnu.tar.gz",
+                    "browser_download_url": "https://github.com/jacobzymet/gopher/releases/download/v0.4.0/gopher-0.4.0-x86_64-linux-gnu.tar.gz",
                     "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
                 },
                 {
                     "name": "SHA256SUMS",
-                    "browser_download_url": "https://github.com/jacobzymet/tensorUI/releases/download/v0.4.0/SHA256SUMS"
+                    "browser_download_url": "https://github.com/jacobzymet/gopher/releases/download/v0.4.0/SHA256SUMS"
                 }
             ]
         });

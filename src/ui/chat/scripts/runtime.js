@@ -4542,7 +4542,7 @@ function renderAppUpdatePane(status) {
     appUpdateCurrent.textContent = currentRaw ? ('Gopher ' + currentLabel) : 'Gopher';
   }
   if (btnAppUpdateNotes) {
-    btnAppUpdateNotes.href = status?.release_url || 'https://github.com/jacobzymet/tensorUI/releases';
+    btnAppUpdateNotes.href = status?.release_url || 'https://github.com/jacobzymet/gopher/releases';
   }
   const canInstall = Boolean(status?.can_install && status?.update_available);
   if (btnAppUpdateInstall) {

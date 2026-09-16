@@ -1,10 +1,10 @@
 #!/bin/sh
 # Gopher installer for Linux.
-# Usage: curl -fsSL https://github.com/jacobzymet/tensorUI/releases/latest/download/install-linux.sh | sh
+# Usage: curl -fsSL https://github.com/jacobzymet/gopher/releases/latest/download/install-linux.sh | sh
 set -eu
 (set -o pipefail) 2>/dev/null && set -o pipefail
 
-REPO="jacobzymet/tensorUI"
+REPO="jacobzymet/gopher"
 GITHUB="https://github.com/${REPO}"
 BIN_NAME="gopher"
 
@@ -14,7 +14,7 @@ Install Gopher from GitHub Releases (Linux).
 
 Usage:
   install-linux.sh [options]
-  curl -fsSL https://github.com/jacobzymet/tensorUI/releases/latest/download/install-linux.sh | sh -s -- [options]
+  curl -fsSL https://github.com/jacobzymet/gopher/releases/latest/download/install-linux.sh | sh -s -- [options]
 
 Options:
   --version, -v <ver>  Release to install (default: latest)
@@ -82,7 +82,7 @@ done
 
 os=$(uname -s)
 [ "$os" = Linux ] || err "this installer is for Linux. On macOS run:
-  curl -fsSL https://github.com/jacobzymet/tensorUI/releases/latest/download/install-macos.sh | sh"
+  curl -fsSL https://github.com/jacobzymet/gopher/releases/latest/download/install-macos.sh | sh"
 
 if [ -f /etc/alpine-release ]; then
   err "Alpine/musl builds are not published. Use a glibc distribution, or build from source."

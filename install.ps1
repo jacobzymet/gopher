@@ -1,9 +1,9 @@
 # Gopher installer for Windows.
-# Usage: irm https://github.com/jacobzymet/tensorUI/releases/latest/download/install.ps1 | iex
+# Usage: irm https://github.com/jacobzymet/gopher/releases/latest/download/install.ps1 | iex
 & {
     $ErrorActionPreference = 'Stop'
 
-    $Repo = 'jacobzymet/tensorUI'
+    $Repo = 'jacobzymet/gopher'
     $GitHub = "https://github.com/$Repo"
     $BinName = 'gopher.exe'
 
@@ -78,7 +78,7 @@ Install Gopher from GitHub Releases (Windows).
 
 Usage:
   install.ps1 [options]
-  irm https://github.com/jacobzymet/tensorUI/releases/latest/download/install.ps1 | iex
+  irm https://github.com/jacobzymet/gopher/releases/latest/download/install.ps1 | iex
 
 Options:
   --version, -v <ver>  Release to install (default: latest)

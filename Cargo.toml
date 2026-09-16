@@ -4,6 +4,7 @@ version = "0.5.0"
 edition = "2024"
 description = "Gopher — a local, lightweight, open source LLM harness for humanity"
 license = "MIT"
+repository = "https://github.com/jacobzymet/gopher"
 
 [dependencies]
 aes-gcm = "0.10"

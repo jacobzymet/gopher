@@ -1023,6 +1023,7 @@ html:not(.ui-ready) .chat-sidebar {
   flex-direction: column;
   gap: 1px;
 }
+.convo-item + .convo-item { margin-top: 0.2rem; }
 .convo-date-heading {
   display: flex;
   align-items: center;
