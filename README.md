@@ -18,7 +18,7 @@ Install the latest GitHub Release with a platform script. The one-liners fetch t
 ### Windows
 
 ```powershell
-irm https://github.com/jacobzymet/tensorUI/releases/latest/download/install.ps1 | iex
+irm https://github.com/jacobzymet/gopher/releases/latest/download/install.ps1 | iex
 ```
 
 The script installs `gopher.exe` to `%LOCALAPPDATA%\gopher\bin` and adds that directory to your user PATH.
@@ -26,13 +26,13 @@ The script installs `gopher.exe` to `%LOCALAPPDATA%\gopher\bin` and adds that di
 ### macOS
 
 ```sh
-curl -fsSL https://github.com/jacobzymet/tensorUI/releases/latest/download/install-macos.sh | sh
+curl -fsSL https://github.com/jacobzymet/gopher/releases/latest/download/install-macos.sh | sh
 ```
 
 ### Linux
 
 ```sh
-curl -fsSL https://github.com/jacobzymet/tensorUI/releases/latest/download/install-linux.sh | sh
+curl -fsSL https://github.com/jacobzymet/gopher/releases/latest/download/install-linux.sh | sh
 ```
 
 The Linux desktop window needs WebKitGTK 4.1 at runtime. The script prints the package to install if it is missing.
@@ -42,15 +42,15 @@ Unix scripts install to `~/.local/bin` by default. Inspect a script before pipin
 Pin a version or install directory with `GOPHER_VERSION` and `GOPHER_INSTALL_DIR`, or pass `--version` and `--dir`:
 
 ```sh
-curl -fsSL https://github.com/jacobzymet/tensorUI/releases/latest/download/install-linux.sh | sh -s -- --version 0.3.0
+curl -fsSL https://github.com/jacobzymet/gopher/releases/latest/download/install-linux.sh | sh -s -- --version 0.3.0
 ```
 
 ```powershell
 $env:GOPHER_VERSION = "0.3.0"
-irm https://github.com/jacobzymet/tensorUI/releases/latest/download/install.ps1 | iex
+irm https://github.com/jacobzymet/gopher/releases/latest/download/install.ps1 | iex
 ```
 
-You can also download a platform archive from [GitHub Releases](https://github.com/jacobzymet/tensorUI/releases) and run the bundled executable.
+You can also download a platform archive from [GitHub Releases](https://github.com/jacobzymet/gopher/releases) and run the bundled executable.
 
 To run from source:
 

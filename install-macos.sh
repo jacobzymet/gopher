@@ -1,10 +1,10 @@
 #!/bin/sh
 # Gopher installer for macOS.
-# Usage: curl -fsSL https://github.com/jacobzymet/tensorUI/releases/latest/download/install-macos.sh | sh
+# Usage: curl -fsSL https://github.com/jacobzymet/gopher/releases/latest/download/install-macos.sh | sh
 set -eu
 (set -o pipefail) 2>/dev/null && set -o pipefail
 
-REPO="jacobzymet/tensorUI"
+REPO="jacobzymet/gopher"
 GITHUB="https://github.com/${REPO}"
 BIN_NAME="gopher"
 
@@ -14,7 +14,7 @@ Install Gopher from GitHub Releases (macOS).
 
 Usage:
   install-macos.sh [options]
-  curl -fsSL https://github.com/jacobzymet/tensorUI/releases/latest/download/install-macos.sh | sh -s -- [options]
+  curl -fsSL https://github.com/jacobzymet/gopher/releases/latest/download/install-macos.sh | sh -s -- [options]
 
 Options:
   --version, -v <ver>  Release to install (default: latest)
@@ -82,7 +82,7 @@ done
 
 os=$(uname -s)
 [ "$os" = Darwin ] || err "this installer is for macOS. On Linux run:
-  curl -fsSL https://github.com/jacobzymet/tensorUI/releases/latest/download/install-linux.sh | sh"
+  curl -fsSL https://github.com/jacobzymet/gopher/releases/latest/download/install-linux.sh | sh"
 
 need_cmd curl
 need_cmd tar
