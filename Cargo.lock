@@ -1618,6 +1618,7 @@ dependencies = [
  "objc2-foundation",
  "pdf-extract",
  "portable-pty",
+ "regex",
  "reqwest",
  "rfd",
  "rustls",

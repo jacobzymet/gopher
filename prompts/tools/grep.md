@@ -1,1 +1,1 @@
-Search file contents in the workspace. Pass {"query": "exact text"}. Optional glob (e.g. "*.rs") and case_insensitive.
+Search file contents. Pass {"query":"text or regex"}. Optional path limits to a file or folder; optional glob (e.g. "*.md") filters names; optional case_insensitive; optional context is nearby lines (default 2, maximum 10). Invalid regex is treated as literal text. Use this to find something; do not page a file looking for it.
