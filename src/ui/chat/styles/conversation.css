@@ -1357,6 +1357,7 @@ html[data-theme="light"] .agent-process-note {
 /* User turns read as a spoken capsule; the tail corner keeps direction legible. */
 .msg-role-user .msg-bubble {
   max-width: 85%;
+  padding: 0.62rem 0.95rem;
   border: 1px solid color-mix(in oklch, var(--accent-edge) 70%, transparent);
   color: var(--color-ink);
   border-bottom-right-radius: var(--radius-sm);

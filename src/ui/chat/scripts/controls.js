@@ -1370,6 +1370,7 @@ function fillSettingsFormFromState() {
   document.getElementById('settingMemory').value = settings.memory || '';
   document.getElementById('settingThinking').value = settings.thinking;
   document.getElementById('settingThinkingEffort').value = settings.thinkingEffort;
+  document.getElementById('settingAutoOpenTraceSidebar').checked = settings.autoOpenTraceSidebar !== false;
   document.getElementById('settingEnterSends').checked = settings.enterSends;
   document.getElementById('settingSkillWebSearch').checked = settings.skillWebSearch;
   document.getElementById('settingWebSearchDepth').value = settings.webSearchDepth || 'off';
@@ -1425,6 +1426,7 @@ function readSettingsForm() {
     memory: document.getElementById('settingMemory').value,
     thinking: document.getElementById('settingThinking').value,
     thinkingEffort: document.getElementById('settingThinkingEffort').value,
+    autoOpenTraceSidebar: document.getElementById('settingAutoOpenTraceSidebar').checked,
     enterSends: document.getElementById('settingEnterSends').checked,
     skillWebSearch: document.getElementById('settingSkillWebSearch').checked,
     webSearchDepth: document.getElementById('settingWebSearchDepth').value,

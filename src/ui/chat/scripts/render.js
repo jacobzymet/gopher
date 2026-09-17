@@ -952,6 +952,7 @@ function setTraceSidebarOpen(open, { fromUser = false } = {}) {
 
 function maybeAutoOpenTraceSidebar(convoId) {
   if (!isDesktopTraceLayout() || !convoId) return;
+  if (settings.autoOpenTraceSidebar === false) return;
   if (traceUserCollapsed) return;
   if (traceAutoOpenedForStream === convoId) return;
   if (!chatShell.classList.contains('trace-collapsed')) {
