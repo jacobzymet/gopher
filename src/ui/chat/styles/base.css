@@ -884,9 +884,12 @@ html:not(.ui-ready) .chat-sidebar {
   justify-content: space-between;
   gap: 0.5rem;
 }
-.sidebar-convo-heading .sidebar-label { flex: 1 1 auto; }
+.sidebar-convo-heading .sidebar-label {
+  flex: 1 1 auto;
+  margin-top: 0.35rem;
+}
 .sidebar-manage-convos {
-  margin: var(--space-sm) 0.32rem 0.3rem 0;
+  margin: 0.35rem 0.32rem 0.4rem 0;
   padding: 0.12rem 0.35rem;
   border: 0;
   border-radius: var(--radius-sm);

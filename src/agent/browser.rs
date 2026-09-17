@@ -11,7 +11,10 @@ use std::{
 use base64::Engine;
 use chromiumoxide::{
     browser::{Browser, BrowserConfig},
-    cdp::browser_protocol::page::CaptureScreenshotFormat,
+    cdp::browser_protocol::{
+        page::CaptureScreenshotFormat,
+        target::{CloseTargetParams, TargetInfo},
+    },
     page::{Page, ScreenshotParams},
 };
 use futures_util::StreamExt;
@@ -431,16 +434,20 @@ pub async fn close_all_sessions() {
 }
 
 async fn launch_session(_session_id: &str) -> Result<Session, String> {
+    launch_session_inner(cfg!(not(test))).await
+}
+
+async fn launch_session_inner(headed: bool) -> Result<Session, String> {
     let mut builder = BrowserConfig::builder()
         .respect_https_errors()
         .window_size(1280, 800);
-    #[cfg(test)]
-    {
+    if headed {
+        // Headed Chrome otherwise opens a default window before CDP is connected.
+        // The agent page is created later in an isolated context, so skip that
+        // unused startup window (Playwright uses the same switch).
+        builder = builder.with_head().arg("no-startup-window");
+    } else {
         builder = builder.new_headless_mode();
-    }
-    #[cfg(not(test))]
-    {
-        builder = builder.with_head();
     }
     if let Some(exe) = find_browser_executable() {
         #[cfg(windows)]
@@ -492,11 +499,49 @@ async fn launch_session(_session_id: &str) -> Result<Session, String> {
             return Err(format!("Could not open a tab: {error}"));
         }
     };
+    close_pages_except(&mut browser, &page).await;
     Ok(Session {
         browser,
         page,
         _profile: profile,
     })
+}
+
+async fn close_pages_except(browser: &mut Browser, keep: &Page) {
+    let keep_id = keep.target_id().clone();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    loop {
+        let extras: Vec<_> = match live_page_targets(browser).await {
+            Ok(targets) => targets
+                .into_iter()
+                .filter(|info| info.target_id != keep_id)
+                .collect(),
+            Err(_) => return,
+        };
+        if extras.is_empty() {
+            return;
+        }
+        for info in extras {
+            let _ = browser
+                .execute(CloseTargetParams::new(info.target_id))
+                .await;
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+async fn live_page_targets(browser: &mut Browser) -> Result<Vec<TargetInfo>, String> {
+    let targets = browser
+        .fetch_targets()
+        .await
+        .map_err(|err| err.to_string())?;
+    Ok(targets
+        .into_iter()
+        .filter(|info| info.r#type == "page")
+        .collect())
 }
 
 async fn snapshot(page: &Page) -> Result<String, String> {
@@ -794,7 +839,15 @@ mod tests {
     #[tokio::test]
     #[ignore = "requires an installed Chromium browser"]
     async fn browser_shutdown_removes_its_private_profile() {
-        let session = launch_session("security-regression").await.unwrap();
+        let mut session = launch_session("security-regression").await.unwrap();
+        let pages = live_page_targets(&mut session.browser)
+            .await
+            .expect("list pages");
+        assert_eq!(
+            pages.len(),
+            1,
+            "launch should keep only the agent page, not Chrome's unused startup tab"
+        );
         let path = session._profile.path().to_path_buf();
         assert!(path.is_dir());
         sessions()
@@ -804,6 +857,26 @@ mod tests {
         close_all_sessions().await;
         assert!(!path.exists(), "temporary profile remained after shutdown");
         assert!(sessions().lock().await.is_empty());
+    }
+
+    #[tokio::test]
+    #[ignore = "requires an installed Chromium browser"]
+    async fn headed_launch_keeps_only_the_agent_page() {
+        let mut session = launch_session_inner(true).await.unwrap();
+        let pages = live_page_targets(&mut session.browser)
+            .await
+            .expect("list pages");
+        let extras: Vec<_> = pages
+            .iter()
+            .map(|info| format!("{} {}", info.r#type, info.url))
+            .collect();
+        assert_eq!(
+            pages.len(),
+            1,
+            "headed launch should not leave leftover tabs: {extras:?}"
+        );
+        let _ = session.browser.close().await;
+        let _ = session.browser.kill().await;
     }
 
     #[test]
