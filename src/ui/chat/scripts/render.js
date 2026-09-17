@@ -109,45 +109,50 @@ function renderThinkBlock(content, { open, streaming, forceOpen = false } = {}) 
   return wrapTimelineStep(details, { think: true, live, done: !live });
 }
 
+function committedPartHtml(part, { forceOpenThinking = false } = {}) {
+  if (!part) return '';
+  if (part.type === 'think') {
+    if (!String(part.content || '').trim()) return '';
+    return renderThinkBlock(part.content, {
+      open: false,
+      streaming: false,
+      forceOpen: forceOpenThinking,
+    });
+  }
+  if (part.type === 'tool') return agentStepHtml(part);
+  if (part.type === 'clarify') {
+    const header = 'Clarifying questions';
+    const detail = part.live
+      ? 'Waiting for your answers'
+      : (part.summary || 'Goal refined');
+    return wrapTimelineStep(
+      '<div class="agent-step-card">' +
+        '<div class="agent-step-kind">' + escapeHtml(header) + '</div>' +
+        '<div class="agent-step-detail">' + escapeHtml(detail) + '</div>' +
+      '</div>',
+      { live: !!part.live, done: !part.live }
+    );
+  }
+  if (part.type === 'notice') {
+    const text = String(part.content || '').trim();
+    if (!text) return '';
+    const toneClass = part.tone === 'ok' ? ' is-ok' : '';
+    return (
+      '<div class="agent-step is-notice is-done' + toneClass + '">' +
+        agentStepRailHtml() +
+        '<div class="agent-step-card"><div class="agent-step-notice">' +
+          escapeHtml(text) +
+        '</div></div>' +
+      '</div>'
+    );
+  }
+  return '';
+}
+
 function renderCommittedParts(parts, { forceOpenThinking = false } = {}) {
   if (!parts || !parts.length) return '';
   let html = '';
-  for (const part of parts) {
-    if (!part) continue;
-    if (part.type === 'think') {
-      if (!String(part.content || '').trim()) continue;
-      html += renderThinkBlock(part.content, {
-        open: false,
-        streaming: false,
-        forceOpen: forceOpenThinking,
-      });
-    } else if (part.type === 'tool') {
-      html += agentStepHtml(part);
-    } else if (part.type === 'clarify') {
-      const header = 'Clarifying questions';
-      const detail = part.live
-        ? 'Waiting for your answers'
-        : (part.summary || 'Goal refined');
-      html += wrapTimelineStep(
-        '<div class="agent-step-card">' +
-          '<div class="agent-step-kind">' + escapeHtml(header) + '</div>' +
-          '<div class="agent-step-detail">' + escapeHtml(detail) + '</div>' +
-        '</div>',
-        { live: !!part.live, done: !part.live }
-      );
-    } else if (part.type === 'notice') {
-      const text = String(part.content || '').trim();
-      if (!text) continue;
-      const toneClass = part.tone === 'ok' ? ' is-ok' : '';
-      html +=
-        '<div class="agent-step is-notice is-done' + toneClass + '">' +
-          agentStepRailHtml() +
-          '<div class="agent-step-card"><div class="agent-step-notice">' +
-            escapeHtml(text) +
-          '</div></div>' +
-        '</div>';
-    }
-  }
+  for (const part of parts) html += committedPartHtml(part, { forceOpenThinking });
   return html;
 }
 
@@ -232,6 +237,48 @@ function sealedTimelineMergeTarget(stream, type) {
   return parts[index]?.type === type ? parts[index] : null;
 }
 
+function trailingLiveToolIndex(parts) {
+  const list = Array.isArray(parts) ? parts : [];
+  let index = list.length;
+  while (index > 0 && list[index - 1]?.type === 'tool' && list[index - 1]?.live) {
+    index -= 1;
+  }
+  return index;
+}
+
+function stampTimelinePart(part, stream) {
+  if (!part || part.uid) return part;
+  if (part.id) {
+    part.uid = 'id:' + part.id;
+    return part;
+  }
+  if (stream) {
+    stream._partSeq = (Number(stream._partSeq) || 0) + 1;
+    part.uid = 't' + stream._partSeq;
+    return part;
+  }
+  part.uid = 't' + Math.random().toString(36).slice(2, 10);
+  return part;
+}
+
+function timelinePartKey(part) {
+  if (!part) return '';
+  if (part.type === 'tool') {
+    if (part.id) return 'tool:' + part.id;
+    if (part.uid) return 'tool:' + part.uid;
+    return 'tool:' + (part.name || '') + ':' + (part.startedAt || '');
+  }
+  if (part.uid) return part.type + ':' + part.uid;
+  if (part.type === 'clarify' && part.id) return 'clarify:' + part.id;
+  return part.type + ':' + String(part.content || '').slice(0, 80);
+}
+
+function insertTimelinePartBeforeTrailingLiveTools(stream, part) {
+  if (!stream.timeline) stream.timeline = [];
+  stampTimelinePart(part, stream);
+  stream.timeline.splice(trailingLiveToolIndex(stream.timeline), 0, part);
+}
+
 function ensureSealedTimelineText(stream, text) {
   const sealed = String(text || '').trim();
   if (!sealed) return;
@@ -241,7 +288,7 @@ function ensureSealedTimelineText(stream, text) {
     last.content = sealed;
     return;
   }
-  stream.timeline.push({ type: 'text', content: sealed });
+  insertTimelinePartBeforeTrailingLiveTools(stream, { type: 'text', content: sealed });
 }
 
 function ensureSealedTimelineThink(stream, reasoning) {
@@ -253,7 +300,7 @@ function ensureSealedTimelineThink(stream, reasoning) {
     last.content = sealed;
     return;
   }
-  stream.timeline.push({ type: 'think', content: sealed });
+  insertTimelinePartBeforeTrailingLiveTools(stream, { type: 'think', content: sealed });
 }
 
 /** Move the current typer buffer into stream.timeline, then clear the buffer. */
@@ -270,11 +317,10 @@ function commitStreamBuffer(stream, typer) {
   for (const segment of segments) {
     const content = String(segment.content || '');
     if (!content.trim()) continue;
-    if (segment.type === 'think') {
-      stream.timeline.push({ type: 'think', content });
-    } else {
-      stream.timeline.push({ type: 'text', content });
-    }
+    insertTimelinePartBeforeTrailingLiveTools(
+      stream,
+      { type: segment.type === 'think' ? 'think' : 'text', content }
+    );
   }
   typer.clear();
   stream.partial = '';
@@ -290,7 +336,7 @@ function sealSteerThinkAndDiscardDraft(stream, typer) {
     const content = String(segment.content || '');
     if (!content.trim() || segment.type !== 'think') continue;
     if (!stream.timeline) stream.timeline = [];
-    stream.timeline.push({ type: 'think', content });
+    insertTimelinePartBeforeTrailingLiveTools(stream, { type: 'think', content });
   }
   if (typer && typeof typer.clear === 'function') typer.clear();
   if (stream) stream.partial = '';
@@ -514,6 +560,191 @@ function scrollTraceSidebarToBottom({ force = false } = {}) {
   scrollThinkStreams(traceSidebarBody);
 }
 
+function htmlToElement(html) {
+  const wrap = document.createElement('div');
+  wrap.innerHTML = String(html || '');
+  return wrap.firstElementChild;
+}
+
+function stepChromeSignature(part) {
+  if (!part) return '';
+  if (part.type === 'tool') {
+    if (part.live) {
+      return ['live', part.executing ? '1' : '0', part.approval || '', part.justSettled ? '1' : '0'].join('\0');
+    }
+    return [
+      'done',
+      typeof part.ok === 'boolean' ? String(part.ok) : '',
+      part.running ? '1' : '0',
+      part.result || '',
+      part.note || '',
+      part.approval || '',
+      part.justSettled ? '1' : '0',
+      part.detail || '',
+      part.image ? '1' : '0',
+    ].join('\0');
+  }
+  if (part.type === 'think' || part.type === 'text' || part.type === 'notice') {
+    return String(part.content || '');
+  }
+  if (part.type === 'clarify') {
+    return [part.live ? '1' : '0', part.summary || ''].join('\0');
+  }
+  return '';
+}
+
+function copyStepChrome(step, next) {
+  const keepKey = step.dataset.timelineKey;
+  const keepChrome = step.dataset.stepChrome;
+  step.className = next.className;
+  const allowed = new Set(['class', 'data-timeline-key', 'data-step-chrome']);
+  for (const attr of Array.from(next.attributes)) {
+    if (attr.name === 'class') continue;
+    step.setAttribute(attr.name, attr.value);
+    allowed.add(attr.name);
+  }
+  for (const attr of Array.from(step.attributes)) {
+    if (allowed.has(attr.name)) continue;
+    if (attr.name.startsWith('data-')) step.removeAttribute(attr.name);
+  }
+  step.innerHTML = next.innerHTML;
+  if (keepKey) step.dataset.timelineKey = keepKey;
+  if (keepChrome) step.dataset.stepChrome = keepChrome;
+}
+
+function timelineItemsFromParts(parts, { forceOpenThinking = false } = {}) {
+  const items = [];
+  for (const part of parts || []) {
+    const html = committedPartHtml(part, { forceOpenThinking });
+    if (!html) continue;
+    stampTimelinePart(part);
+    items.push({
+      key: timelinePartKey(part),
+      html,
+      chrome: stepChromeSignature(part),
+    });
+  }
+  return items;
+}
+
+function stampTimelineKeysOnRoot(root, parts, { forceOpenThinking = false } = {}) {
+  if (!root) return;
+  const steps = Array.from(root.querySelectorAll(':scope > .agent-step')).filter(
+    (el) => !el.classList.contains('is-live-think')
+  );
+  const items = timelineItemsFromParts(parts, { forceOpenThinking });
+  items.forEach((item, index) => {
+    const step = steps[index];
+    if (!step) return;
+    step.dataset.timelineKey = item.key;
+    step.dataset.stepChrome = item.chrome;
+  });
+}
+
+function patchTimelineToolChrome(root, parts) {
+  if (!root) return;
+  (parts || []).forEach((part) => {
+    if (!part || part.type !== 'tool') return;
+    const step = findTimelineToolStep(root, part);
+    if (!step) return;
+    const chrome = stepChromeSignature(part);
+    if (step.dataset.stepChrome === chrome) return;
+    const next = htmlToElement(agentStepHtml(part));
+    if (!next) return;
+    step.dataset.stepChrome = chrome;
+    copyStepChrome(step, next);
+    step.dataset.timelineKey = timelinePartKey(stampTimelinePart(part));
+    step.dataset.stepChrome = chrome;
+    if (typeof enhanceCodeBlocks === 'function') enhanceCodeBlocks(step);
+  });
+}
+
+function liveThinkStepHtml() {
+  return wrapTimelineStep(
+    '<details class="think-block is-streaming" open>' +
+      '<summary>' +
+        '<span class="think-summary-label thinking-label">Reasoning</span>' +
+        THINK_CHEVRON +
+      '</summary>' +
+      '<div class="think-stream"></div>' +
+    '</details>',
+    { think: true, live: true }
+  );
+}
+
+function reconcileTimelineSteps(root, items, { liveThinkHtml = '' } = {}) {
+  const inserted = [];
+  const patched = [];
+  const keyed = new Map();
+  Array.from(root.children).forEach((el) => {
+    if (!el.classList?.contains('agent-step')) return;
+    if (el.classList.contains('is-live-think')) return;
+    const key = el.dataset.timelineKey;
+    if (key && !keyed.has(key)) keyed.set(key, el);
+  });
+  const used = new Set();
+  let node = root.firstElementChild;
+  const skipNonSteps = () => {
+    while (node && !(node.classList && node.classList.contains('agent-step'))) {
+      const extra = node;
+      node = node.nextElementSibling;
+      extra.remove();
+    }
+  };
+  for (const item of items) {
+    skipNonSteps();
+    let el = keyed.get(item.key);
+    if (el && used.has(el)) el = null;
+    if (!el) {
+      el = htmlToElement(item.html);
+      if (!el) continue;
+      el.dataset.timelineKey = item.key;
+      el.dataset.stepChrome = item.chrome;
+      root.insertBefore(el, node);
+      inserted.push(el);
+    } else {
+      if (el !== node) root.insertBefore(el, node);
+      if (el.dataset.stepChrome !== item.chrome) {
+        const next = htmlToElement(item.html);
+        if (next) {
+          el.dataset.stepChrome = item.chrome;
+          copyStepChrome(el, next);
+          el.dataset.timelineKey = item.key;
+          el.dataset.stepChrome = item.chrome;
+          patched.push(el);
+        }
+      }
+    }
+    used.add(el);
+    node = el.nextElementSibling;
+  }
+  if (liveThinkHtml) {
+    skipNonSteps();
+    let liveThink = root.querySelector(':scope > .agent-step.is-live-think');
+    if (!liveThink) {
+      liveThink = htmlToElement(liveThinkHtml);
+      if (liveThink) {
+        liveThink.classList.add('is-live-think');
+        liveThink.dataset.timelineKey = 'live-think';
+        root.insertBefore(liveThink, node);
+        inserted.push(liveThink);
+        node = liveThink.nextElementSibling;
+        used.add(liveThink);
+      }
+    } else {
+      if (liveThink !== node) root.insertBefore(liveThink, node);
+      node = liveThink.nextElementSibling;
+      used.add(liveThink);
+    }
+  }
+  while (node) {
+    const next = node.nextElementSibling;
+    if (!used.has(node)) node.remove();
+    node = next;
+  }
+  return { inserted, patched };
+}
+
 function paintTraceSidebarContent(message, { live = false } = {}) {
   if (!traceSidebarBody) return;
   const wasNearBottom = isTraceSidebarNearBottom();
@@ -541,25 +772,14 @@ function paintTraceSidebarContent(message, { live = false } = {}) {
       if (isDeferredMemoryNotice(part)) deferredNotices.push(part);
       else earlyParts.push(part);
     }
-    timelineHtml = renderCommittedParts(earlyParts, { forceOpenThinking: true });
     stepCount = timelinePartCount(earlyParts);
     const liveSegments = message.content ? parseThinkSegments(message.content) : [];
     const openThink = liveSegments.find((seg) => seg.type === 'think' && seg.open);
     const closedThinks = liveSegments.filter(
       (seg) => seg.type === 'think' && !seg.open && String(seg.content || '').trim()
     );
-    for (const segment of closedThinks) {
-      timelineHtml += renderThinkBlock(segment.content, {
-        open: false,
-        streaming: false,
-        forceOpen: true,
-      });
-      stepCount += 1;
-    }
-    if (deferredNotices.length) {
-      timelineHtml += renderCommittedParts(deferredNotices, { forceOpenThinking: true });
-      stepCount += timelinePartCount(deferredNotices);
-    }
+    stepCount += closedThinks.length;
+    if (deferredNotices.length) stepCount += timelinePartCount(deferredNotices);
     if (title) {
       const totalSteps = stepCount + (openThink ? 1 : 0);
       const nextTitle = live
@@ -567,7 +787,7 @@ function paintTraceSidebarContent(message, { live = false } = {}) {
         : (totalSteps ? ('Activity · ' + totalSteps) : 'Activity');
       if (title.textContent !== nextTitle) title.textContent = nextTitle;
     }
-    if (!timelineHtml.trim() && !openThink) {
+    if (!stepCount && !openThink) {
       if (!traceSidebarBody.querySelector('.trace-sidebar-empty')) {
         traceSidebarBody.innerHTML =
           '<p class="trace-sidebar-empty">This reply has no reasoning or tool activity.</p>';
@@ -579,39 +799,27 @@ function paintTraceSidebarContent(message, { live = false } = {}) {
     }
     traceSidebar?.classList.remove('is-empty');
 
-    const committedSig =
-      'live\0' +
-      timelineSignature(earlyParts) +
-      '\0' +
-      closedThinks.map((s) => s.content).join('\0') +
-      '\0' +
-      timelineSignature(deferredNotices);
-
-    let rebuilt = false;
+    const items = timelineItemsFromParts(earlyParts, { forceOpenThinking: true });
+    closedThinks.forEach((segment, index) => {
+      const part = { type: 'think', uid: 'closed-' + index, content: segment.content };
+      const html = committedPartHtml(part, { forceOpenThinking: true });
+      if (!html) return;
+      items.push({
+        key: timelinePartKey(part),
+        html,
+        chrome: stepChromeSignature(part),
+      });
+    });
+    items.push(...timelineItemsFromParts(deferredNotices, { forceOpenThinking: true }));
+    const liveThinkHtml = openThink ? liveThinkStepHtml() : '';
+    const { inserted, patched } = reconcileTimelineSteps(traceSidebarBody, items, { liveThinkHtml });
+    inserted.concat(patched).forEach((el) => {
+      if (typeof enhanceCodeBlocks !== 'function') return;
+      enhanceCodeBlocks(el);
+      el.querySelectorAll('.think-body').forEach((node) => enhanceCodeBlocks(node));
+    });
+    traceSidebarBody.dataset.sidebarSig = 'live\0' + items.map((item) => item.key).join('\n');
     if (openThink) {
-      if (
-        traceSidebarBody.dataset.sidebarSig !== committedSig ||
-        !traceSidebarBody.querySelector(':scope > .agent-step.is-live-think')
-      ) {
-        rebuilt = true;
-        traceSidebarBody.innerHTML =
-          timelineHtml +
-          wrapTimelineStep(
-            '<details class="think-block is-streaming" open>' +
-              '<summary>' +
-                '<span class="think-summary-label thinking-label">Reasoning</span>' +
-                THINK_CHEVRON +
-              '</summary>' +
-              '<div class="think-stream"></div>' +
-            '</details>',
-            { think: true, live: true }
-          );
-        const liveStep = traceSidebarBody.querySelector(':scope > .agent-step:last-child');
-        if (liveStep) liveStep.classList.add('is-live-think');
-        traceSidebarBody.dataset.sidebarSig = committedSig;
-        enhanceCodeBlocks(traceSidebarBody);
-        traceSidebarBody.querySelectorAll('.think-body').forEach((el) => enhanceCodeBlocks(el));
-      }
       const streamEl = traceSidebarBody.querySelector(
         ':scope > .agent-step.is-live-think .think-stream, :scope > .agent-step.is-think.is-live .think-stream'
       );
@@ -622,17 +830,13 @@ function paintTraceSidebarContent(message, { live = false } = {}) {
         }
         streamEl.scrollTop = streamEl.scrollHeight;
       }
-    } else {
-      if (traceSidebarBody.dataset.sidebarSig !== committedSig) {
-        rebuilt = true;
-        traceSidebarBody.innerHTML = timelineHtml;
-        traceSidebarBody.dataset.sidebarSig = committedSig;
-        enhanceCodeBlocks(traceSidebarBody);
-        traceSidebarBody.querySelectorAll('.think-body').forEach((el) => enhanceCodeBlocks(el));
-      }
     }
     patchLiveToolBodies(traceSidebarBody, earlyParts);
-    afterTraceTimelinePaint({ live: true, rebuilt });
+    afterTraceTimelinePaint({
+      live: true,
+      rebuilt: inserted.length > 0,
+      entered: inserted,
+    });
     if (stickTraceSidebar || wasNearBottom) {
       stickTraceSidebar = true;
       scrollTraceSidebarToBottom({ force: true });
@@ -1005,22 +1209,34 @@ function cssAttrValue(value) {
   return String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
-function findLiveToolStep(root, part) {
+function findTimelineToolStep(root, part) {
   if (!root || !part) return null;
   if (part.id) {
     const byId = root.querySelector('.agent-step[data-tool-id="' + cssAttrValue(part.id) + '"]');
     if (byId) return byId;
   }
+  const key = timelinePartKey(part);
+  if (key) {
+    const byKey = root.querySelector('.agent-step[data-timeline-key="' + cssAttrValue(key) + '"]');
+    if (byKey) return byKey;
+  }
   const name = part.name || '';
   const started = part.startedAt ? String(part.startedAt) : '';
   if (name && started) {
-    const byBoth = root.querySelector(
-      '.agent-step.is-live[data-tool-name="' + cssAttrValue(name) + '"][data-tool-started="' + cssAttrValue(started) + '"]'
+    const matches = root.querySelectorAll(
+      '.agent-step[data-tool-name="' + cssAttrValue(name) + '"][data-tool-started="' + cssAttrValue(started) + '"]'
     );
-    if (byBoth) return byBoth;
+    if (matches.length === 1) return matches[0];
   }
-  if (name) return root.querySelector('.agent-step.is-live[data-tool-name="' + cssAttrValue(name) + '"]');
+  if (name) {
+    const matches = root.querySelectorAll('.agent-step.is-live[data-tool-name="' + cssAttrValue(name) + '"]');
+    if (matches.length === 1) return matches[0];
+  }
   return null;
+}
+
+function findLiveToolStep(root, part) {
+  return findTimelineToolStep(root, part);
 }
 
 /** Update draft text in place so the rail spinner is not rebuilt every token. */
@@ -1028,9 +1244,24 @@ function patchLiveToolBodies(root, parts) {
   if (!root) return;
   (parts || []).forEach((part) => {
     if (!part || part.type !== 'tool' || !part.live) return;
-    const step = findLiveToolStep(root, part);
+    const step = findTimelineToolStep(root, part);
     const card = step && step.querySelector('.agent-step-card');
     if (!card) return;
+    const detail = String(part.detail || '');
+    let detailValue = step.querySelector(':scope > .agent-step-card .agent-step-detail-value');
+    if (detail) {
+      if (!detailValue) {
+        const wrap = document.createElement('div');
+        wrap.className = 'agent-step-detail';
+        wrap.innerHTML = '<em>' + escapeHtml(skillDetailLabel(part.name)) + '</em>'
+          + '<span class="agent-step-detail-value"></span>';
+        const head = card.querySelector('.agent-step-head');
+        if (head && head.nextSibling) card.insertBefore(wrap, head.nextSibling);
+        else card.appendChild(wrap);
+        detailValue = wrap.querySelector('.agent-step-detail-value');
+      }
+      if (detailValue && detailValue.textContent !== detail) detailValue.textContent = detail;
+    }
     const fullBody = String(part.body || toolBodyFromArgs(part.name, part.args) || '');
     const bodyText = part.approval === 'pending' ? fullBody : fullBody.length > 20000 ? fullBody.slice(0, 20000) + '\n[Preview truncated]' : fullBody;
     let bodyWrap = step.querySelector(':scope > .agent-step-card .agent-step-body');
@@ -1126,7 +1357,7 @@ function kickLiveToolMotion(root) {
   });
 }
 
-function afterTraceTimelinePaint({ live = false, rebuilt = false } = {}) {
+function afterTraceTimelinePaint({ live = false, rebuilt = false, entered = [] } = {}) {
   if (!traceSidebarBody) return;
   if (live) {
     const paintKey = 'live:' + String(selectedTraceMsgIndex);
@@ -1136,16 +1367,17 @@ function afterTraceTimelinePaint({ live = false, rebuilt = false } = {}) {
     }
     const prev = Number(traceSidebarBody.dataset.liveStepCount || 0);
     const steps = traceSidebarBody.querySelectorAll(':scope > .agent-step');
-    if (rebuilt && steps.length > prev) {
-      for (let i = prev; i < steps.length; i += 1) {
-        if (steps[i].classList.contains('is-live')) continue;
-        motionEnter(steps[i], {
-          y: 10,
-          duration: 240,
-          delay: Math.min(i - prev, 5) * 28,
-        });
-      }
-    }
+    const toEnter = Array.isArray(entered) && entered.length
+      ? entered
+      : (rebuilt ? Array.from(steps).slice(prev) : []);
+    toEnter.forEach((el, index) => {
+      if (!el || el.classList.contains('is-live') || el.classList.contains('is-live-think')) return;
+      motionEnter(el, {
+        y: 10,
+        duration: 240,
+        delay: Math.min(index, 5) * 28,
+      });
+    });
     traceSidebarBody.dataset.liveStepCount = String(steps.length);
     syncLiveToolClocks(traceSidebarBody);
     kickLiveToolMotion(traceSidebarBody);
