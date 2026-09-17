@@ -362,10 +362,15 @@ pub fn grep_files(ws: &Workspace, args: &Value) -> Result<String, String> {
         .map(str::trim)
         .filter(|s| !s.is_empty());
 
-    let mut hits: Vec<String> = Vec::new();
-    let mut match_count = 0usize;
-    let mut files_hit = 0usize;
-    let mut capped = false;
+    let mut search = GrepSearch {
+        glob,
+        regex: &regex,
+        context,
+        hits: Vec::new(),
+        match_count: 0,
+        files_hit: 0,
+        capped: false,
+    };
 
     if let Some(raw_path) = search_path {
         let abs = ws.resolve(raw_path)?;
@@ -375,51 +380,33 @@ pub fn grep_files(ws: &Workspace, args: &Value) -> Result<String, String> {
         }
         if meta.is_file() {
             let rel = ws.relative_display(&abs);
-            if glob.is_none_or(|glob| glob_match(glob, &rel)) {
-                match grep_file_hits(&abs, &rel, &regex, context, MAX_GREP_MATCHES)? {
-                    Some((file_hits, n)) => {
-                        hits.extend(file_hits);
-                        match_count = n;
-                        capped = n >= MAX_GREP_MATCHES;
-                    }
-                    None => {}
-                }
+            if search.glob.is_none_or(|glob| glob_match(glob, &rel))
+                && let Some((file_hits, n)) =
+                    grep_file_hits(&abs, &rel, search.regex, search.context, MAX_GREP_MATCHES)?
+            {
+                search.hits.extend(file_hits);
+                search.match_count = n;
+                search.capped = n >= MAX_GREP_MATCHES;
             }
         } else if meta.is_dir() {
-            grep_walk(
-                ws,
-                &abs,
-                glob,
-                &regex,
-                context,
-                &mut hits,
-                &mut match_count,
-                &mut files_hit,
-                &mut capped,
-            )?;
+            grep_walk(ws, &abs, &mut search)?;
         } else {
             return Err(format!("{raw_path} is not a file or directory."));
         }
     } else {
-        grep_walk(
-            ws,
-            &ws.root,
-            glob,
-            &regex,
-            context,
-            &mut hits,
-            &mut match_count,
-            &mut files_hit,
-            &mut capped,
-        )?;
+        grep_walk(ws, &ws.root, &mut search)?;
     }
 
-    if match_count == 0 {
+    if search.match_count == 0 {
         return Ok(format!("No matches for `{query}`."));
     }
-    let mut out = format!("{match_count} matches:\n{}", hits.join("\n"));
+    let mut out = format!(
+        "{} matches:\n{}",
+        search.match_count,
+        search.hits.join("\n")
+    );
     out.push_str("\nNearby lines are included so you can act without paging the file.");
-    if capped {
+    if search.capped {
         out.push_str(&format!(
             "\nReached the {MAX_GREP_MATCHES}-match cap; narrow path, glob, or query."
         ));
@@ -427,45 +414,43 @@ pub fn grep_files(ws: &Workspace, args: &Value) -> Result<String, String> {
     Ok(out)
 }
 
-fn grep_walk(
-    ws: &Workspace,
-    start: &Path,
-    glob: Option<&str>,
-    regex: &regex::Regex,
+struct GrepSearch<'a> {
+    glob: Option<&'a str>,
+    regex: &'a regex::Regex,
     context: usize,
-    hits: &mut Vec<String>,
-    match_count: &mut usize,
-    files_hit: &mut usize,
-    capped: &mut bool,
-) -> Result<(), String> {
+    hits: Vec<String>,
+    match_count: usize,
+    files_hit: usize,
+    capped: bool,
+}
+
+fn grep_walk(ws: &Workspace, start: &Path, search: &mut GrepSearch<'_>) -> Result<(), String> {
     walk_files(&ws.root, start, &mut |rel, abs, is_dir| {
-        if *match_count >= MAX_GREP_MATCHES || *files_hit >= MAX_GREP_FILES {
-            *capped = *capped || *match_count >= MAX_GREP_MATCHES;
+        if search.match_count >= MAX_GREP_MATCHES || search.files_hit >= MAX_GREP_FILES {
+            search.capped = search.capped || search.match_count >= MAX_GREP_MATCHES;
             return false;
         }
         if is_dir {
             return true;
         }
-        if let Some(glob) = glob
+        if let Some(glob) = search.glob
             && !glob_match(glob, &rel)
         {
             return true;
         }
-        let remaining = MAX_GREP_MATCHES - *match_count;
-        match grep_file_hits(abs, &rel, regex, context, remaining) {
-            Ok(Some((file_hits, n))) => {
-                hits.extend(file_hits);
-                *match_count += n;
-                *files_hit += 1;
-                if *match_count >= MAX_GREP_MATCHES {
-                    *capped = true;
-                    return false;
-                }
-                true
+        let remaining = MAX_GREP_MATCHES - search.match_count;
+        if let Ok(Some((file_hits, n))) =
+            grep_file_hits(abs, &rel, search.regex, search.context, remaining)
+        {
+            search.hits.extend(file_hits);
+            search.match_count += n;
+            search.files_hit += 1;
+            if search.match_count >= MAX_GREP_MATCHES {
+                search.capped = true;
+                return false;
             }
-            Ok(None) => true,
-            Err(_) => true,
         }
+        true
     })
 }
 
@@ -532,9 +517,9 @@ fn format_grep_windows(
             }
             None => start,
         };
-        for i in print_from..=end {
+        for (i, line) in lines.iter().enumerate().take(end + 1).skip(print_from) {
             let mark = if match_set.contains(&i) { ':' } else { '-' };
-            out.push(format!("{rel}:{}{mark}{}", i + 1, lines[i]));
+            out.push(format!("{rel}:{}{mark}{line}", i + 1));
         }
         last_end = Some(end);
     }

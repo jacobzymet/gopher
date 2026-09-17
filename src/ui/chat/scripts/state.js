@@ -135,6 +135,7 @@ const DEFAULT_SETTINGS = {
   traceActivityShare: 0.6,
   traceActivityFolded: false,
   traceMembersFolded: false,
+  autoOpenTraceSidebar: true,
   updateDismissed: '',
   browserMigrationVersion: 1,
 };
@@ -1936,6 +1937,7 @@ function normalizeSettings(parsed) {
     })(),
     traceActivityFolded: parsed.traceActivityFolded === true,
     traceMembersFolded: parsed.traceMembersFolded === true,
+    autoOpenTraceSidebar: parsed.autoOpenTraceSidebar !== false,
     updateDismissed: typeof parsed.updateDismissed === 'string'
       ? parsed.updateDismissed.trim()
       : '',
