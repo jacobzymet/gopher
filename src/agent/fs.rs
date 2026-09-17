@@ -20,7 +20,8 @@ const MAX_LIST_ENTRIES: usize = 500;
 const MAX_GLOB_MATCHES: usize = 200;
 const MAX_GLOB_PATTERN_CHARS: usize = 512;
 const MAX_GREP_MATCHES: usize = 80;
-const MAX_GREP_FILES: usize = 80;
+const MAX_GREP_CONTENT: usize = 200;
+const MAX_GREP_FILES: usize = 200;
 const MAX_GREP_FILE_BYTES: u64 = 1_000_000;
 const MAX_GREP_QUERY_CHARS: usize = 4_096;
 const DEFAULT_GREP_CONTEXT: usize = 2;
@@ -305,23 +306,65 @@ pub fn glob_files(ws: &Workspace, args: &Value) -> Result<String, String> {
             "glob pattern is too long (max {MAX_GLOB_PATTERN_CHARS} characters)."
         ));
     }
+    let matcher = expand_glob_pattern(pattern);
+    let search_path = args
+        .get("path")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
     let mut matches = Vec::new();
-    walk_files(&ws.root, &ws.root, &mut |rel, _abs, is_dir| {
+    if let Some(raw_path) = search_path {
+        let abs = ws.resolve(raw_path)?;
+        let meta = fs::symlink_metadata(&abs).map_err(|_| format!("Path not found: {raw_path}"))?;
+        if meta.file_type().is_symlink() {
+            return Err("Refusing to search a symlink.".into());
+        }
+        if meta.is_file() {
+            let rel = ws.relative_display(&abs);
+            if glob_match(&matcher, &rel) {
+                matches.push(rel);
+            }
+        } else if meta.is_dir() {
+            glob_collect(&ws.root, &abs, &matcher, &mut matches)?;
+        } else {
+            return Err(format!("{raw_path} is not a file or directory."));
+        }
+    } else {
+        glob_collect(&ws.root, &ws.root, &matcher, &mut matches)?;
+    }
+    matches.sort();
+    if matches.is_empty() {
+        return Ok(match search_path {
+            Some(path) => format!("No files matched `{pattern}` under `{path}`."),
+            None => format!("No files matched `{pattern}` under the workspace."),
+        });
+    }
+    let capped = matches.len() >= MAX_GLOB_MATCHES;
+    let mut out = format!("{} files matching `{pattern}`:\n", matches.len());
+    out.push_str(&matches.join("\n"));
+    if capped {
+        out.push_str(&format!(
+            "\nReached the {MAX_GLOB_MATCHES}-file cap; narrow the pattern or path."
+        ));
+    }
+    Ok(out)
+}
+
+fn glob_collect(
+    root: &Path,
+    start: &Path,
+    matcher: &str,
+    matches: &mut Vec<String>,
+) -> Result<(), String> {
+    walk_files(root, start, &mut |rel, _abs, is_dir| {
         if is_dir {
             return matches.len() < MAX_GLOB_MATCHES;
         }
-        if glob_match(pattern, &rel) {
+        if glob_match(matcher, &rel) {
             matches.push(rel);
         }
         matches.len() < MAX_GLOB_MATCHES
-    })?;
-    matches.sort();
-    if matches.is_empty() {
-        return Ok(format!("No files matched `{pattern}` under the workspace."));
-    }
-    let mut out = format!("{} files matching `{pattern}`:\n", matches.len());
-    out.push_str(&matches.join("\n"));
-    Ok(out)
+    })
 }
 
 pub fn grep_files(ws: &Workspace, args: &Value) -> Result<String, String> {
@@ -346,7 +389,8 @@ pub fn grep_files(ws: &Workspace, args: &Value) -> Result<String, String> {
         .or_else(|| args.get("include"))
         .and_then(|v| v.as_str())
         .map(str::trim)
-        .filter(|s| !s.is_empty());
+        .filter(|s| !s.is_empty())
+        .map(expand_glob_pattern);
     let case_insensitive = args
         .get("case_insensitive")
         .or_else(|| args.get("i"))
@@ -355,6 +399,8 @@ pub fn grep_files(ws: &Workspace, args: &Value) -> Result<String, String> {
     let context = arg_usize(args, "context")
         .unwrap_or(DEFAULT_GREP_CONTEXT)
         .min(MAX_GREP_CONTEXT);
+    let mode = grep_mode(args);
+    let match_limit = grep_limit(args, mode);
     let regex = compile_grep_regex(query, case_insensitive)?;
     let search_path = args
         .get("path")
@@ -366,6 +412,8 @@ pub fn grep_files(ws: &Workspace, args: &Value) -> Result<String, String> {
         glob,
         regex: &regex,
         context,
+        mode,
+        match_limit,
         hits: Vec::new(),
         match_count: 0,
         files_hit: 0,
@@ -380,13 +428,23 @@ pub fn grep_files(ws: &Workspace, args: &Value) -> Result<String, String> {
         }
         if meta.is_file() {
             let rel = ws.relative_display(&abs);
-            if search.glob.is_none_or(|glob| glob_match(glob, &rel))
-                && let Some((file_hits, n)) =
-                    grep_file_hits(&abs, &rel, search.regex, search.context, MAX_GREP_MATCHES)?
+            if search
+                .glob
+                .as_deref()
+                .is_none_or(|glob| glob_match(glob, &rel))
+                && let Some((file_hits, n)) = grep_file_hits(
+                    &abs,
+                    &rel,
+                    search.regex,
+                    search.context,
+                    search.match_limit,
+                    search.mode,
+                )?
             {
                 search.hits.extend(file_hits);
                 search.match_count = n;
-                search.capped = n >= MAX_GREP_MATCHES;
+                search.files_hit = 1;
+                search.capped = grep_at_limit(&search);
             }
         } else if meta.is_dir() {
             grep_walk(ws, &abs, &mut search)?;
@@ -397,55 +455,135 @@ pub fn grep_files(ws: &Workspace, args: &Value) -> Result<String, String> {
         grep_walk(ws, &ws.root, &mut search)?;
     }
 
-    if search.match_count == 0 {
-        return Ok(format!("No matches for `{query}`."));
-    }
-    let mut out = format!(
-        "{} matches:\n{}",
-        search.match_count,
-        search.hits.join("\n")
-    );
-    out.push_str("\nNearby lines are included so you can act without paging the file.");
-    if search.capped {
-        out.push_str(&format!(
-            "\nReached the {MAX_GREP_MATCHES}-match cap; narrow path, glob, or query."
+    if search.match_count == 0 && search.files_hit == 0 {
+        return Ok(format!(
+            "No matches for `{query}`. Retry with a more distinctive phrase from the request and a narrower path. Do not list the workspace to find it."
         ));
+    }
+    let mut out = match search.mode {
+        GrepMode::Content => format!(
+            "{}:\n{}\nNearby lines are included so you can act without paging the file.",
+            grep_count_label(search.match_count, "match", "matches"),
+            search.hits.join("\n")
+        ),
+        GrepMode::Files => format!(
+            "{}:\n{}\nUse output_mode content with a path or a more distinctive query to see lines.",
+            grep_count_label(search.files_hit, "file", "files"),
+            search.hits.join("\n")
+        ),
+        GrepMode::Count => format!(
+            "{} in {}:\n{}",
+            grep_count_label(search.match_count, "match", "matches"),
+            grep_count_label(search.files_hit, "file", "files"),
+            search.hits.join("\n")
+        ),
+    };
+    if search.capped {
+        let cap = match search.mode {
+            GrepMode::Content => format!(
+                "\nReached the {}-match cap; narrow path, glob, or query.",
+                search.match_limit
+            ),
+            GrepMode::Files | GrepMode::Count => format!(
+                "\nReached the {}-file cap; narrow path, glob, or query.",
+                search.match_limit
+            ),
+        };
+        out.push_str(&cap);
     }
     Ok(out)
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum GrepMode {
+    Content,
+    Files,
+    Count,
+}
+
 struct GrepSearch<'a> {
-    glob: Option<&'a str>,
+    glob: Option<String>,
     regex: &'a regex::Regex,
     context: usize,
+    mode: GrepMode,
+    match_limit: usize,
     hits: Vec<String>,
     match_count: usize,
     files_hit: usize,
     capped: bool,
 }
 
+fn grep_mode(args: &Value) -> GrepMode {
+    match args
+        .get("output_mode")
+        .or_else(|| args.get("mode"))
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .unwrap_or("content")
+    {
+        "files" | "files_with_matches" => GrepMode::Files,
+        "count" => GrepMode::Count,
+        _ => GrepMode::Content,
+    }
+}
+
+fn grep_limit(args: &Value, mode: GrepMode) -> usize {
+    let (default, max) = match mode {
+        GrepMode::Content => (MAX_GREP_MATCHES, MAX_GREP_CONTENT),
+        GrepMode::Files | GrepMode::Count => (MAX_GREP_FILES, MAX_GREP_FILES),
+    };
+    arg_usize(args, "head_limit")
+        .or_else(|| arg_usize(args, "limit"))
+        .unwrap_or(default)
+        .clamp(1, max)
+}
+
+fn grep_at_limit(search: &GrepSearch<'_>) -> bool {
+    match search.mode {
+        GrepMode::Content => search.match_count >= search.match_limit,
+        GrepMode::Files | GrepMode::Count => search.files_hit >= search.match_limit,
+    }
+}
+
+fn grep_count_label(n: usize, singular: &str, plural: &str) -> String {
+    if n == 1 {
+        format!("1 {singular}")
+    } else {
+        format!("{n} {plural}")
+    }
+}
+
 fn grep_walk(ws: &Workspace, start: &Path, search: &mut GrepSearch<'_>) -> Result<(), String> {
     walk_files(&ws.root, start, &mut |rel, abs, is_dir| {
-        if search.match_count >= MAX_GREP_MATCHES || search.files_hit >= MAX_GREP_FILES {
-            search.capped = search.capped || search.match_count >= MAX_GREP_MATCHES;
+        if grep_at_limit(search) {
+            search.capped = true;
             return false;
         }
         if is_dir {
             return true;
         }
-        if let Some(glob) = search.glob
+        if let Some(glob) = search.glob.as_deref()
             && !glob_match(glob, &rel)
         {
             return true;
         }
-        let remaining = MAX_GREP_MATCHES - search.match_count;
-        if let Ok(Some((file_hits, n))) =
-            grep_file_hits(abs, &rel, search.regex, search.context, remaining)
-        {
+        let remaining = match search.mode {
+            GrepMode::Content => search.match_limit.saturating_sub(search.match_count),
+            GrepMode::Files => 1,
+            GrepMode::Count => usize::MAX,
+        };
+        if let Ok(Some((file_hits, n))) = grep_file_hits(
+            abs,
+            &rel,
+            search.regex,
+            search.context,
+            remaining,
+            search.mode,
+        ) {
             search.hits.extend(file_hits);
             search.match_count += n;
             search.files_hit += 1;
-            if search.match_count >= MAX_GREP_MATCHES {
+            if grep_at_limit(search) {
                 search.capped = true;
                 return false;
             }
@@ -460,6 +598,7 @@ fn grep_file_hits(
     regex: &regex::Regex,
     context: usize,
     remaining: usize,
+    mode: GrepMode,
 ) -> Result<Option<(Vec<String>, usize)>, String> {
     if remaining == 0 {
         return Ok(None);
@@ -480,20 +619,27 @@ fn grep_file_hits(
         return Ok(None);
     };
     let lines: Vec<&str> = text.lines().collect();
+    let take_n = match mode {
+        GrepMode::Files => 1,
+        GrepMode::Count => usize::MAX,
+        GrepMode::Content => remaining,
+    };
     let match_idxs: Vec<usize> = lines
         .iter()
         .enumerate()
         .filter_map(|(idx, line)| regex.is_match(line).then_some(idx))
-        .take(remaining)
+        .take(take_n)
         .collect();
     if match_idxs.is_empty() {
         return Ok(None);
     }
     let n = match_idxs.len();
-    Ok(Some((
-        format_grep_windows(rel, &lines, &match_idxs, context),
-        n,
-    )))
+    let hits = match mode {
+        GrepMode::Content => format_grep_windows(rel, &lines, &match_idxs, context),
+        GrepMode::Files => vec![rel.to_string()],
+        GrepMode::Count => vec![format!("{rel}: {n}")],
+    };
+    Ok(Some((hits, n)))
 }
 
 fn format_grep_windows(
@@ -1056,6 +1202,15 @@ fn display_path(path: &Path) -> String {
     raw.strip_prefix(r"\\?\").unwrap_or(&raw).to_string()
 }
 
+fn expand_glob_pattern(pattern: &str) -> String {
+    let pattern = pattern.replace('\\', "/");
+    if pattern.starts_with("**/") || pattern == "**" {
+        pattern
+    } else {
+        format!("**/{pattern}")
+    }
+}
+
 pub fn glob_match(pattern: &str, path: &str) -> bool {
     if pattern.chars().count() > MAX_GLOB_PATTERN_CHARS {
         return false;
@@ -1440,9 +1595,19 @@ mod tests {
         assert!(listing.contains("lib.rs"));
         let globbed = glob_files(&ws, &json!({ "pattern": "**/*.rs" })).unwrap();
         assert!(globbed.contains("src/lib.rs"));
+        let nested = glob_files(&ws, &json!({ "pattern": "*.rs" })).unwrap();
+        assert!(nested.contains("src/lib.rs"));
+        let scoped = glob_files(&ws, &json!({ "pattern": "*.rs", "path": "src" })).unwrap();
+        assert!(scoped.contains("src/lib.rs"));
         let grepped = grep_files(&ws, &json!({ "query": "fn x" })).unwrap();
         assert!(grepped.contains("src/lib.rs"));
         assert!(grepped.contains("Nearby lines are included"));
+        let files = grep_files(&ws, &json!({ "query": "fn x", "output_mode": "files" })).unwrap();
+        assert!(files.contains("src/lib.rs"));
+        assert!(!files.contains("Nearby lines"));
+        let counted = grep_files(&ws, &json!({ "query": "fn x", "output_mode": "count" })).unwrap();
+        assert!(counted.contains("1 match in 1 file"));
+        assert!(counted.contains("src/lib.rs: 1"));
     }
 
     #[test]
@@ -1480,6 +1645,15 @@ mod tests {
         .unwrap();
         assert!(regex.contains("notes.txt:2:beta keep"));
         assert!(regex.contains("notes.txt:4:beta also"));
+        let limited = grep_files(
+            &ws,
+            &json!({ "query": "beta", "path": "notes.txt", "head_limit": 1, "context": 0 }),
+        )
+        .unwrap();
+        assert!(limited.contains("1 match"));
+        assert!(limited.contains("notes.txt:2:beta keep"));
+        assert!(!limited.contains("beta also"));
+        assert!(limited.contains("1-match cap"));
         let literal =
             grep_files(&ws, &json!({ "query": "beta (keep", "path": "notes.txt" })).unwrap();
         assert!(literal.contains("No matches"));
@@ -1491,6 +1665,19 @@ mod tests {
         let recovered =
             grep_files(&ws, &json!({ "query": "beta (keep", "path": "notes.txt" })).unwrap();
         assert!(recovered.contains("beta (keep"));
+        fs::create_dir_all(ws.root.join("docs")).unwrap();
+        write_file(
+            &ws,
+            &json!({ "path": "docs/nested.txt", "content": "beta nested\n" }),
+        )
+        .unwrap();
+        let glob_filter = grep_files(
+            &ws,
+            &json!({ "query": "beta", "glob": "*.txt", "output_mode": "files" }),
+        )
+        .unwrap();
+        assert!(glob_filter.contains("docs/nested.txt"));
+        assert!(glob_filter.contains("other.txt"));
     }
 
     #[test]

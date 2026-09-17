@@ -1624,7 +1624,8 @@ function skillDetailLabel(name) {
   }
   if (name === 'browser_evaluate') return 'Expression';
   if (name === 'browser_screenshot' || name === 'show_image') return 'Path';
-  if (name === 'glob' || name === 'grep') return 'Pattern';
+  if (name === 'glob') return 'Pattern';
+  if (name === 'grep') return 'Query';
   if (name === 'read_file' || name === 'write_file' || name === 'str_replace' || name === 'delete_file' || name === 'list_dir') {
     return 'Path';
   }

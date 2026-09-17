@@ -1390,6 +1390,9 @@ function toolDetailFromPayload(payload) {
   const args = payload && payload.arguments && typeof payload.arguments === 'object'
     ? payload.arguments
     : {};
+  const name = payload && payload.name ? String(payload.name) : '';
+  if (name === 'grep') return String(args.query || args.pattern || '').trim();
+  if (name === 'glob') return String(args.pattern || args.glob || '').trim();
   if (args.command) return String(args.command);
   if (args.session_id) return String(args.session_id);
   if (args.patch) return (String(args.patch).match(/^\*\*\* (?:Add|Update|Delete|Move to)(?: File)?: .+$/gm) || []).map((line) => line.replace(/^\*\*\* [^:]+: /, '').trim()).join(', ');
