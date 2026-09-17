@@ -31,7 +31,9 @@ function harness(timeline = []) {
     'skillLiveVerb', 'liveToolStatusLabel', 'liveToolStatusText', 'skillToolIcon', 'formatToolElapsed', 'toolDurationMs',
     'skillDetailLabel', 'agentStepResultHtml', 'agentStepHtml',
   ]) vm.runInContext(declaration(render, name), context);
+  vm.runInContext(declaration(render, 'stampTimelinePart'), context);
   vm.runInContext(declaration(runtime, 'timelineSignature'), context);
+  vm.runInContext(declaration(runtime, 'timelineOrderSignature'), context);
   vm.runInContext(declaration(runtime, 'setStreamThinkingLabel'), context);
 
   const eventStart = runtime.indexOf('  const onAgentEvent = (payload) => {');
@@ -43,6 +45,19 @@ function harness(timeline = []) {
   const persistEnd = runtime.indexOf('  if (viewing && dom)', persistStart);
   assert.ok(persistStart >= 0 && persistEnd > persistStart);
   vm.runInContext('function persist() {\n' + runtime.slice(persistStart, persistEnd) + '\nreturn persistedParts;\n}', context);
+  return context;
+}
+
+function sealedHarness() {
+  const context = vm.createContext({});
+  for (const name of [
+    'trailingLiveToolIndex',
+    'stampTimelinePart',
+    'insertTimelinePartBeforeTrailingLiveTools',
+    'sealedTimelineMergeTarget',
+    'ensureSealedTimelineThink',
+    'ensureSealedTimelineText',
+  ]) vm.runInContext(declaration(render, name), context);
   return context;
 }
 
@@ -92,10 +107,7 @@ test('failure status invalidates the activity rendering signature', () => {
 });
 
 test('reasoning snapshots never merge backward across a completed tool', () => {
-  const context = vm.createContext({});
-  for (const name of ['sealedTimelineMergeTarget', 'ensureSealedTimelineThink']) {
-    vm.runInContext(declaration(render, name), context);
-  }
+  const context = sealedHarness();
   const stream = {
     timeline: [
       { type: 'think', content: 'Before the approval.' },
@@ -103,21 +115,14 @@ test('reasoning snapshots never merge backward across a completed tool', () => {
     ],
   };
   context.ensureSealedTimelineThink(stream, 'After the approval.');
-  assert.deepEqual(
-    JSON.parse(JSON.stringify(stream.timeline)),
-    [
-      { type: 'think', content: 'Before the approval.' },
-      { type: 'tool', id: 'write', live: false },
-      { type: 'think', content: 'After the approval.' },
-    ]
-  );
+  assert.equal(stream.timeline[0].content, 'Before the approval.');
+  assert.equal(stream.timeline[1].id, 'write');
+  assert.equal(stream.timeline[2].type, 'think');
+  assert.equal(stream.timeline[2].content, 'After the approval.');
 });
 
 test('a same-round snapshot can still complete reasoning before live approval cards', () => {
-  const context = vm.createContext({});
-  for (const name of ['sealedTimelineMergeTarget', 'ensureSealedTimelineThink']) {
-    vm.runInContext(declaration(render, name), context);
-  }
+  const context = sealedHarness();
   const stream = {
     timeline: [
       { type: 'think', content: 'Checking' },
@@ -128,6 +133,77 @@ test('a same-round snapshot can still complete reasoning before live approval ca
   assert.equal(stream.timeline.length, 2);
   assert.equal(stream.timeline[0].content, 'Checking the file first');
   assert.equal(stream.timeline[1].id, 'write');
+});
+
+test('late same-round reasoning lands before trailing live tools, not after', () => {
+  const context = sealedHarness();
+  const stream = {
+    timeline: [
+      { type: 'tool', id: 'a', name: 'web_search', live: true },
+      { type: 'tool', id: 'b', name: 'web_search', live: true },
+    ],
+  };
+  context.ensureSealedTimelineThink(stream, 'Looking these up');
+  assert.equal(stream.timeline[0].type, 'think');
+  assert.equal(stream.timeline[0].content, 'Looking these up');
+  assert.equal(stream.timeline[1].id, 'a');
+  assert.equal(stream.timeline[2].id, 'b');
+});
+
+test('commitStreamBuffer seals think before already-announced live tools', () => {
+  const context = vm.createContext({
+    isThinkingOpen: () => false,
+    applyMemoryUpdateProtocol: (text) => ({ cleaned: text }),
+    parseThinkSegments: (text) => [{ type: 'think', content: text }],
+  });
+  for (const name of [
+    'trailingLiveToolIndex',
+    'stampTimelinePart',
+    'insertTimelinePartBeforeTrailingLiveTools',
+    'commitStreamBuffer',
+  ]) vm.runInContext(declaration(render, name), context);
+  const stream = {
+    timeline: [
+      { type: 'tool', id: 'a', live: true },
+      { type: 'tool', id: 'b', live: true },
+    ],
+    partial: 'x',
+  };
+  const typer = {
+    target: 'Searching in parallel',
+    clear() { this.target = ''; },
+  };
+  context.commitStreamBuffer(stream, typer);
+  assert.equal(stream.timeline[0].type, 'think');
+  assert.equal(stream.timeline[0].content, 'Searching in parallel');
+  assert.equal(stream.timeline[1].id, 'a');
+  assert.equal(stream.timeline[2].id, 'b');
+});
+
+test('timeline order signature stays stable when a live tool completes', () => {
+  const context = harness();
+  const live = [
+    { type: 'tool', id: 's1', name: 'web_search', live: true, startedAt: 1 },
+    { type: 'tool', id: 's2', name: 'web_search', live: true, startedAt: 2 },
+  ];
+  const after = [
+    { ...live[0] },
+    { ...live[1], live: false, result: 'done', ok: true },
+  ];
+  assert.equal(context.timelineOrderSignature(live), context.timelineOrderSignature(after));
+  assert.notEqual(context.timelineSignature(live), context.timelineSignature(after));
+});
+
+test('parallel same-name results settle the matching live card, not the first', () => {
+  const context = harness([
+    { type: 'tool', id: 's1', name: 'web_search', live: true },
+    { type: 'tool', id: 's2', name: 'web_search', live: true },
+  ]);
+  context.onAgentEvent({ phase: 'tool_result', id: 's2', name: 'web_search', ok: true, result: 'second' });
+  assert.equal(context.stream.timeline[0].live, true);
+  assert.equal(context.stream.timeline[0].result, undefined);
+  assert.equal(context.stream.timeline[1].live, false);
+  assert.equal(context.stream.timeline[1].result, 'second');
 });
 
 test('live tools and legacy saved cards remain compatible', () => {

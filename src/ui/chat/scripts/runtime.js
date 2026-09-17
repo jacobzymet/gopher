@@ -1437,6 +1437,7 @@ function upsertLiveToolPart(stream, payload) {
       startedAt: Date.now(),
     };
     stream.timeline.push(part);
+    stampTimelinePart(part, stream);
   } else {
     if (id) part.id = id;
     if (payload && payload.name) part.name = payload.name;
@@ -1444,6 +1445,7 @@ function upsertLiveToolPart(stream, payload) {
     if (args.kind) part.kind = String(args.kind);
     if (Object.keys(args).length) part.args = { ...(part.args || {}), ...args };
     if (body) part.body = body;
+    stampTimelinePart(part, stream);
   }
   if (payload && (payload.needs_approval || payload.phase === 'tool_approval')) {
     part.approval = 'pending';
@@ -1455,6 +1457,18 @@ function upsertLiveToolPart(stream, payload) {
     part.executing = true;
   }
   return part;
+}
+
+function timelineOrderSignature(timeline) {
+  return (timeline || []).map((part) => {
+    if (!part) return '';
+    if (part.type === 'tool') {
+      return ['tool', part.id || '', part.uid || '', part.name || '', part.startedAt || ''].join('\0');
+    }
+    if (part.type === 'clarify') return ['clarify', part.id || ''].join('\0');
+    if (part.type === 'notice') return ['notice', part.kind || '', part.content || ''].join('\0');
+    return [part.type, part.uid || ''].join('\0');
+  }).join('\n');
 }
 
 function timelineSignature(timeline) {
@@ -1590,6 +1604,7 @@ function paintStreamIntoView(convo, stream, replyText, streaming) {
     stream.enteredSteps = 0;
   } else if (cleaned || hasTimeline || sealedAnswerHtml) {
     const committedHtml = renderCommittedParts(stream.timeline);
+    const orderSig = timelineOrderSignature(stream.timeline) + '\0' + sealedContentSignature(stream.timeline);
     const committedSig = timelineSignature(stream.timeline) + '\0' + sealedContentSignature(stream.timeline);
     const liveOnly =
       streaming &&
@@ -1601,13 +1616,24 @@ function paintStreamIntoView(convo, stream, replyText, streaming) {
     if (!liveOnly) {
       let liveRoot = answerEl.querySelector(':scope > .agent-live');
       if ((hasTimeline || sealedAnswerHtml) && streaming) {
-        if (answerEl.dataset.committedSig !== committedSig || !liveRoot) {
+        if (
+          answerEl.dataset.timelineOrderSig === orderSig
+          && answerEl.dataset.committedSig
+          && liveRoot
+        ) {
+          if (answerEl.dataset.committedSig !== committedSig) {
+            patchTimelineToolChrome(answerEl, stream.timeline);
+            answerEl.dataset.committedSig = committedSig;
+          }
+          patchLiveToolBodies(answerEl, stream.timeline);
+        } else if (answerEl.dataset.committedSig !== committedSig || !liveRoot) {
           answerEl.innerHTML = committedHtml + sealedAnswerHtml + '<div class="agent-live"></div>';
           answerEl.dataset.committedSig = committedSig;
+          answerEl.dataset.timelineOrderSig = orderSig;
           liveRoot = answerEl.querySelector(':scope > .agent-live');
+          stampTimelineKeysOnRoot(answerEl, stream.timeline);
           enhanceCodeBlocks(answerEl);
         }
-        patchLiveToolBodies(answerEl, stream.timeline);
         if (cleaned && liveRoot && !(thinkingOpen && paintLiveThinkOnly(liveRoot, cleaned))) {
           paintStreamingAssistant(liveRoot, cleaned, { streaming: true });
         }
@@ -1619,6 +1645,8 @@ function paintStreamIntoView(convo, stream, replyText, streaming) {
       } else {
         answerEl.innerHTML = committedHtml + sealedAnswerHtml + (cleaned ? renderAssistantHtml(cleaned, { streaming }) : '');
         answerEl.dataset.committedSig = committedSig;
+        answerEl.dataset.timelineOrderSig = orderSig;
+        stampTimelineKeysOnRoot(answerEl, stream.timeline);
         enhanceCodeBlocks(answerEl);
       }
       scrollThinkStreams(answerEl);
@@ -1633,6 +1661,7 @@ function paintStreamIntoView(convo, stream, replyText, streaming) {
   } else if (!streaming) {
     if (answerEl.innerHTML) answerEl.innerHTML = '';
     delete answerEl.dataset.committedSig;
+    delete answerEl.dataset.timelineOrderSig;
     delete answerEl.dataset.renderedHtml;
     stream.enteredSteps = 0;
   }
@@ -2424,8 +2453,8 @@ async function driveAssistantSse(convo, stream, response) {
       }
       const liveTools = stream.timeline.filter((part) => part.type === 'tool' && part.live);
       const last = (id && stream.timeline.find((part) => part.type === 'tool' && part.id === id))
-        || (!id && (liveTools.find((part) => part.name === name) || liveTools[liveTools.length - 1]));
-      if (last && (!id || last.id === id || last.name === name)) {
+        || (!id && (liveTools.find((part) => part.name === name && part.live) || liveTools[liveTools.length - 1]));
+      if (last && (!id || last.id === id)) {
         last.live = false;
         last.executing = false;
         last.result = resultText;
@@ -2452,7 +2481,7 @@ async function driveAssistantSse(convo, stream, response) {
           }
         }
       } else {
-        stream.timeline.push({
+        const added = {
           type: 'tool',
           id,
           name: payload.name || 'skill',
@@ -2469,8 +2498,10 @@ async function driveAssistantSse(convo, stream, response) {
           ...(payload.image_id ? { imageId: String(payload.image_id) } : {}),
           live: false,
           justSettled: true,
-        });
-        scheduleJustSettledClear(stream.timeline[stream.timeline.length - 1]);
+        };
+        stream.timeline.push(added);
+        stampTimelinePart(added, stream);
+        scheduleJustSettledClear(added);
       }
       if (
         payload.image_id

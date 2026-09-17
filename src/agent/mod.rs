@@ -1932,7 +1932,7 @@ async fn apply_openai_sse_line(
                     send_sse(tx, format!("data: {frame}\n\n").into_bytes()).await?;
                 }
                 *forwarding = false;
-                send_sse(tx, sse_agent(json!({ "phase": "content_clear" }))).await?;
+                send_stream_content_clear(tx, reasoning).await?;
             } else {
                 let frame = json!({
                     "choices": [{ "delta": { "content": chunk }, "index": 0 }]
@@ -1948,7 +1948,7 @@ async fn apply_openai_sse_line(
         }
         if *forwarding && native_tools.iter().flatten().any(|c| !c.name.is_empty()) {
             *forwarding = false;
-            send_sse(tx, sse_agent(json!({ "phase": "content_clear" }))).await?;
+            send_stream_content_clear(tx, reasoning).await?;
         }
         announce_preparing_tools(native_tools, tx).await?;
     }
@@ -2552,6 +2552,18 @@ async fn send_content_clear(
     }
     if !turn.reasoning.trim().is_empty() {
         clear["reasoning"] = json!(turn.reasoning);
+    }
+    send_sse(tx, sse_agent(clear)).await
+}
+
+async fn send_stream_content_clear(
+    tx: &mpsc::Sender<Result<Vec<u8>, std::io::Error>>,
+    reasoning: &str,
+) -> Result<(), StreamFail> {
+    let mut clear = json!({ "phase": "content_clear" });
+    let reasoning = reasoning.trim();
+    if !reasoning.is_empty() {
+        clear["reasoning"] = json!(reasoning);
     }
     send_sse(tx, sse_agent(clear)).await
 }
