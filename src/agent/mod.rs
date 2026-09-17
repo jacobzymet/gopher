@@ -2302,9 +2302,11 @@ fn openai_tools_payload(
             "grep",
             trim_prompt(tools::GREP),
             json!({
-                "query": { "type": "string" },
-                "glob": { "type": "string" },
-                "case_insensitive": { "type": "boolean" }
+                "query": { "type": "string", "description": "Text or regex to find" },
+                "path": { "type": "string", "description": "Optional file or folder to search within" },
+                "glob": { "type": "string", "description": "Optional filename filter, e.g. *.md" },
+                "case_insensitive": { "type": "boolean" },
+                "context": { "type": "integer", "description": "Nearby lines around each hit (default 2, maximum 10)" }
             }),
             &["query"],
         ));
@@ -4324,6 +4326,24 @@ mod tests {
         let description = terminal["function"]["description"].as_str().unwrap();
         assert!(description.contains(std::env::consts::OS));
         assert!(!description.contains("{{shell_context}}"));
+        let grep = tools
+            .iter()
+            .find(|t| t["function"]["name"] == "grep")
+            .unwrap();
+        let grep_desc = grep["function"]["description"].as_str().unwrap();
+        assert!(grep_desc.contains("regex"));
+        assert!(!grep_desc.contains("exact text"));
+        assert_eq!(
+            grep["function"]["parameters"]["properties"]["path"]["type"],
+            "string"
+        );
+        assert_eq!(
+            grep["function"]["parameters"]["properties"]["context"]["type"],
+            "integer"
+        );
+        let block = agent_system_block(&skills, &[], false, &[]);
+        assert!(block.contains("act or answer if you can finish"));
+        assert!(block.contains("do not page a file"));
     }
 
     #[test]

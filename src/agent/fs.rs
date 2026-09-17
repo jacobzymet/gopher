@@ -1,12 +1,14 @@
 //! Workspace-scoped file tools. Paths are confined to `workspace_root`.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs::{self, File},
     io::{BufRead, BufReader, Seek, SeekFrom, Write},
     path::{Component, Path, PathBuf},
     sync::{Arc, Mutex, OnceLock, RwLock, Weak},
 };
+
+use regex::RegexBuilder;
 
 use serde_json::Value;
 
@@ -21,6 +23,8 @@ const MAX_GREP_MATCHES: usize = 80;
 const MAX_GREP_FILES: usize = 80;
 const MAX_GREP_FILE_BYTES: u64 = 1_000_000;
 const MAX_GREP_QUERY_CHARS: usize = 4_096;
+const DEFAULT_GREP_CONTEXT: usize = 2;
+const MAX_GREP_CONTEXT: usize = 10;
 const SKIP_DIR_NAMES: &[&str] = &[
     ".git",
     "node_modules",
@@ -30,6 +34,7 @@ const SKIP_DIR_NAMES: &[&str] = &[
     ".venv",
     "venv",
     "__pycache__",
+    "vendor",
 ];
 
 #[derive(Debug, Clone)]
@@ -138,7 +143,7 @@ pub fn read_file(ws: &Workspace, args: &Value) -> Result<String, String> {
     let label = ws.relative_display(&abs);
     let continuation = if page.more {
         format!(
-            "More content available: call read_file with path={path:?}, byte_offset={next}. Do not combine it with offset.\n"
+            "Slice is not the whole file. Resume this page with byte_offset={next}. Grep to locate text, or pass offset/limit for another span. Do not combine with offset.\n"
         )
     } else {
         "End of file.\n".into()
@@ -347,63 +352,207 @@ pub fn grep_files(ws: &Workspace, args: &Value) -> Result<String, String> {
         .or_else(|| args.get("i"))
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    let needle = if case_insensitive {
-        query.to_ascii_lowercase()
-    } else {
-        query.to_string()
-    };
+    let context = arg_usize(args, "context")
+        .unwrap_or(DEFAULT_GREP_CONTEXT)
+        .min(MAX_GREP_CONTEXT);
+    let regex = compile_grep_regex(query, case_insensitive)?;
+    let search_path = args
+        .get("path")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
 
     let mut hits: Vec<String> = Vec::new();
+    let mut match_count = 0usize;
     let mut files_hit = 0usize;
-    walk_files(&ws.root, &ws.root, &mut |rel, abs, is_dir| {
-        if is_dir || hits.len() >= MAX_GREP_MATCHES || files_hit >= MAX_GREP_FILES {
-            return hits.len() < MAX_GREP_MATCHES && files_hit < MAX_GREP_FILES;
+    let mut capped = false;
+
+    if let Some(raw_path) = search_path {
+        let abs = ws.resolve(raw_path)?;
+        let meta = fs::symlink_metadata(&abs).map_err(|_| format!("Path not found: {raw_path}"))?;
+        if meta.file_type().is_symlink() {
+            return Err("Refusing to search a symlink.".into());
+        }
+        if meta.is_file() {
+            let rel = ws.relative_display(&abs);
+            if glob.is_none_or(|glob| glob_match(glob, &rel)) {
+                match grep_file_hits(&abs, &rel, &regex, context, MAX_GREP_MATCHES)? {
+                    Some((file_hits, n)) => {
+                        hits.extend(file_hits);
+                        match_count = n;
+                        capped = n >= MAX_GREP_MATCHES;
+                    }
+                    None => {}
+                }
+            }
+        } else if meta.is_dir() {
+            grep_walk(
+                ws,
+                &abs,
+                glob,
+                &regex,
+                context,
+                &mut hits,
+                &mut match_count,
+                &mut files_hit,
+                &mut capped,
+            )?;
+        } else {
+            return Err(format!("{raw_path} is not a file or directory."));
+        }
+    } else {
+        grep_walk(
+            ws,
+            &ws.root,
+            glob,
+            &regex,
+            context,
+            &mut hits,
+            &mut match_count,
+            &mut files_hit,
+            &mut capped,
+        )?;
+    }
+
+    if match_count == 0 {
+        return Ok(format!("No matches for `{query}`."));
+    }
+    let mut out = format!("{match_count} matches:\n{}", hits.join("\n"));
+    out.push_str("\nNearby lines are included so you can act without paging the file.");
+    if capped {
+        out.push_str(&format!(
+            "\nReached the {MAX_GREP_MATCHES}-match cap; narrow path, glob, or query."
+        ));
+    }
+    Ok(out)
+}
+
+fn grep_walk(
+    ws: &Workspace,
+    start: &Path,
+    glob: Option<&str>,
+    regex: &regex::Regex,
+    context: usize,
+    hits: &mut Vec<String>,
+    match_count: &mut usize,
+    files_hit: &mut usize,
+    capped: &mut bool,
+) -> Result<(), String> {
+    walk_files(&ws.root, start, &mut |rel, abs, is_dir| {
+        if *match_count >= MAX_GREP_MATCHES || *files_hit >= MAX_GREP_FILES {
+            *capped = *capped || *match_count >= MAX_GREP_MATCHES;
+            return false;
+        }
+        if is_dir {
+            return true;
         }
         if let Some(glob) = glob
             && !glob_match(glob, &rel)
         {
             return true;
         }
-        let Ok(meta) = fs::symlink_metadata(abs) else {
-            return true;
-        };
-        if meta.file_type().is_symlink() || !meta.is_file() || meta.len() > MAX_GREP_FILE_BYTES {
-            return true;
-        }
-        let Ok(bytes) = fs::read(abs) else {
-            return true;
-        };
-        if bytes.contains(&0) {
-            return true;
-        }
-        let Ok(text) = String::from_utf8(bytes) else {
-            return true;
-        };
-        let mut file_hits = 0usize;
-        for (idx, line) in text.lines().enumerate() {
-            let hay = if case_insensitive {
-                line.to_ascii_lowercase()
-            } else {
-                line.to_string()
-            };
-            if hay.contains(&needle) {
-                hits.push(format!("{rel}:{}:{line}", idx + 1));
-                file_hits += 1;
-                if hits.len() >= MAX_GREP_MATCHES {
-                    break;
+        let remaining = MAX_GREP_MATCHES - *match_count;
+        match grep_file_hits(abs, &rel, regex, context, remaining) {
+            Ok(Some((file_hits, n))) => {
+                hits.extend(file_hits);
+                *match_count += n;
+                *files_hit += 1;
+                if *match_count >= MAX_GREP_MATCHES {
+                    *capped = true;
+                    return false;
                 }
+                true
             }
+            Ok(None) => true,
+            Err(_) => true,
         }
-        if file_hits > 0 {
-            files_hit += 1;
-        }
-        hits.len() < MAX_GREP_MATCHES && files_hit < MAX_GREP_FILES
-    })?;
+    })
+}
 
-    if hits.is_empty() {
-        return Ok(format!("No matches for `{query}`."));
+fn grep_file_hits(
+    abs: &Path,
+    rel: &str,
+    regex: &regex::Regex,
+    context: usize,
+    remaining: usize,
+) -> Result<Option<(Vec<String>, usize)>, String> {
+    if remaining == 0 {
+        return Ok(None);
     }
-    Ok(format!("{} matches:\n{}", hits.len(), hits.join("\n")))
+    let Ok(meta) = fs::symlink_metadata(abs) else {
+        return Ok(None);
+    };
+    if meta.file_type().is_symlink() || !meta.is_file() || meta.len() > MAX_GREP_FILE_BYTES {
+        return Ok(None);
+    }
+    let Ok(bytes) = fs::read(abs) else {
+        return Ok(None);
+    };
+    if bytes.contains(&0) {
+        return Ok(None);
+    }
+    let Ok(text) = String::from_utf8(bytes) else {
+        return Ok(None);
+    };
+    let lines: Vec<&str> = text.lines().collect();
+    let match_idxs: Vec<usize> = lines
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, line)| regex.is_match(line).then_some(idx))
+        .take(remaining)
+        .collect();
+    if match_idxs.is_empty() {
+        return Ok(None);
+    }
+    let n = match_idxs.len();
+    Ok(Some((
+        format_grep_windows(rel, &lines, &match_idxs, context),
+        n,
+    )))
+}
+
+fn format_grep_windows(
+    rel: &str,
+    lines: &[&str],
+    match_idxs: &[usize],
+    context: usize,
+) -> Vec<String> {
+    let match_set: HashSet<usize> = match_idxs.iter().copied().collect();
+    let mut out = Vec::new();
+    let mut last_end: Option<usize> = None;
+    let last_line = lines.len().saturating_sub(1);
+    for &idx in match_idxs {
+        let start = idx.saturating_sub(context);
+        let end = (idx + context).min(last_line);
+        let print_from = match last_end {
+            Some(prev) if start <= prev + 1 => prev + 1,
+            Some(_) => {
+                out.push("--".into());
+                start
+            }
+            None => start,
+        };
+        for i in print_from..=end {
+            let mark = if match_set.contains(&i) { ':' } else { '-' };
+            out.push(format!("{rel}:{}{mark}{}", i + 1, lines[i]));
+        }
+        last_end = Some(end);
+    }
+    out
+}
+
+fn compile_grep_regex(query: &str, case_insensitive: bool) -> Result<regex::Regex, String> {
+    let build = |pattern: &str| {
+        RegexBuilder::new(pattern)
+            .case_insensitive(case_insensitive)
+            .size_limit(1_048_576)
+            .dfa_size_limit(1_048_576)
+            .build()
+    };
+    match build(query) {
+        Ok(regex) => Ok(regex),
+        Err(_) => build(&regex::escape(query)).map_err(|err| format!("Invalid grep query: {err}")),
+    }
 }
 
 pub fn write_file(ws: &Workspace, args: &Value) -> Result<String, String> {
@@ -1308,6 +1457,55 @@ mod tests {
         assert!(globbed.contains("src/lib.rs"));
         let grepped = grep_files(&ws, &json!({ "query": "fn x" })).unwrap();
         assert!(grepped.contains("src/lib.rs"));
+        assert!(grepped.contains("Nearby lines are included"));
+    }
+
+    #[test]
+    fn grep_returns_context_and_honors_path_and_regex() {
+        let (_dir, ws) = temp_ws();
+        write_file(
+            &ws,
+            &json!({
+                "path": "notes.txt",
+                "content": "alpha\nbeta keep\ngamma\nbeta also\nomega\n"
+            }),
+        )
+        .unwrap();
+        write_file(
+            &ws,
+            &json!({
+                "path": "other.txt",
+                "content": "beta elsewhere\n"
+            }),
+        )
+        .unwrap();
+        let scoped = grep_files(
+            &ws,
+            &json!({ "query": "beta", "path": "notes.txt", "context": 1 }),
+        )
+        .unwrap();
+        assert!(scoped.contains("notes.txt:1-alpha"));
+        assert!(scoped.contains("notes.txt:2:beta keep"));
+        assert!(scoped.contains("notes.txt:3-gamma"));
+        assert!(!scoped.contains("other.txt"));
+        let regex = grep_files(
+            &ws,
+            &json!({ "query": "beta (keep|also)", "path": "notes.txt" }),
+        )
+        .unwrap();
+        assert!(regex.contains("notes.txt:2:beta keep"));
+        assert!(regex.contains("notes.txt:4:beta also"));
+        let literal =
+            grep_files(&ws, &json!({ "query": "beta (keep", "path": "notes.txt" })).unwrap();
+        assert!(literal.contains("No matches"));
+        write_file(
+            &ws,
+            &json!({ "path": "notes.txt", "content": "beta (keep\n", "overwrite": true }),
+        )
+        .unwrap();
+        let recovered =
+            grep_files(&ws, &json!({ "query": "beta (keep", "path": "notes.txt" })).unwrap();
+        assert!(recovered.contains("beta (keep"));
     }
 
     #[test]
