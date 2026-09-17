@@ -1,1 +1,1 @@
-Find files under the workspace by glob. Pass {"pattern": "**/*.rs"}. * does not cross directories; ** does.
+Find files by name. Pass {"pattern":"*.rs"} — patterns are matched anywhere under the search root unless they already start with **/. Optional path limits to a folder. Prefer this or grep over listing directories to hunt for a file.

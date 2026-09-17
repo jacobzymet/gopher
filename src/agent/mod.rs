@@ -2275,11 +2275,38 @@ fn openai_tools_payload(
     }
     if skills.filesystem_ready() {
         tools_out.push(function_tool(
+            "grep",
+            trim_prompt(tools::GREP),
+            json!({
+                "query": { "type": "string", "description": "Distinctive text or regex to find" },
+                "path": { "type": "string", "description": "Optional file or folder to search within" },
+                "glob": { "type": "string", "description": "Optional filename filter; *.md matches nested files" },
+                "output_mode": {
+                    "type": "string",
+                    "enum": ["content", "files", "count"],
+                    "description": "content (default) returns matching lines; files returns paths; count returns per-file totals"
+                },
+                "head_limit": { "type": "integer", "description": "Cap on matches (content) or files (files/count)" },
+                "case_insensitive": { "type": "boolean" },
+                "context": { "type": "integer", "description": "Nearby lines around each hit (default 2, maximum 10); content mode only" }
+            }),
+            &["query"],
+        ));
+        tools_out.push(function_tool(
+            "glob",
+            trim_prompt(tools::GLOB),
+            json!({
+                "pattern": { "type": "string", "description": "Filename glob; *.rs matches nested files unless the pattern already starts with **/" },
+                "path": { "type": "string", "description": "Optional folder to search within" }
+            }),
+            &["pattern"],
+        ));
+        tools_out.push(function_tool(
             "read_file",
             trim_prompt(tools::READ_FILE),
             json!({
                 "path": { "type": "string" },
-                "offset": { "type": "integer", "description": "Optional 0-based line offset" },
+                "offset": { "type": "integer", "description": "Optional 0-based line number" },
                 "limit": { "type": "integer", "description": "Max lines to return (default 200, maximum 2000)" },
                 "byte_offset": { "type": "integer", "description": "Resume at the exact byte offset returned by a previous page; do not combine with offset" },
                 "max_bytes": { "type": "integer", "description": "Page content budget, 256–32000 bytes (default 32000)" }
@@ -2291,24 +2318,6 @@ fn openai_tools_payload(
             trim_prompt(tools::LIST_DIR),
             json!({ "path": { "type": "string" } }),
             &[],
-        ));
-        tools_out.push(function_tool(
-            "glob",
-            trim_prompt(tools::GLOB),
-            json!({ "pattern": { "type": "string" } }),
-            &["pattern"],
-        ));
-        tools_out.push(function_tool(
-            "grep",
-            trim_prompt(tools::GREP),
-            json!({
-                "query": { "type": "string", "description": "Text or regex to find" },
-                "path": { "type": "string", "description": "Optional file or folder to search within" },
-                "glob": { "type": "string", "description": "Optional filename filter, e.g. *.md" },
-                "case_insensitive": { "type": "boolean" },
-                "context": { "type": "integer", "description": "Nearby lines around each hit (default 2, maximum 10)" }
-            }),
-            &["query"],
         ));
         tools_out.push(function_tool(
             "apply_patch", trim_prompt(tools::APPLY_PATCH),
@@ -4341,9 +4350,29 @@ mod tests {
             grep["function"]["parameters"]["properties"]["context"]["type"],
             "integer"
         );
+        assert_eq!(
+            grep["function"]["parameters"]["properties"]["output_mode"]["enum"],
+            json!(["content", "files", "count"])
+        );
+        let glob = tools
+            .iter()
+            .find(|t| t["function"]["name"] == "glob")
+            .unwrap();
+        assert_eq!(
+            glob["function"]["parameters"]["properties"]["path"]["type"],
+            "string"
+        );
+        let names: Vec<&str> = tools
+            .iter()
+            .filter_map(|t| t.pointer("/function/name").and_then(|v| v.as_str()))
+            .collect();
+        let grep_at = names.iter().position(|n| *n == "grep").unwrap();
+        let list_at = names.iter().position(|n| *n == "list_dir").unwrap();
+        assert!(grep_at < list_at);
         let block = agent_system_block(&skills, &[], false, &[]);
         assert!(block.contains("act or answer if you can finish"));
-        assert!(block.contains("do not page a file"));
+        assert!(block.contains("Do not list the workspace root"));
+        assert!(block.contains("several greps in one turn"));
     }
 
     #[test]

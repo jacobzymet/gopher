@@ -1,1 +1,1 @@
-List files and folders in a workspace directory. Pass {"path": "."} or a relative path.
+List one directory you already know. Pass {"path": "src"} (or "." only when you truly need the top-level names). Do not list the workspace to find where something lives — use grep or glob.
