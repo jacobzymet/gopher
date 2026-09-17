@@ -993,6 +993,25 @@ html[data-theme="light"] .agent-process-note {
   color: var(--color-muted);
   font-size: 0.69rem;
 }
+.chat-model-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 1rem 0.55rem;
+}
+.chat-model-tab {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.45rem;
+  padding: 0.12rem 0.02rem;
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+  letter-spacing: -0.012em;
+  line-height: 1.2;
+}
+.chat-model-tab.is-active { color: var(--color-ink); }
 .chat-model-key {
   flex: 0 0 auto;
   padding-top: 0.08rem;
@@ -1722,6 +1741,10 @@ html[data-theme="light"] .agent-process-note {
   gap: 0.65rem;
   flex: 0 0 auto;
 }
+.chat-model-tabs {
+  padding: 0.15rem 1.1rem 0.65rem;
+}
+.chat-model-tab { font-size: 0.8rem; }
 .chat-model-dialog-close {
   appearance: none;
   display: grid;
@@ -1819,6 +1842,7 @@ html[data-theme="light"] .agent-process-note {
   .chat-model-key { display: none; }
   .chat-model-menu-head { padding-inline: 0.9rem; }
   .chat-model-menu-head span:not(.chat-model-key) { max-width: calc(100vw - 7rem); }
+  .chat-model-tabs { padding-inline: 0.9rem; }
   .chat-model-menu-footer {
     align-items: flex-start;
     flex-direction: column;
