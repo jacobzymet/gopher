@@ -1031,7 +1031,7 @@ html:not(.ui-ready) .chat-sidebar {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  margin: 0.85rem 0.56rem 0.28rem;
+  margin: 0.85rem 0.56rem 0.38rem;
   color: color-mix(in oklch, var(--color-muted) 82%, transparent);
   font-family: var(--font-mono);
   font-size: 0.62rem;
