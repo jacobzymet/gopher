@@ -1924,14 +1924,8 @@ mod tests {
 
         let anthropic =
             provider_auth_headers(ApiStyle::Anthropic, "cf-access:client.access:secret-value");
-        assert!(anthropic.contains(&(
-            "CF-Access-Client-Id".into(),
-            "client.access".into()
-        )));
-        assert!(anthropic.contains(&(
-            "CF-Access-Client-Secret".into(),
-            "secret-value".into()
-        )));
+        assert!(anthropic.contains(&("CF-Access-Client-Id".into(), "client.access".into())));
+        assert!(anthropic.contains(&("CF-Access-Client-Secret".into(), "secret-value".into())));
         assert!(anthropic.contains(&(
             "anthropic-version".into(),
             anthropic::ANTHROPIC_VERSION.into()
