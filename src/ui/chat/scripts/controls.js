@@ -1976,6 +1976,8 @@ function renderPlusMenu() {
 function renderComposerModes() {
   if (!composerModes) return;
   composerModes.innerHTML = '';
+  const researchOn = settings.skillDeepResearch !== false
+    && (settings.deepResearch === 'long' || settings.deepResearch === 'brief');
   if (settings.agentMode) {
     const chip = document.createElement('span');
     chip.className = 'composer-mode-chip is-agent-available';
@@ -2001,10 +2003,7 @@ function renderComposerModes() {
     chip.appendChild(remove);
     composerModes.appendChild(chip);
   }
-  if (
-    settings.skillDeepResearch !== false
-    && (settings.deepResearch === 'long' || settings.deepResearch === 'brief')
-  ) {
+  if (researchOn) {
     const chip = document.createElement('span');
     chip.className = 'composer-mode-chip';
     const style = settings.deepResearch === 'brief' ? 'concise' : 'comprehensive';
@@ -2016,6 +2015,12 @@ function renderComposerModes() {
     remove.addEventListener('click', () => setDeepResearch('off', true));
     chip.appendChild(remove);
     composerModes.appendChild(chip);
+  }
+  if (!settings.agentMode && !researchOn && composerMentionIds.size === 0) {
+    const empty = document.createElement('span');
+    empty.className = 'composer-capabilities-empty';
+    empty.textContent = 'No agent capabilities enabled';
+    composerModes.appendChild(empty);
   }
 }
 
