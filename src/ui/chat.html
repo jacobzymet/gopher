@@ -263,6 +263,18 @@
                         <button type="button" class="btn-mic is-hidden" id="btnMic" aria-label="Voice input" aria-pressed="false" title="Voice input" hidden>
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/><path d="M8 22h8"/></svg>
                         </button>
+                        <div class="context-usage is-unavailable" id="contextUsage" tabindex="0" aria-label="Context usage unavailable" aria-describedby="contextUsageTooltip">
+                          <svg class="context-usage-icon" viewBox="0 0 24 24" aria-hidden="true">
+                            <circle class="context-usage-track" cx="12" cy="12" r="8.5" pathLength="100"></circle>
+                            <circle class="context-usage-ring" cx="12" cy="12" r="8.5" pathLength="100"></circle>
+                            <circle class="context-usage-core" cx="12" cy="12" r="2"></circle>
+                          </svg>
+                          <span class="context-usage-tooltip" id="contextUsageTooltip" role="tooltip">
+                            <strong id="contextUsageTitle">Context</strong>
+                            <span id="contextUsageSummary">Waiting for token usage</span>
+                            <span id="contextUsageDetail">Usage updates from the active model request.</span>
+                          </span>
+                        </div>
                         <button type="button" class="btn btn-outline btn-branch" id="btnBranch" aria-label="Branch into a new chat" title="Send in a new chat that keeps this conversation's context" disabled>
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="5" r="2.25"/><circle cx="18" cy="5" r="2.25"/><circle cx="6" cy="19" r="2.25"/><path d="M6 7.25v9.5"/><path d="M8.25 5h5.5a4 4 0 0 1 4 4v0"/></svg>
                           <span class="btn-branch-label">Branch</span>

@@ -4271,6 +4271,10 @@ function ingestStreamUsage(stats, json) {
     const prompt = Number(usage.prompt_tokens);
     if (Number.isFinite(prompt) && prompt >= 0) {
       stats.promptTokens = (stats.promptTokens || 0) + prompt;
+      stats.contextPromptTokens = prompt;
+    }
+    if (Number.isFinite(completion) && completion >= 0) {
+      stats.contextCompletionTokens = completion;
     }
   }
   const timings = json.timings;
@@ -4307,6 +4311,11 @@ function finalizeTurnStats(stats, firstTokenAt, endedAt) {
   return {
     completionTokens: Number.isFinite(stats.completionTokens) ? stats.completionTokens : null,
     promptTokens: Number.isFinite(stats.promptTokens) ? stats.promptTokens : null,
+    contextPromptTokens: Number.isFinite(stats.contextPromptTokens) ? stats.contextPromptTokens : null,
+    contextCompletionTokens: Number.isFinite(stats.contextCompletionTokens) ? stats.contextCompletionTokens : null,
+    contextTokens: Number.isFinite(stats.contextPromptTokens)
+      ? stats.contextPromptTokens + (Number.isFinite(stats.contextCompletionTokens) ? stats.contextCompletionTokens : 0)
+      : null,
     tokensPerSec: tokensPerSec != null && Number.isFinite(tokensPerSec) ? tokensPerSec : null,
     upstreamModel: stats.upstreamModel || null,
   };
@@ -4733,6 +4742,7 @@ function selectConversation(id) {
   clearPendingReplyQuote();
   hideSelectionReplyBar();
   syncComposerStreamUi();
+  syncContextUsage(convo);
   syncUrlFromState();
   closeMobileSidebar();
   composerInput.focus();
@@ -4764,6 +4774,7 @@ function startDraft({ incognito = false } = {}) {
   renderSidebar();
   showEmptyState();
   syncComposerStreamUi();
+  syncContextUsage(null);
   refreshTraceSidebar({ animate: false });
   setTraceSidebarOpen(false);
   syncUrlFromState();

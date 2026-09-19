@@ -117,6 +117,123 @@ function selectedModelMeta() {
   };
 }
 
+function formatContextTokenCount(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return '—';
+  return Math.round(n).toLocaleString();
+}
+
+function latestConversationContextUsage(convo, activeModel) {
+  if (!convo || !Array.isArray(convo.messages)) return null;
+  for (let i = convo.messages.length - 1; i >= 0; i -= 1) {
+    const message = convo.messages[i];
+    if (!message || message.role !== 'assistant') continue;
+    const model = String(message.contextModel || message.model || '').trim();
+    if (activeModel && model && model !== activeModel) continue;
+    const explicit = Number(message.contextTokens);
+    if (Number.isFinite(explicit) && explicit >= 0) {
+      return {
+        used: explicit,
+        prompt: Number(message.contextPromptTokens),
+        completion: Number(message.contextCompletionTokens),
+        model,
+      };
+    }
+    const prompt = Number(message.promptTokens);
+    const completion = Number(message.completionTokens);
+    if (Number.isFinite(prompt) && prompt >= 0) {
+      return {
+        used: prompt + (Number.isFinite(completion) && completion >= 0 ? completion : 0),
+        prompt,
+        completion,
+        model,
+      };
+    }
+  }
+  return null;
+}
+
+function syncContextUsage(convo = null, liveStats = null, liveRemote = null) {
+  if (!contextUsage) return;
+  const activeConvo = convo || conversations.find((item) => item.id === activeId) || null;
+  const remote = liveRemote || selectedRemoteModel(latestState);
+  const activeModel = String(remote?.model || selectedChatModel || '').trim();
+  const limit = Number(remote?.context_length);
+  const hasLimit = Number.isFinite(limit) && limit > 0;
+  let snapshot = null;
+
+  const livePrompt = Number(liveStats?.contextPromptTokens);
+  const liveCompletion = Number(liveStats?.contextCompletionTokens);
+  if (Number.isFinite(livePrompt) && livePrompt >= 0) {
+    snapshot = {
+      used: livePrompt + (Number.isFinite(liveCompletion) && liveCompletion >= 0 ? liveCompletion : 0),
+      prompt: livePrompt,
+      completion: liveCompletion,
+      model: activeModel,
+    };
+  } else {
+    snapshot = latestConversationContextUsage(activeConvo, activeModel);
+  }
+
+  contextUsage.classList.remove('is-warn', 'is-danger', 'is-unavailable');
+  const ring = contextUsage.querySelector('.context-usage-ring');
+
+  if (!hasLimit) {
+    contextUsage.classList.add('is-unavailable');
+    contextUsage.style.setProperty('--context-usage-pct', '0');
+    if (ring) ring.style.strokeDashoffset = '100';
+    contextUsageTitle.textContent = 'Context';
+    contextUsageSummary.textContent = 'Window size unavailable';
+    contextUsageDetail.textContent = activeModel
+      ? activeModel + ' does not report a context length.'
+      : 'Choose a model to see context usage.';
+    contextUsage.setAttribute('aria-label', 'Context window size unavailable');
+    return;
+  }
+
+  if (!activeConvo) {
+    contextUsage.style.setProperty('--context-usage-pct', '0');
+    if (ring) ring.style.strokeDashoffset = '100';
+    contextUsageTitle.textContent = 'Context · 0%';
+    contextUsageSummary.textContent = '0 / ' + formatContextTokenCount(limit) + ' tokens';
+    contextUsageDetail.textContent = 'New chat · ' + (activeModel || 'selected model');
+    contextUsage.setAttribute('aria-label', 'Context usage 0 percent');
+    return;
+  }
+
+  if (!snapshot) {
+    contextUsage.classList.add('is-unavailable');
+    contextUsage.style.setProperty('--context-usage-pct', '0');
+    if (ring) ring.style.strokeDashoffset = '100';
+    contextUsageTitle.textContent = 'Context';
+    contextUsageSummary.textContent = 'Waiting for usage';
+    contextUsageDetail.textContent = formatContextTokenCount(limit) + ' token window · ' + (activeModel || 'selected model');
+    contextUsage.setAttribute('aria-label', 'Context usage waiting for provider data');
+    return;
+  }
+
+  const used = Math.max(0, Number(snapshot.used) || 0);
+  const pct = (used / limit) * 100;
+  const ringPct = Math.max(0, Math.min(100, pct));
+  const remaining = Math.max(0, limit - used);
+  const pctLabel = pct > 0 && pct < 1 ? '<1%' : (pct < 10 ? pct.toFixed(1) + '%' : Math.round(pct) + '%');
+
+  contextUsage.style.setProperty('--context-usage-pct', ringPct.toFixed(2));
+  if (ring) ring.style.strokeDashoffset = String(100 - ringPct);
+  if (pct >= 90) contextUsage.classList.add('is-danger');
+  else if (pct >= 75) contextUsage.classList.add('is-warn');
+
+  contextUsageTitle.textContent = 'Context · ' + pctLabel;
+  contextUsageSummary.textContent =
+    formatContextTokenCount(used) + ' / ' + formatContextTokenCount(limit) + ' tokens';
+  contextUsageDetail.textContent =
+    formatContextTokenCount(remaining) + ' remaining · ' + (snapshot.model || activeModel || 'selected model');
+  contextUsage.setAttribute(
+    'aria-label',
+    'Context usage ' + pctLabel + ', ' + formatContextTokenCount(used) + ' of ' + formatContextTokenCount(limit) + ' tokens'
+  );
+}
+
 function textFallbackContextOk() {
   if (!settings.attachmentTextFallback) return false;
   if (modelContextLength == null) return true;
@@ -152,6 +269,7 @@ function syncAttachButton() {
   const meta = selectedModelMeta();
   attachmentsSupported = meta.attachmentsSupported;
   modelContextLength = meta.contextLength;
+  syncContextUsage();
   updateSendEnabled();
   syncMicButton();
   renderPlusMenu();
