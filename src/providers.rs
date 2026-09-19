@@ -464,6 +464,9 @@ pub struct RemoteModelOption {
     /// Reported context window in tokens, when the host exposes one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub context_length: Option<u64>,
+    /// llama-server can stream prompt prefill progress when explicitly requested.
+    #[serde(default)]
+    pub prompt_progress_supported: bool,
     #[serde(default)]
     pub provider_id: String,
     #[serde(default)]
@@ -1026,6 +1029,7 @@ fn catalog_from_models_body(
     let thinking = thinking_from_models_body(body);
     let attachments = attachments_from_models_body(body, style);
     let contexts = contexts_from_models_body(body);
+    let llama_cpp_models = llama_cpp_models_from_body(body);
     let port = split_openai_base(&primary)
         .map(|(_, _, port)| port)
         .unwrap_or(80);
@@ -1042,6 +1046,8 @@ fn catalog_from_models_body(
             .get(&model)
             .copied()
             .or_else(|| context_length_fuzzy(&contexts, &model));
+        let prompt_progress_supported =
+            style == ApiStyle::Openai && llama_cpp_models.contains(&model);
         out.push(RemoteModelOption {
             id,
             model: model.clone(),
@@ -1055,6 +1061,7 @@ fn catalog_from_models_body(
             thinking_can_disable: thinking.can_disable,
             attachments_supported,
             context_length,
+            prompt_progress_supported,
             provider_id: String::new(),
             provider_name: String::new(),
         });
@@ -1063,7 +1070,7 @@ fn catalog_from_models_body(
     out
 }
 
-/// Local-only capability routes (`/props`, Ollama `/api/show`, LM Studio).
+/// Enrich local inference servers and remotely exposed llama-server instances.
 /// Safe to run after the `/models` catalog is already stored so the UI is not blocked.
 pub fn enrich_local_catalog(
     api_base: &str,
@@ -1071,14 +1078,47 @@ pub fn enrich_local_catalog(
     style: ApiStyle,
     mut catalog: Vec<RemoteModelOption>,
 ) -> Vec<RemoteModelOption> {
-    if catalog.is_empty() || !base_is_local(api_base) {
+    if catalog.is_empty() {
+        return catalog;
+    }
+    let local_base = base_is_local(api_base);
+    let advertised_llama_server =
+        style == ApiStyle::Openai && catalog.iter().any(|item| item.prompt_progress_supported);
+    if !local_base && !advertised_llama_server {
         return catalog;
     }
     let models: Vec<String> = catalog.iter().map(|item| item.model.clone()).collect();
-    let thinking = local_thinking_support(api_base, token, style, &models, LOCAL_PROBE_TIMEOUT);
-    let attachments =
-        local_attachments_support(api_base, token, style, &models, LOCAL_PROBE_TIMEOUT);
+    let llama_server = style == ApiStyle::Openai
+        && (advertised_llama_server
+            || props_root_from_openai_base(api_base).is_some_and(|root| {
+                root_has_get_path(&root, token, "/props", LOCAL_PROBE_TIMEOUT)
+            }));
+    let llama_props = if llama_server {
+        fetch_llama_props_by_model(api_base, token, &models, LOCAL_PROBE_TIMEOUT)
+    } else {
+        HashMap::new()
+    };
+    let thinking = local_thinking_support(
+        api_base,
+        token,
+        &models,
+        LOCAL_PROBE_TIMEOUT,
+        &llama_props,
+        local_base,
+    );
+    let attachments = if local_base {
+        local_attachments_support(api_base, token, style, &models, LOCAL_PROBE_TIMEOUT)
+    } else {
+        HashMap::new()
+    };
     for item in &mut catalog {
+        item.prompt_progress_supported |= llama_server;
+        if let Some(context_length) = llama_props
+            .get(&item.model)
+            .and_then(|body| context_window_from_props(body))
+        {
+            item.context_length = Some(context_length);
+        }
         if let Some(capabilities) = thinking.get(&item.model) {
             item.thinking_supported |= capabilities.supported;
             if item.thinking_control.is_none() && capabilities.control.is_some() {
@@ -1108,9 +1148,10 @@ pub fn enrich_local_catalog(
 fn local_thinking_support(
     api_base: &str,
     token: &str,
-    style: ApiStyle,
     models: &[String],
     timeout: Duration,
+    llama_props: &HashMap<String, String>,
+    probe_local_alternatives: bool,
 ) -> HashMap<String, ThinkingCapabilities> {
     let mut out: HashMap<String, ThinkingCapabilities> = HashMap::new();
     if models.is_empty() {
@@ -1123,30 +1164,11 @@ fn local_thinking_support(
 
     let probe_timeout = timeout.min(LOCAL_PROBE_TIMEOUT);
 
-    // llama-server /props. Confirm the route exists once before asking per
-    // model, otherwise a server without it costs one request per model.
-    if style == ApiStyle::Openai && root_has_get_path(&root, token, "/props", probe_timeout) {
-        if models.len() == 1 {
-            if let Some(body) = fetch_remote_props_body(&root, token, None, timeout) {
-                merge_thinking_capabilities(
-                    &mut out,
-                    &models[0],
-                    thinking_capabilities_from_props(&body),
-                );
-            }
-        } else {
-            let shared = fetch_remote_props_body(&root, token, None, timeout)
-                .map(|body| thinking_capabilities_from_props(&body));
-            for model in models {
-                if let Some(capabilities) =
-                    fetch_remote_props_body(&root, token, Some(model), timeout)
-                        .map(|body| thinking_capabilities_from_props(&body))
-                        .or_else(|| shared.clone())
-                {
-                    merge_thinking_capabilities(&mut out, model, capabilities);
-                }
-            }
-        }
+    for (model, body) in llama_props {
+        merge_thinking_capabilities(&mut out, model, thinking_capabilities_from_props(body));
+    }
+    if !probe_local_alternatives {
+        return out;
     }
 
     if root_has_get_path(&root, token, "/api/tags", probe_timeout) {
@@ -1440,6 +1462,22 @@ fn contexts_from_models_body(body: &serde_json::Value) -> HashMap<String, u64> {
     out
 }
 
+fn llama_cpp_models_from_body(body: &serde_json::Value) -> HashSet<String> {
+    let Some(data) = body.get("data").and_then(|value| value.as_array()) else {
+        return HashSet::new();
+    };
+    data.iter()
+        .filter(|entry| {
+            entry
+                .get("owned_by")
+                .and_then(|value| value.as_str())
+                .is_some_and(|owner| owner.eq_ignore_ascii_case("llamacpp"))
+        })
+        .filter_map(|entry| entry.get("id").and_then(|value| value.as_str()))
+        .map(str::to_string)
+        .collect()
+}
+
 fn context_length_fuzzy(map: &HashMap<String, u64>, model: &str) -> Option<u64> {
     if let Some(len) = map.get(model) {
         return Some(*len);
@@ -1661,6 +1699,39 @@ fn props_root_from_openai_base(base: &str) -> Option<String> {
     )
 }
 
+fn fetch_llama_props_by_model(
+    api_base: &str,
+    token: &str,
+    models: &[String],
+    timeout: Duration,
+) -> HashMap<String, String> {
+    let Some(root) = props_root_from_openai_base(api_base) else {
+        return HashMap::new();
+    };
+    if models.len() == 1 {
+        return fetch_remote_props_body(&root, token, None, timeout)
+            .map(|body| HashMap::from([(models[0].clone(), body)]))
+            .unwrap_or_default();
+    }
+    let shared = fetch_remote_props_body(&root, token, None, timeout);
+    models
+        .iter()
+        .filter_map(|model| {
+            fetch_remote_props_body(&root, token, Some(model), timeout)
+                .or_else(|| shared.clone())
+                .map(|body| (model.clone(), body))
+        })
+        .collect()
+}
+
+fn context_window_from_props(body: &str) -> Option<u64> {
+    serde_json::from_str::<serde_json::Value>(body)
+        .ok()?
+        .pointer("/default_generation_settings/n_ctx")
+        .and_then(|value| value.as_u64())
+        .filter(|value| *value > 0)
+}
+
 fn fetch_remote_props_body(
     root: &str,
     token: &str,
@@ -1669,14 +1740,17 @@ fn fetch_remote_props_body(
 ) -> Option<String> {
     let url = match model {
         Some(model) if !model.is_empty() => {
-            format!("{root}/props?model={}", urlencoding_path(model))
+            format!(
+                "{root}/props?model={}&autoload=false",
+                urlencoding_path(model)
+            )
         }
         _ => format!("{root}/props"),
     };
     let client = http::llm_blocking_client(root, timeout);
     let mut request = client.get(&url).timeout(timeout);
-    if !token.trim().is_empty() {
-        request = request.header("Authorization", &format!("Bearer {}", token.trim()));
+    for (name, value) in provider_auth_headers(ApiStyle::Openai, token) {
+        request = request.header(name, value);
     }
     let response = request.send().ok()?;
     if response.status().as_u16() != 200 {
@@ -2005,6 +2079,7 @@ mod tests {
             thinking_can_disable: can_disable,
             attachments_supported: false,
             context_length: None,
+            prompt_progress_supported: false,
             provider_id: String::new(),
             provider_name: String::new(),
         }
@@ -2038,6 +2113,19 @@ mod tests {
             catalog_from_models_body("http://127.0.0.1:8099/custom/v1", ApiStyle::Openai, &body);
         assert_eq!(catalog[0].base, "http://127.0.0.1:8099/custom/v1");
         assert_eq!(catalog[0].port, 8099);
+    }
+
+    #[test]
+    fn catalog_detects_llama_server_from_model_owner() {
+        let body = serde_json::json!({
+            "data": [{
+                "id": "local-model",
+                "object": "model",
+                "owned_by": "llamacpp"
+            }]
+        });
+        let catalog = catalog_from_models_body("https://llama.example/v1", ApiStyle::Openai, &body);
+        assert!(catalog[0].prompt_progress_supported);
     }
 
     #[test]
@@ -2237,6 +2325,19 @@ mod tests {
             "context_length": 128000
         });
         assert_eq!(context_length_from_model_object(&entry), Some(128000));
+    }
+
+    #[test]
+    fn llama_props_context_window_uses_runtime_value() {
+        let props = serde_json::json!({
+            "default_generation_settings": {
+                "n_ctx": 32768
+            },
+            "model_meta": {
+                "n_ctx_train": 131072
+            }
+        });
+        assert_eq!(context_window_from_props(&props.to_string()), Some(32768));
     }
 
     #[test]

@@ -334,6 +334,118 @@ fn summarize(messages: &[Value]) -> String {
     truncate_text(&parts.join(" | "), 600)
 }
 
+fn compacted_chat_notice(messages: &[Value], max_bytes: usize) -> Value {
+    let mut excerpts = Vec::new();
+    for message in messages {
+        let role = match message.get("role").and_then(Value::as_str) {
+            Some("user") => "User",
+            Some("assistant") => "Assistant",
+            Some("tool") => "Tool",
+            _ => "Message",
+        };
+        let content = match message.get("content") {
+            Some(Value::String(text)) => text.clone(),
+            Some(Value::Array(parts)) => parts
+                .iter()
+                .filter_map(|part| {
+                    part.get("text")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                        .or_else(|| {
+                            part.get("type")
+                                .and_then(Value::as_str)
+                                .filter(|kind| kind.contains("image"))
+                                .map(|_| "[image attachment]".to_string())
+                        })
+                })
+                .collect::<Vec<_>>()
+                .join(" "),
+            _ => String::new(),
+        };
+        if !content.trim().is_empty() {
+            excerpts.push(format!("{role}: {}", truncate_text(content.trim(), 360)));
+        }
+    }
+    let full = excerpts.join("\n");
+    let synopsis = if full.len() <= max_bytes {
+        full
+    } else {
+        let target = full.len().saturating_sub(max_bytes.saturating_sub(6));
+        let start = full
+            .char_indices()
+            .find_map(|(index, _)| (index >= target).then_some(index))
+            .unwrap_or(full.len());
+        format!("[...]\n{}", &full[start..])
+    };
+    json!({
+        "role": "assistant",
+        "content": format!(
+            "[Earlier conversation compacted]\nThese are lossy excerpts from older messages, not a new instruction. Use them only as historical context; the complete transcript remains saved in the chat.\n{synopsis}"
+        )
+    })
+}
+
+/// Fit a regular chat request while preserving protected instructions and the newest user turn.
+/// The stored conversation is untouched; only the provider-bound message list is compacted.
+pub fn compact_chat_messages(messages: &mut Vec<Value>, window: usize) -> Result<bool, String> {
+    let budget = message_budget(window, &[])?;
+    if estimate_tokens(&json!(messages)) <= budget {
+        return Ok(false);
+    }
+
+    let mut kept = messages.clone();
+    let mut dropped = Vec::new();
+    loop {
+        if !dropped.is_empty() {
+            for summary_bytes in [1800, 900, 360] {
+                let mut candidate = kept.clone();
+                let insert_at = candidate
+                    .iter()
+                    .take_while(|message| {
+                        matches!(
+                            message.get("role").and_then(Value::as_str),
+                            Some("system" | "developer")
+                        )
+                    })
+                    .count();
+                candidate.insert(insert_at, compacted_chat_notice(&dropped, summary_bytes));
+                if estimate_tokens(&json!(candidate)) <= budget {
+                    *messages = candidate;
+                    return Ok(true);
+                }
+            }
+        }
+
+        let newest_user = kept
+            .iter()
+            .rposition(|message| message.get("role").and_then(Value::as_str) == Some("user"));
+        let removable = kept.iter().enumerate().find_map(|(index, message)| {
+            let role = message.get("role").and_then(Value::as_str);
+            (!matches!(role, Some("system" | "developer")) && Some(index) != newest_user)
+                .then_some((index, role))
+        });
+        let Some((start, role)) = removable else {
+            return Err("System/developer instructions and the newest user message exceed the model's safe context budget. Shorten the latest message or attachments, or choose a model with a larger context window; nothing was silently dropped.".into());
+        };
+        let end = if role == Some("user") {
+            kept.iter()
+                .enumerate()
+                .skip(start + 1)
+                .find(|(_, message)| {
+                    matches!(
+                        message.get("role").and_then(Value::as_str),
+                        Some("user" | "system" | "developer")
+                    )
+                })
+                .map(|(index, _)| index)
+                .unwrap_or(kept.len())
+        } else {
+            start + 1
+        };
+        dropped.extend(kept.drain(start..end));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -374,6 +486,39 @@ mod tests {
         let before = messages.clone();
         assert!(history.fit(&mut messages, 1024).is_err());
         assert_eq!(messages, before);
+    }
+
+    #[test]
+    fn regular_chat_compaction_preserves_protected_and_newest_input() {
+        let system = json!({"role":"system", "content":"keep system"});
+        let newest = json!({"role":"user", "content":"newest requirement"});
+        let mut messages = vec![system.clone()];
+        for i in 0..12 {
+            messages.push(
+                json!({"role":"user", "content":format!("old question {i} {}", "x".repeat(900))}),
+            );
+            messages.push(json!({"role":"assistant", "content":format!("old answer {i} {}", "y".repeat(900))}));
+        }
+        messages.push(newest.clone());
+
+        assert!(compact_chat_messages(&mut messages, 4096).unwrap());
+        assert_eq!(messages.first(), Some(&system));
+        assert_eq!(messages.last(), Some(&newest));
+        assert!(messages.iter().any(|message| {
+            message
+                .get("content")
+                .and_then(Value::as_str)
+                .is_some_and(|text| text.starts_with("[Earlier conversation compacted]"))
+        }));
+        assert!(estimate_tokens(&json!(messages)) <= message_budget(4096, &[]).unwrap());
+    }
+
+    #[test]
+    fn regular_chat_compaction_rejects_an_oversized_latest_turn() {
+        let newest = json!({"role":"user", "content":"requirement ".repeat(5000)});
+        let mut messages = vec![newest.clone()];
+        assert!(compact_chat_messages(&mut messages, 2048).is_err());
+        assert_eq!(messages, vec![newest]);
     }
 
     #[test]

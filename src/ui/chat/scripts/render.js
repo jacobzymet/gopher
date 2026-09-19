@@ -4262,18 +4262,28 @@ function formatTokPerSec(n) {
 
 function ingestStreamUsage(stats, json) {
   if (!stats || !json || typeof json !== 'object') return;
+  const progress = json.prompt_progress;
+  if (progress && typeof progress === 'object') {
+    const total = progress.total;
+    if (typeof total === 'number' && Number.isFinite(total) && total > 0) {
+      stats.contextPromptTokens = total;
+      stats.contextCompletionTokens = null;
+    }
+  }
   const usage = json.usage;
   if (usage && typeof usage === 'object') {
-    const completion = Number(usage.completion_tokens);
-    if (Number.isFinite(completion) && completion >= 0) {
+    const completion = usage.completion_tokens;
+    const hasCompletion = typeof completion === 'number' && Number.isFinite(completion) && completion >= 0;
+    if (hasCompletion) {
       stats.completionTokens = (stats.completionTokens || 0) + completion;
     }
-    const prompt = Number(usage.prompt_tokens);
-    if (Number.isFinite(prompt) && prompt >= 0) {
+    const prompt = usage.prompt_tokens;
+    const hasPrompt = typeof prompt === 'number' && Number.isFinite(prompt) && prompt >= 0;
+    if (hasPrompt) {
       stats.promptTokens = (stats.promptTokens || 0) + prompt;
       stats.contextPromptTokens = prompt;
     }
-    if (Number.isFinite(completion) && completion >= 0) {
+    if (hasCompletion) {
       stats.contextCompletionTokens = completion;
     }
   }

@@ -2243,6 +2243,15 @@ function beginLiveStream(convo, {
     cancelled: false,
     hardStopped: false,
     settled: false,
+    usageStats: {
+      completionTokens: 0,
+      promptTokens: 0,
+      contextPromptTokens: null,
+      contextCompletionTokens: null,
+      providerTokPerSec: null,
+      upstreamModel: null,
+    },
+    contextRemote: null,
   };
   if (stream.turnId && typeof rememberHandledLiveTurn === 'function') {
     rememberHandledLiveTurn(stream.turnId);
@@ -2281,6 +2290,19 @@ function setStreamThinkingLabel(stream, base) {
   if (stream.dom.thinkingLabel.textContent !== next) {
     stream.dom.thinkingLabel.textContent = next;
   }
+}
+
+function promptProgressLabel(progress) {
+  if (!progress || typeof progress !== 'object') return '';
+  const total = Number(progress.total);
+  const processed = Number(progress.processed);
+  const cached = Number(progress.cache);
+  if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(processed)) return '';
+  const done = Math.max(0, Math.min(total, processed));
+  const percent = Math.max(0, Math.min(100, Math.round((done / total) * 100)));
+  const details = [`${Math.round(done).toLocaleString()}/${Math.round(total).toLocaleString()} tokens`];
+  if (Number.isFinite(cached) && cached > 0) details.push(`${Math.round(cached).toLocaleString()} cached`);
+  return `Processing prompt · ${percent}% · ${details.join(' · ')}`;
 }
 
 function syncStreamSpeakerChrome(convo, stream) {
@@ -2376,14 +2398,8 @@ async function driveAssistantSse(convo, stream, response) {
   const fallbackTurnModel = String(
     stream.turnModel || remote?.model || latestState?.network?.remote_model || 'model'
   ).trim();
-  const usageStats = {
-    completionTokens: 0,
-    promptTokens: 0,
-    contextPromptTokens: null,
-    contextCompletionTokens: null,
-    providerTokPerSec: null,
-    upstreamModel: null,
-  };
+  const usageStats = stream.usageStats;
+  stream.contextRemote = remote || null;
   let firstTokenAt = null;
 
   const typer = createStreamTyper((replyText, streaming) => {
@@ -2676,6 +2692,8 @@ async function driveAssistantSse(convo, stream, response) {
           }
           ingestStreamUsage(usageStats, json);
           if (activeId === convo.id) syncContextUsage(convo, usageStats, remote);
+          const progressLabel = promptProgressLabel(json.prompt_progress);
+          if (progressLabel && firstTokenAt == null) setStreamThinkingLabel(stream, progressLabel);
           const choice = json.choices && json.choices[0];
           const deltaObj = (choice && choice.delta) || {};
           const reasoning =
