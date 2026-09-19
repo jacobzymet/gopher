@@ -1045,7 +1045,8 @@ html[data-theme="light"] .plus-menu-icon.is-agent { color: oklch(48% 0.16 305); 
 }
 .context-usage.is-warn { color: var(--color-warn); }
 .context-usage.is-danger { color: var(--color-danger); }
-.context-usage.is-unavailable { color: var(--color-muted); opacity: 0.64; }
+.context-usage.is-unavailable { color: var(--color-muted); }
+.context-usage.is-unavailable .context-usage-icon { opacity: 0.64; }
 .context-usage-icon {
   width: 1.18rem;
   height: 1.18rem;
@@ -1078,25 +1079,27 @@ html[data-theme="light"] .plus-menu-icon.is-agent { color: oklch(48% 0.16 305); 
   right: 0;
   bottom: calc(100% + 0.55rem);
   z-index: 70;
-  width: max-content;
-  min-width: 12.5rem;
-  max-width: min(18rem, calc(100vw - 2rem));
+  width: min(19rem, calc(100vw - 2rem));
+  max-width: min(19rem, calc(100vw - 2rem));
+  min-width: 0;
+  box-sizing: border-box;
   display: grid;
-  gap: 0.22rem;
-  padding: 0.62rem 0.72rem;
-  border: 1px solid color-mix(in oklch, var(--color-rule-2) 75%, transparent);
+  gap: 0.28rem;
+  padding: 0.7rem 0.78rem;
+  border: 1px solid color-mix(in oklch, var(--color-rule-2) 82%, transparent);
   border-radius: var(--radius-md);
   background: var(--color-paper-3);
   box-shadow: var(--shadow-3);
   color: var(--color-ink-2);
   font-family: var(--font-body);
   font-size: var(--text-xs);
-  line-height: 1.35;
+  line-height: 1.38;
   text-align: left;
   opacity: 0;
   transform: translateY(4px) scale(0.98);
   transform-origin: bottom right;
   pointer-events: none;
+  overflow: hidden;
   transition:
     opacity var(--dur-short) var(--ease-out),
     transform var(--dur-short) var(--ease-out);
@@ -1105,6 +1108,14 @@ html[data-theme="light"] .plus-menu-icon.is-agent { color: oklch(48% 0.16 305); 
 .context-usage:focus-visible .context-usage-tooltip {
   opacity: 1;
   transform: none;
+}
+.context-usage-tooltip strong,
+.context-usage-tooltip span {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: normal;
 }
 .context-usage-tooltip strong {
   color: var(--color-ink);
@@ -1117,6 +1128,13 @@ html[data-theme="light"] .plus-menu-icon.is-agent { color: oklch(48% 0.16 305); 
 .chat-shell.is-incognito .composer-buttons .context-usage {
   border-color: var(--color-rule-2);
   background: color-mix(in oklch, var(--color-paper-2) 78%, transparent);
+}
+@media (max-width: 520px) {
+  .context-usage-tooltip {
+    right: -0.25rem;
+    width: min(16.5rem, calc(100vw - 1.25rem));
+    max-width: min(16.5rem, calc(100vw - 1.25rem));
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .context-usage-ring,

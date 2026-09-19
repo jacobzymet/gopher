@@ -123,6 +123,17 @@ function formatContextTokenCount(value) {
   return Math.round(n).toLocaleString();
 }
 
+function compactContextModelLabel(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return 'selected model';
+
+  const normalized = raw.replace(/\\/g, '/');
+  const tail = normalized.split('/').filter(Boolean).pop() || raw;
+
+  if (tail.length <= 44) return tail;
+  return tail.slice(0, 41) + '...';
+}
+
 function latestConversationContextUsage(convo, activeModel) {
   if (!convo || !Array.isArray(convo.messages)) return null;
   for (let i = convo.messages.length - 1; i >= 0; i -= 1) {
@@ -185,7 +196,7 @@ function syncContextUsage(convo = null, liveStats = null, liveRemote = null) {
     contextUsageTitle.textContent = 'Context';
     contextUsageSummary.textContent = 'Window size unavailable';
     contextUsageDetail.textContent = activeModel
-      ? activeModel + ' does not report a context length.'
+      ? compactContextModelLabel(activeModel) + ' does not report a context length.'
       : 'Choose a model to see context usage.';
     contextUsage.setAttribute('aria-label', 'Context window size unavailable');
     return;
@@ -196,7 +207,7 @@ function syncContextUsage(convo = null, liveStats = null, liveRemote = null) {
     if (ring) ring.style.strokeDashoffset = '100';
     contextUsageTitle.textContent = 'Context · 0%';
     contextUsageSummary.textContent = '0 / ' + formatContextTokenCount(limit) + ' tokens';
-    contextUsageDetail.textContent = 'New chat · ' + (activeModel || 'selected model');
+    contextUsageDetail.textContent = 'New chat · ' + compactContextModelLabel(activeModel);
     contextUsage.setAttribute('aria-label', 'Context usage 0 percent');
     return;
   }
@@ -207,7 +218,8 @@ function syncContextUsage(convo = null, liveStats = null, liveRemote = null) {
     if (ring) ring.style.strokeDashoffset = '100';
     contextUsageTitle.textContent = 'Context';
     contextUsageSummary.textContent = 'Waiting for usage';
-    contextUsageDetail.textContent = formatContextTokenCount(limit) + ' token window · ' + (activeModel || 'selected model');
+    contextUsageDetail.textContent =
+      formatContextTokenCount(limit) + ' token window · ' + compactContextModelLabel(activeModel);
     contextUsage.setAttribute('aria-label', 'Context usage waiting for provider data');
     return;
   }
@@ -227,7 +239,8 @@ function syncContextUsage(convo = null, liveStats = null, liveRemote = null) {
   contextUsageSummary.textContent =
     formatContextTokenCount(used) + ' / ' + formatContextTokenCount(limit) + ' tokens';
   contextUsageDetail.textContent =
-    formatContextTokenCount(remaining) + ' remaining · ' + (snapshot.model || activeModel || 'selected model');
+    formatContextTokenCount(remaining) + ' remaining · '
+    + compactContextModelLabel(snapshot.model || activeModel);
   contextUsage.setAttribute(
     'aria-label',
     'Context usage ' + pctLabel + ', ' + formatContextTokenCount(used) + ' of ' + formatContextTokenCount(limit) + ' tokens'
