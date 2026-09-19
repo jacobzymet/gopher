@@ -2379,6 +2379,8 @@ async function driveAssistantSse(convo, stream, response) {
   const usageStats = {
     completionTokens: 0,
     promptTokens: 0,
+    contextPromptTokens: null,
+    contextCompletionTokens: null,
     providerTokPerSec: null,
     upstreamModel: null,
   };
@@ -2673,6 +2675,7 @@ async function driveAssistantSse(convo, stream, response) {
             continue;
           }
           ingestStreamUsage(usageStats, json);
+          if (activeId === convo.id) syncContextUsage(convo, usageStats, remote);
           const choice = json.choices && json.choices[0];
           const deltaObj = (choice && choice.delta) || {};
           const reasoning =
@@ -2735,6 +2738,15 @@ async function driveAssistantSse(convo, stream, response) {
 
   const endedAt = Date.now();
   const finalStats = finalizeTurnStats(usageStats, firstTokenAt, endedAt);
+  if (finalStats) {
+    const contextWindowTokens = Number(remote?.context_length);
+    finalStats.contextWindowTokens = Number.isFinite(contextWindowTokens) && contextWindowTokens > 0
+      ? contextWindowTokens
+      : null;
+    finalStats.contextModel = String(
+      remote?.model || stream.turnModel || fallbackTurnModel || ''
+    ).trim() || null;
+  }
   const speakerBotId = stream.speakerBotId || null;
   const speakerBot = speakerBotId && typeof getBot === 'function' ? getBot(speakerBotId, convo) : null;
   const extracted = collectTurnMemoryExtraction(stream, typer.target);
@@ -2892,6 +2904,11 @@ async function driveAssistantSse(convo, stream, response) {
     if (finalStats?.tokensPerSec != null) message.tokensPerSec = finalStats.tokensPerSec;
     if (finalStats?.completionTokens != null) message.completionTokens = finalStats.completionTokens;
     if (finalStats?.promptTokens != null) message.promptTokens = finalStats.promptTokens;
+    if (finalStats?.contextPromptTokens != null) message.contextPromptTokens = finalStats.contextPromptTokens;
+    if (finalStats?.contextCompletionTokens != null) message.contextCompletionTokens = finalStats.contextCompletionTokens;
+    if (finalStats?.contextTokens != null) message.contextTokens = finalStats.contextTokens;
+    if (finalStats?.contextWindowTokens != null) message.contextWindowTokens = finalStats.contextWindowTokens;
+    if (finalStats?.contextModel) message.contextModel = finalStats.contextModel;
     const committedMessage = commitLiveAssistant(convo, message, stream.turnId);
     if (typeof applyBotActions === 'function' && speakerBot) {
       applyBotActions(convo, speakerBot, extracted.botActions);

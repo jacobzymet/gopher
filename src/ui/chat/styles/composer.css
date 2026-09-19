@@ -1013,3 +1013,115 @@ html[data-theme="light"] .plus-menu-icon.is-agent { color: oklch(48% 0.16 305); 
   font-size: var(--text-xs);
   color: var(--color-muted);
 }
+
+/* Live active-context meter beside the composer actions. */
+.context-usage {
+  --context-usage-pct: 0;
+  position: relative;
+  width: 2.1rem;
+  height: 2.1rem;
+  min-width: 2.1rem;
+  min-height: 2.1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  border: 1px solid var(--color-rule);
+  border-radius: var(--radius-round);
+  background: transparent;
+  color: var(--color-ink-2);
+  outline: none;
+  transition:
+    color var(--dur-short) var(--ease-out),
+    background var(--dur-short) var(--ease-out),
+    border-color var(--dur-short) var(--ease-out);
+}
+.context-usage:hover,
+.context-usage:focus-visible {
+  color: var(--color-ink);
+  border-color: var(--color-rule-2);
+  background: var(--surface-hover);
+}
+.context-usage.is-warn { color: var(--color-warn); }
+.context-usage.is-danger { color: var(--color-danger); }
+.context-usage.is-unavailable { color: var(--color-muted); opacity: 0.64; }
+.context-usage-icon {
+  width: 1.18rem;
+  height: 1.18rem;
+  display: block;
+  overflow: visible;
+}
+.context-usage-track,
+.context-usage-ring {
+  fill: none;
+  stroke-width: 2.2;
+}
+.context-usage-track {
+  stroke: color-mix(in oklch, currentColor 22%, transparent);
+}
+.context-usage-ring {
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  transform: rotate(-90deg);
+  transform-origin: 12px 12px;
+  transition: stroke-dashoffset 180ms var(--ease-out), color var(--dur-short) var(--ease-out);
+}
+.context-usage-core {
+  fill: currentColor;
+  opacity: 0.9;
+}
+.context-usage-tooltip {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.55rem);
+  z-index: 70;
+  width: max-content;
+  min-width: 12.5rem;
+  max-width: min(18rem, calc(100vw - 2rem));
+  display: grid;
+  gap: 0.22rem;
+  padding: 0.62rem 0.72rem;
+  border: 1px solid color-mix(in oklch, var(--color-rule-2) 75%, transparent);
+  border-radius: var(--radius-md);
+  background: var(--color-paper-3);
+  box-shadow: var(--shadow-3);
+  color: var(--color-ink-2);
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  line-height: 1.35;
+  text-align: left;
+  opacity: 0;
+  transform: translateY(4px) scale(0.98);
+  transform-origin: bottom right;
+  pointer-events: none;
+  transition:
+    opacity var(--dur-short) var(--ease-out),
+    transform var(--dur-short) var(--ease-out);
+}
+.context-usage:hover .context-usage-tooltip,
+.context-usage:focus-visible .context-usage-tooltip {
+  opacity: 1;
+  transform: none;
+}
+.context-usage-tooltip strong {
+  color: var(--color-ink);
+  font-size: 0.76rem;
+  font-weight: 650;
+}
+.context-usage-tooltip span {
+  display: block;
+}
+.chat-shell.is-incognito .composer-buttons .context-usage {
+  border-color: var(--color-rule-2);
+  background: color-mix(in oklch, var(--color-paper-2) 78%, transparent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .context-usage-ring,
+  .context-usage-tooltip {
+    transition: none;
+  }
+}
+
