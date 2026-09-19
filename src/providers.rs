@@ -298,6 +298,33 @@ pub fn normalize_openai_base(raw: &str) -> Option<String> {
 
 pub fn provider_auth_headers(style: ApiStyle, token: &str) -> Vec<(String, String)> {
     let token = token.trim();
+
+    // Custom-header shorthand for provider auth:
+    //   cf-access:<client-id>:<client-secret>
+    //
+    // This keeps Cloudflare Access credentials in the existing provider token
+    // field, so model probes, chat, titles, and agent mode all use them.
+    if let Some(credentials) = token.strip_prefix("cf-access:")
+        && let Some((client_id, client_secret)) = credentials.split_once(':')
+        && !client_id.trim().is_empty()
+        && !client_secret.trim().is_empty()
+    {
+        let mut headers = vec![
+            ("CF-Access-Client-Id".into(), client_id.trim().into()),
+            (
+                "CF-Access-Client-Secret".into(),
+                client_secret.trim().into(),
+            ),
+        ];
+        if style == ApiStyle::Anthropic {
+            headers.push((
+                "anthropic-version".into(),
+                anthropic::ANTHROPIC_VERSION.into(),
+            ));
+        }
+        return headers;
+    }
+
     match style {
         ApiStyle::Openai => {
             if token.is_empty() {
@@ -1884,6 +1911,32 @@ fn jinja_mentions_ident(template: &str, ident: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cloudflare_access_service_token_uses_access_headers() {
+        assert_eq!(
+            provider_auth_headers(ApiStyle::Openai, "cf-access:client.access:secret-value"),
+            vec![
+                ("CF-Access-Client-Id".into(), "client.access".into()),
+                ("CF-Access-Client-Secret".into(), "secret-value".into()),
+            ]
+        );
+
+        let anthropic =
+            provider_auth_headers(ApiStyle::Anthropic, "cf-access:client.access:secret-value");
+        assert!(anthropic.contains(&(
+            "CF-Access-Client-Id".into(),
+            "client.access".into()
+        )));
+        assert!(anthropic.contains(&(
+            "CF-Access-Client-Secret".into(),
+            "secret-value".into()
+        )));
+        assert!(anthropic.contains(&(
+            "anthropic-version".into(),
+            anthropic::ANTHROPIC_VERSION.into()
+        )));
+    }
 
     #[test]
     fn provider_base_normalization_rejects_non_http_urls() {
