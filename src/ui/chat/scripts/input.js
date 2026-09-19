@@ -134,6 +134,10 @@ function compactContextModelLabel(value) {
   return tail.slice(0, 41) + '...';
 }
 
+function exactContextTokenCount(value) {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
 function latestConversationContextUsage(convo, activeModel) {
   if (!convo || !Array.isArray(convo.messages)) return null;
   for (let i = convo.messages.length - 1; i >= 0; i -= 1) {
@@ -141,20 +145,20 @@ function latestConversationContextUsage(convo, activeModel) {
     if (!message || message.role !== 'assistant') continue;
     const model = String(message.contextModel || message.model || '').trim();
     if (activeModel && model && model !== activeModel) continue;
-    const explicit = Number(message.contextTokens);
-    if (Number.isFinite(explicit) && explicit >= 0) {
+    const explicit = exactContextTokenCount(message.contextTokens);
+    if (explicit != null) {
       return {
         used: explicit,
-        prompt: Number(message.contextPromptTokens),
-        completion: Number(message.contextCompletionTokens),
+        prompt: exactContextTokenCount(message.contextPromptTokens),
+        completion: exactContextTokenCount(message.contextCompletionTokens),
         model,
       };
     }
-    const prompt = Number(message.promptTokens);
-    const completion = Number(message.completionTokens);
-    if (Number.isFinite(prompt) && prompt >= 0) {
+    const prompt = exactContextTokenCount(message.promptTokens);
+    const completion = exactContextTokenCount(message.completionTokens);
+    if (prompt != null) {
       return {
-        used: prompt + (Number.isFinite(completion) && completion >= 0 ? completion : 0),
+        used: prompt + (completion ?? 0),
         prompt,
         completion,
         model,
@@ -164,27 +168,33 @@ function latestConversationContextUsage(convo, activeModel) {
   return null;
 }
 
-function syncContextUsage(convo = null, liveStats = null, liveRemote = null) {
-  if (!contextUsage) return;
-  const activeConvo = convo || conversations.find((item) => item.id === activeId) || null;
-  const remote = liveRemote || selectedRemoteModel(latestState);
-  const activeModel = String(remote?.model || selectedChatModel || '').trim();
-  const limit = Number(remote?.context_length);
-  const hasLimit = Number.isFinite(limit) && limit > 0;
-  let snapshot = null;
-
-  const livePrompt = Number(liveStats?.contextPromptTokens);
-  const liveCompletion = Number(liveStats?.contextCompletionTokens);
-  if (Number.isFinite(livePrompt) && livePrompt >= 0) {
-    snapshot = {
-      used: livePrompt + (Number.isFinite(liveCompletion) && liveCompletion >= 0 ? liveCompletion : 0),
+function contextUsageSnapshot(convo, activeModel, liveStats) {
+  const livePrompt = exactContextTokenCount(liveStats?.contextPromptTokens);
+  const liveCompletion = exactContextTokenCount(liveStats?.contextCompletionTokens);
+  if (livePrompt != null) {
+    return {
+      used: livePrompt + (liveCompletion ?? 0),
       prompt: livePrompt,
       completion: liveCompletion,
       model: activeModel,
     };
-  } else {
-    snapshot = latestConversationContextUsage(activeConvo, activeModel);
   }
+  return latestConversationContextUsage(convo, activeModel);
+}
+
+function syncContextUsage(convo = null, liveStats = null, liveRemote = null) {
+  if (!contextUsage) return;
+  const activeConvo = convo || conversations.find((item) => item.id === activeId) || null;
+  const liveStream = activeConvo ? activeStreams.get(activeConvo.id) : null;
+  const remote = liveRemote || liveStream?.contextRemote || selectedRemoteModel(latestState);
+  const activeModel = String(remote?.model || selectedChatModel || '').trim();
+  const limit = Number(remote?.context_length);
+  const hasLimit = Number.isFinite(limit) && limit > 0;
+  const snapshot = contextUsageSnapshot(
+    activeConvo,
+    activeModel,
+    liveStats || liveStream?.usageStats || null
+  );
 
   contextUsage.classList.remove('is-warn', 'is-danger', 'is-unavailable');
   const ring = contextUsage.querySelector('.context-usage-ring');

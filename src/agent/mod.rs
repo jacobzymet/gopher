@@ -309,6 +309,9 @@ pub struct AgentRequest {
     /// Host-reported model context; explicit request/environment settings win.
     #[serde(skip)]
     pub(crate) model_context_window_tokens: Option<usize>,
+    /// Set by the server from provider capability metadata, never trusted from JSON.
+    #[serde(skip)]
+    pub(crate) prompt_progress_supported: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -1598,6 +1601,13 @@ pub fn inject_skill_catalog_into_messages(messages: &mut Vec<Value>, user_skills
     messages.insert(0, json!({ "role": "system", "content": note }));
 }
 
+pub fn compact_chat_messages(
+    messages: &mut Vec<Value>,
+    context_window: usize,
+) -> Result<bool, String> {
+    context::compact_chat_messages(messages, context_window)
+}
+
 #[derive(Debug, Default, Clone)]
 struct AccumToolCall {
     id: String,
@@ -1663,6 +1673,9 @@ async fn stream_once(
         }
         if style == ApiStyle::Openai {
             object.insert("stream_options".into(), json!({ "include_usage": true }));
+            if request.prompt_progress_supported {
+                object.insert("return_progress".into(), json!(true));
+            }
         }
     }
 
@@ -1860,7 +1873,10 @@ async fn apply_openai_sse_line(
         return Ok(());
     };
 
-    if value.get("usage").is_some() || value.get("timings").is_some() {
+    if value.get("usage").is_some()
+        || value.get("timings").is_some()
+        || value.get("prompt_progress").is_some()
+    {
         let mut out = serde_json::Map::new();
         out.insert("choices".into(), json!([]));
         if let Some(usage) = value.get("usage") {
@@ -1868,6 +1884,9 @@ async fn apply_openai_sse_line(
         }
         if let Some(timings) = value.get("timings") {
             out.insert("timings".into(), timings.clone());
+        }
+        if let Some(progress) = value.get("prompt_progress") {
+            out.insert("prompt_progress".into(), progress.clone());
         }
         if let Some(model) = value.get("model") {
             out.insert("model".into(), model.clone());

@@ -847,6 +847,9 @@ async fn chat_completions(
         obj.insert("model".to_string(), serde_json::Value::String(model));
     }
     apply_thinking_control(&mut body, thinking_model.as_ref());
+    let prompt_progress_supported = thinking_model
+        .as_ref()
+        .is_some_and(|model| model.prompt_progress_supported);
     let conversation_id = body
         .as_object_mut()
         .and_then(|obj| obj.remove("conversation_id"))
@@ -881,6 +884,11 @@ async fn chat_completions(
         .and_then(|value| value.as_str())
         .unwrap_or_default()
         .to_string();
+    let model_context_window_tokens = thinking_model
+        .as_ref()
+        .and_then(|model| model.context_length)
+        .filter(|length| *length > 0)
+        .and_then(|length| usize::try_from(length).ok());
     // LiveHub::start atomically checks whether an existing turn blocks this one.
     // A cancelled turn may still be finishing teardown and is replaceable.
     let stream = match serde_json::from_value::<AgentRequest>(body.clone()) {
@@ -891,11 +899,8 @@ async fn chat_completions(
             if let Some(id) = conversation_id.as_deref() {
                 request.skills.session_id = id.to_string();
             }
-            request.model_context_window_tokens = thinking_model
-                .as_ref()
-                .and_then(|model| model.context_length)
-                .filter(|length| *length > 0)
-                .and_then(|length| usize::try_from(length).ok());
+            request.model_context_window_tokens = model_context_window_tokens;
+            request.prompt_progress_supported = prompt_progress_supported;
             agent::stream_agent(
                 &api_base,
                 key,
@@ -908,6 +913,13 @@ async fn chat_completions(
         Ok(_) => {
             if let Some(messages) = body.get_mut("messages").and_then(|v| v.as_array_mut()) {
                 agent::inject_skill_catalog_into_messages(messages, &user_skills);
+                if let Some(window) = model_context_window_tokens {
+                    agent::compact_chat_messages(messages, window)
+                        .map_err(ApiError::bad_request)?;
+                }
+            }
+            if prompt_progress_supported && let Some(object) = body.as_object_mut() {
+                object.insert("return_progress".into(), serde_json::json!(true));
             }
             chat::stream_remote_completion(&api_base, &token, api_style, allow_insecure_tls, body)
         }
@@ -919,6 +931,13 @@ async fn chat_completions(
         Err(_) => {
             if let Some(messages) = body.get_mut("messages").and_then(|v| v.as_array_mut()) {
                 agent::inject_skill_catalog_into_messages(messages, &user_skills);
+                if let Some(window) = model_context_window_tokens {
+                    agent::compact_chat_messages(messages, window)
+                        .map_err(ApiError::bad_request)?;
+                }
+            }
+            if prompt_progress_supported && let Some(object) = body.as_object_mut() {
+                object.insert("return_progress".into(), serde_json::json!(true));
             }
             chat::stream_remote_completion(&api_base, &token, api_style, allow_insecure_tls, body)
         }
