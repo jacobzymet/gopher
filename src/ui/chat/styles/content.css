@@ -76,7 +76,8 @@ html[data-theme="light"] .msg-bubble .hljs-params { color: oklch(40% 0.1 210); }
   opacity: 0.45;
   user-select: none;
 }
-.msg-meta-speed {
+.msg-meta-speed,
+.msg-meta-duration {
   font-variant-numeric: tabular-nums;
   opacity: 0.92;
 }

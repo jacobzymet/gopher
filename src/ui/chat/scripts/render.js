@@ -4259,6 +4259,27 @@ function formatTokPerSec(n) {
   if (v >= 10) return v.toFixed(1) + ' tok/s';
   return v.toFixed(2) + ' tok/s';
 }
+function formatWorkDuration(ms) {
+  const value = Number(ms);
+  if (!Number.isFinite(value) || value < 0) return '';
+  const totalSeconds = Math.max(1, Math.round(value / 1000));
+  if (totalSeconds < 60) return totalSeconds + 's';
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (totalMinutes < 60) {
+    return totalMinutes + 'm' + (seconds ? ' ' + seconds + 's' : '');
+  }
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours + 'h' + (minutes ? ' ' + minutes + 'm' : '');
+}
+
+function workDurationMs(startedAt, endedAt) {
+  const start = Number(startedAt);
+  const end = Number(endedAt);
+  if (!Number.isFinite(start) || start <= 0 || !Number.isFinite(end) || end < start) return null;
+  return Math.round(end - start);
+}
 
 function ingestStreamUsage(stats, json) {
   if (!stats || !json || typeof json !== 'object') return;
@@ -4436,7 +4457,8 @@ function attachMessageMeta(row, message) {
       ).trim()
       : '');
   const speed = formatTokPerSec(message.tokensPerSec);
-  if (!model && !speed) {
+  const workTime = formatWorkDuration(message.workDurationMs);
+  if (!model && !speed && !workTime) {
     meta?.remove();
     return;
   }
@@ -4457,6 +4479,10 @@ function attachMessageMeta(row, message) {
       ? (message.completionTokens + ' completion tokens')
       : 'Generation speed';
     bits.push('<span class="msg-meta-speed" title="' + escapeHtml(tip) + '">' + escapeHtml(speed) + '</span>');
+  }
+  if (workTime) {
+    if (bits.length) bits.push('<span class="msg-meta-sep" aria-hidden="true">·</span>');
+    bits.push('<span class="msg-meta-duration" title="Total work time">' + escapeHtml(workTime) + '</span>');
   }
   meta.innerHTML = bits.join('');
 }

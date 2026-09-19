@@ -1758,6 +1758,7 @@ async function runAssistantTurn(convo, {
     }
   }
   const startEpoch = markOutboundStarting(convo.id);
+  const workStartedAt = Date.now();
   let liveStarted = false;
   let startedStream = null;
   try {
@@ -1858,6 +1859,7 @@ async function runAssistantTurn(convo, {
     turnModel: remote.model,
     speakerBotId: speakerBotId || null,
     loopPhase,
+    turnStartedAt: workStartedAt,
     turnId: clientTurnId,
   });
   liveStarted = true;
@@ -2214,8 +2216,12 @@ function beginLiveStream(convo, {
   turnModel = '',
   speakerBotId = null,
   loopPhase = null,
+  turnStartedAt = null,
 } = {}) {
   if (activeStreams.has(convo.id)) return activeStreams.get(convo.id);
+  const requestedStartedAt = Number(turnStartedAt);
+  const streamStartedAt = Number.isFinite(requestedStartedAt) && requestedStartedAt > 0
+    ? requestedStartedAt : Date.now();
   const stream = {
     controller: new AbortController(),
     useAgent,
@@ -2234,7 +2240,7 @@ function beginLiveStream(convo, {
     catchingUp: !!catchingUp,
     turnId: turnId || null,
     turnModel: String(turnModel || ''),
-    startedAt: Date.now(),
+    startedAt: streamStartedAt,
     statusLabel: 'Processing…',
     domMountCount: 0,
     speakerBotId: speakerBotId || null,
@@ -2354,6 +2360,8 @@ function settleStoppedLiveStream(convo, stream, rawText) {
         || String(selectedChatModel || '').trim()
         || 'model',
     };
+    const totalWorkMs = workDurationMs(stream.startedAt, Date.now());
+    if (totalWorkMs != null) message.workDurationMs = totalWorkMs;
     if (speakerBot) {
       message.speakerId = speakerBot.id;
       message.speakerHandle = speakerBot.handle;
@@ -2899,6 +2907,8 @@ async function driveAssistantSse(convo, stream, response) {
         || String(selectedChatModel || '').trim()
         || 'model',
     };
+    const totalWorkMs = workDurationMs(stream.startedAt, Date.now());
+    if (totalWorkMs != null) message.workDurationMs = totalWorkMs;
     if (speakerBot) {
       message.speakerId = speakerBot.id;
       message.speakerHandle = speakerBot.handle;
