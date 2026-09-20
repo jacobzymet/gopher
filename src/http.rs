@@ -90,7 +90,10 @@ pub fn url_is_private_or_local(url: &str) -> bool {
 }
 
 fn build_llm_client(timeout: Duration, insecure: bool) -> Client {
-    let mut builder = Client::builder().timeout(timeout).user_agent(APP_UA);
+    let mut builder = Client::builder()
+        .connect_timeout(Duration::from_secs(30))
+        .timeout(timeout)
+        .user_agent(APP_UA);
     if insecure {
         builder = builder.danger_accept_invalid_certs(true);
     }

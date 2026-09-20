@@ -1,7 +1,7 @@
 use std::{future::Future, io, pin::Pin, time::Duration};
 
 use futures_util::StreamExt;
-use tokio::sync::mpsc;
+use tokio::{sync::mpsc, time::timeout};
 
 use crate::{
     anthropic::{self, AnthropicSseTranslator},
@@ -15,10 +15,15 @@ pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 pub(crate) const CHANNEL_CAPACITY: usize = 32;
 const MAX_ERROR_BODY_BYTES: usize = 64 * 1024;
 const MAX_SSE_LINE_BYTES: usize = 1024 * 1024;
+/// Silence limit for the first worker frame, response headers, and each
+/// subsequent upstream SSE chunk. Agent mode sends status frames immediately,
+/// so this has to apply per round — not only before the first byte of the run.
 #[cfg(not(test))]
-const FIRST_FRAME_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+pub(crate) const STREAM_STALL_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 #[cfg(test)]
-const FIRST_FRAME_TIMEOUT: Duration = Duration::from_millis(40);
+pub(crate) const STREAM_STALL_TIMEOUT: Duration = Duration::from_millis(40);
+pub(crate) const STREAM_STALL_MESSAGE: &str =
+    "The model stopped sending tokens for 5 minutes. Try sending again.";
 
 /// SSE byte frames. Work runs as a child of this stream: client disconnect
 /// drops the body → drops the worker → drops the upstream HTTP response.
@@ -28,6 +33,8 @@ pub type ChatStream = Pin<Box<dyn futures_util::Stream<Item = Result<Vec<u8>, io
 pub(crate) enum StreamFail {
     /// Consumer stopped taking frames (disconnect / backpressure drop).
     Cancelled,
+    /// Upstream accepted the request (or kept the socket open) but sent no bytes.
+    Stalled,
     Other(String),
 }
 
@@ -35,6 +42,7 @@ impl StreamFail {
     pub(crate) fn into_message(self) -> Option<String> {
         match self {
             Self::Cancelled => None,
+            Self::Stalled => Some(STREAM_STALL_MESSAGE.to_string()),
             Self::Other(message) => Some(message),
         }
     }
@@ -52,7 +60,7 @@ where
         let mut worker = std::pin::pin!(worker(tx));
         let mut worker_done = false;
         let mut received_frame = false;
-        let first_frame_timeout = tokio::time::sleep(FIRST_FRAME_TIMEOUT);
+        let first_frame_timeout = tokio::time::sleep(STREAM_STALL_TIMEOUT);
         tokio::pin!(first_frame_timeout);
         while !worker_done {
             tokio::select! {
@@ -147,9 +155,9 @@ pub(crate) async fn open_llm_sse(
         request = request.header(name, value);
     }
 
-    let response = request
-        .send()
+    let response = timeout(STREAM_STALL_TIMEOUT, request.send())
         .await
+        .map_err(|_| StreamFail::Stalled)?
         .map_err(|error| StreamFail::Other(error.to_string()))?;
 
     if response.status() != reqwest::StatusCode::OK {
@@ -189,7 +197,7 @@ async fn proxy_openai_sse(
                 1,
             )));
         }
-        Err(StreamFail::Cancelled) => return Err(StreamFail::Cancelled),
+        Err(fail) => return Err(fail),
     };
     forward_raw_sse(response, tx).await
 }
@@ -215,8 +223,7 @@ async fn proxy_anthropic_sse(
     let mut buffer = Vec::new();
     let mut translator = AnthropicSseTranslator::default();
 
-    while let Some(next) = byte_stream.next().await {
-        let chunk = next.map_err(|error| StreamFail::Other(error.to_string()))?;
+    while let Some(chunk) = next_stream_chunk(&mut byte_stream).await? {
         buffer.extend_from_slice(&chunk);
         let mut consumed = 0;
         while let Some(relative) = buffer[consumed..].iter().position(|byte| *byte == b'\n') {
@@ -267,13 +274,24 @@ async fn forward_raw_sse(
     tx: &mpsc::Sender<Result<Vec<u8>, io::Error>>,
 ) -> Result<(), StreamFail> {
     let mut stream = response.bytes_stream();
-    while let Some(next) = stream.next().await {
-        match next {
-            Ok(chunk) => send_sse(tx, chunk.to_vec()).await?,
-            Err(error) => return Err(StreamFail::Other(error.to_string())),
-        }
+    while let Some(chunk) = next_stream_chunk(&mut stream).await? {
+        send_sse(tx, chunk.to_vec()).await?;
     }
     Ok(())
+}
+
+/// Wait for the next upstream SSE chunk, or fail if the socket goes silent.
+pub(crate) async fn next_stream_chunk<S, T, E>(stream: &mut S) -> Result<Option<T>, StreamFail>
+where
+    S: StreamExt<Item = Result<T, E>> + Unpin,
+    E: std::fmt::Display,
+{
+    match timeout(STREAM_STALL_TIMEOUT, stream.next()).await {
+        Ok(Some(Ok(chunk))) => Ok(Some(chunk)),
+        Ok(Some(Err(error))) => Err(StreamFail::Other(error.to_string())),
+        Ok(None) => Ok(None),
+        Err(_) => Err(StreamFail::Stalled),
+    }
 }
 
 pub(crate) fn sse_error(message: &str) -> Vec<u8> {
@@ -800,5 +818,41 @@ mod title_tests {
             .collect::<String>()
             .await;
         assert!(joined.contains("did not start responding"));
+    }
+}
+
+#[cfg(test)]
+mod stream_tests {
+    use super::{STREAM_STALL_MESSAGE, StreamFail, next_stream_chunk, stream_from_worker};
+    use futures_util::StreamExt;
+
+    #[tokio::test]
+    async fn silent_upstream_chunk_errors_instead_of_hanging() {
+        let mut stream = futures_util::stream::pending::<Result<Vec<u8>, reqwest::Error>>();
+        let result = next_stream_chunk(&mut stream).await;
+        assert!(
+            matches!(result, Err(StreamFail::Stalled)),
+            "expected stalled, got {result:?}"
+        );
+        assert_eq!(
+            StreamFail::Stalled.into_message().as_deref(),
+            Some(STREAM_STALL_MESSAGE)
+        );
+    }
+
+    #[tokio::test]
+    async fn stall_after_an_early_frame_still_errors() {
+        let stream = stream_from_worker(|tx| async move {
+            super::send_sse(&tx, b"data: {\"ok\":true}\n\n".to_vec()).await?;
+            let mut upstream = futures_util::stream::pending::<Result<Vec<u8>, reqwest::Error>>();
+            next_stream_chunk(&mut upstream).await?;
+            Ok(())
+        });
+        let joined = stream
+            .map(|frame| String::from_utf8_lossy(&frame.expect("frame")).into_owned())
+            .collect::<String>()
+            .await;
+        assert!(joined.contains("ok"));
+        assert!(joined.contains("stopped sending tokens"));
     }
 }

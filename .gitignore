@@ -1,5 +1,7 @@
 /target/
+**/target/
 /.venv/
+vendor/glib/Cargo.lock
 **/*.rs.bk
 .agents/
 skills-lock.json

@@ -34,7 +34,7 @@ use tokio::time::timeout;
 use self::text::collapse_ws;
 use crate::{
     anthropic::{self, AnthropicSseTranslator},
-    chat::{ChatStream, StreamFail, open_llm_sse, send_sse, stream_from_worker},
+    chat::{ChatStream, StreamFail, next_stream_chunk, open_llm_sse, send_sse, stream_from_worker},
     http,
     providers::ApiStyle,
     skills::UserSkill,
@@ -51,6 +51,9 @@ const DEEP_RESEARCH_MIN_RESULTS: usize = 10;
 const MAX_EMPTY_RETRIES: usize = 2;
 /// Extra nudges once research already has sources and only the write-up is missing.
 const MAX_ANSWER_RETRIES: usize = 4;
+/// Follow-up completions after tools can stall with the socket still open.
+/// Retry that round once before failing the turn.
+const MAX_STALL_RETRIES: usize = 1;
 const CLARIFY_WAIT_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 /// Prefix for mid-turn user guidance injected between tool rounds.
 const STEER_MARKER: &str = "[USER STEER]";
@@ -886,6 +889,7 @@ async fn run_agent_loop(
     let mut tool_rounds = 0usize;
     let mut empty_retries = 0usize;
     let mut force_retries = 0usize;
+    let mut stall_retries = 0usize;
     let mut loop_notice_sent = false;
     let mut pending_force: HashSet<String> = request.force_tools.iter().cloned().collect();
     let mut await_clarify = request.deep_research;
@@ -970,7 +974,7 @@ async fn run_agent_loop(
             context_notice_sent = true;
             send_sse(tx, sse_agent(json!({"phase":"notice", "message":"Older tool activity was archived to stay within the context budget. The agent can retrieve it; user instructions were preserved."}))).await?;
         }
-        let turn = stream_once(
+        let turn = match stream_once(
             api_base,
             api_key,
             style,
@@ -983,7 +987,26 @@ async fn run_agent_loop(
             },
             tx,
         )
-        .await?;
+        .await
+        {
+            Ok(turn) => {
+                stall_retries = 0;
+                turn
+            }
+            Err(StreamFail::Stalled) if stall_retries < MAX_STALL_RETRIES => {
+                stall_retries += 1;
+                send_sse(
+                    tx,
+                    sse_agent(json!({
+                        "phase": "notice",
+                        "message": "The model stalled; retrying that step."
+                    })),
+                )
+                .await?;
+                continue;
+            }
+            Err(err) => return Err(err),
+        };
 
         if !turn.tools.is_empty() {
             let calls = turn.tools.clone();
@@ -1755,8 +1778,7 @@ where
     B: AsRef<[u8]>,
 {
     let mut buffer = Vec::new();
-    while let Some(next) = stream.next().await {
-        let chunk = next.map_err(|error| StreamFail::Other(error.to_string()))?;
+    while let Some(chunk) = next_stream_chunk(stream).await? {
         buffer.extend_from_slice(chunk.as_ref());
         let mut consumed = 0usize;
         while let Some(relative) = buffer[consumed..].iter().position(|byte| *byte == b'\n') {
@@ -1800,8 +1822,7 @@ where
 {
     let mut buffer = Vec::new();
     let mut translator = AnthropicSseTranslator::default();
-    while let Some(next) = stream.next().await {
-        let chunk = next.map_err(|error| StreamFail::Other(error.to_string()))?;
+    while let Some(chunk) = next_stream_chunk(stream).await? {
         buffer.extend_from_slice(chunk.as_ref());
         let mut consumed = 0usize;
         while let Some(relative) = buffer[consumed..].iter().position(|byte| *byte == b'\n') {
@@ -4098,6 +4119,22 @@ mod tests {
             result,
             Err(StreamFail::Other(message)) if message.contains("SSE line")
         ));
+    }
+
+    #[tokio::test]
+    async fn stalled_model_round_errors_instead_of_hanging() {
+        let mut stream = futures_util::stream::pending::<Result<Vec<u8>, reqwest::Error>>();
+        let (tx, _rx) = mpsc::channel(4);
+        let result = consume_openai_sse_agent(
+            &mut stream,
+            &mut String::new(),
+            &mut String::new(),
+            &mut Vec::new(),
+            &mut true,
+            &tx,
+        )
+        .await;
+        assert!(matches!(result, Err(StreamFail::Stalled)));
     }
 
     #[test]
