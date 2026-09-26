@@ -33,6 +33,7 @@ pub enum ApiStyle {
     #[default]
     Openai,
     Anthropic,
+    Responses,
 }
 
 impl ApiStyle {
@@ -40,6 +41,7 @@ impl ApiStyle {
         match self {
             Self::Openai => "openai",
             Self::Anthropic => "anthropic",
+            Self::Responses => "responses",
         }
     }
 
@@ -47,6 +49,7 @@ impl ApiStyle {
         match value.trim().to_ascii_lowercase().as_str() {
             "openai" | "oai" | "compatible" => Some(Self::Openai),
             "anthropic" | "claude" | "messages" => Some(Self::Anthropic),
+            "responses" | "codex_responses" => Some(Self::Responses),
             _ => None,
         }
     }
@@ -55,7 +58,54 @@ impl ApiStyle {
         match self {
             Self::Openai => "OpenAI-compatible",
             Self::Anthropic => "Anthropic Messages",
+            Self::Responses => "Responses",
         }
+    }
+}
+
+/// The built-in ChatGPT Codex provider keeps a fixed HTTPS host. `Custom` is
+/// every user-entered endpoint.
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum ProviderKind {
+    #[default]
+    Custom,
+    OpenaiCodex,
+    /// A kind this build no longer supports, such as the removed OpenCode
+    /// built-ins. `ProvidersConfig::migrate` drops these providers and their secrets.
+    Retired,
+}
+
+impl<'de> Deserialize<'de> for ProviderKind {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = String::deserialize(deserializer)?;
+        Ok(Self::parse(&value).unwrap_or(Self::Retired))
+    }
+}
+
+impl ProviderKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Custom => "custom",
+            Self::OpenaiCodex => "openai-codex",
+            Self::Retired => "retired",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "custom" => Some(Self::Custom),
+            "openai-codex" | "codex" => Some(Self::OpenaiCodex),
+            _ => None,
+        }
+    }
+
+    pub fn is_builtin(self) -> bool {
+        matches!(self, Self::OpenaiCodex)
+    }
+
+    pub fn needs_secret(self) -> bool {
+        matches!(self, Self::OpenaiCodex)
     }
 }
 
@@ -71,6 +121,8 @@ pub struct Provider {
     /// Explicit opt-in for self-signed or otherwise invalid HTTPS certificates.
     #[serde(default)]
     pub allow_insecure_tls: bool,
+    #[serde(default)]
+    pub kind: ProviderKind,
 }
 
 impl Provider {
@@ -87,6 +139,7 @@ impl Provider {
             token: token.into(),
             api_style,
             allow_insecure_tls: false,
+            kind: ProviderKind::Custom,
         }
     }
 
@@ -95,7 +148,23 @@ impl Provider {
         match self.api_style {
             ApiStyle::Openai => format!("{base}/chat/completions"),
             ApiStyle::Anthropic => format!("{base}/messages"),
+            ApiStyle::Responses => format!("{base}/responses"),
         }
+    }
+
+    /// Cache scope for this provider. Built-ins are scoped by id as well as
+    /// credential. The raw token is still hashed.
+    pub fn catalog_cache_token(&self) -> String {
+        catalog_cache_material(self.kind, &self.id, &self.token)
+    }
+}
+
+pub fn catalog_cache_material(kind: ProviderKind, id: &str, token: &str) -> String {
+    let token = token.trim();
+    if kind.is_builtin() {
+        format!("{id}\u{1f}{token}")
+    } else {
+        token.to_string()
     }
 }
 
@@ -105,6 +174,8 @@ pub struct ProviderPublic {
     pub name: String,
     pub base: String,
     pub api_style: &'static str,
+    pub kind: &'static str,
+    pub builtin: bool,
     pub allow_insecure_tls: bool,
     pub token_set: bool,
     pub token_masked: String,
@@ -129,7 +200,8 @@ pub struct ProviderUpsertOptions {
 
 impl ProvidersConfig {
     pub fn migrate(&mut self) {
-        self.items.retain(|p| !p.base.trim().is_empty());
+        self.items
+            .retain(|p| p.kind != ProviderKind::Retired && !p.base.trim().is_empty());
         let mut used_ids = HashSet::with_capacity(self.items.len());
         for provider in &mut self.items {
             if provider.id.trim().is_empty() || !used_ids.insert(provider.id.clone()) {
@@ -146,14 +218,53 @@ impl ProvidersConfig {
             } else {
                 provider.name = sanitize_name(&provider.name);
             }
-            if let Some(normalized) = normalize_provider_base(&provider.base, provider.api_style) {
+            if provider.kind.is_builtin() {
+                provider.allow_insecure_tls = false;
+                if let Some(spec) = crate::subscription::builtin_spec(provider.kind) {
+                    provider.base = spec.base.to_string();
+                    provider.name = spec.name.to_string();
+                    provider.api_style = spec.api_style;
+                    if provider.id != spec.id {
+                        provider.id = spec.id.to_string();
+                    }
+                }
+            } else if let Some(normalized) =
+                normalize_provider_base(&provider.base, provider.api_style)
+            {
                 provider.base = normalized;
             }
         }
+        self.ensure_builtins();
         if self.active_provider_id.trim().is_empty()
             || !self.items.iter().any(|p| p.id == self.active_provider_id)
         {
-            self.active_provider_id = self.items.first().map(|p| p.id.clone()).unwrap_or_default();
+            self.active_provider_id = self.default_active_id();
+        }
+    }
+
+    fn default_active_id(&self) -> String {
+        self.items
+            .iter()
+            .find(|provider| provider.kind == ProviderKind::Custom)
+            .or_else(|| self.items.first())
+            .map(|provider| provider.id.clone())
+            .unwrap_or_default()
+    }
+
+    fn ensure_builtins(&mut self) {
+        for spec in crate::subscription::BUILTIN_SPECS {
+            if self.items.iter().any(|provider| provider.kind == spec.kind) {
+                continue;
+            }
+            self.items.push(Provider {
+                id: spec.id.to_string(),
+                name: spec.name.to_string(),
+                base: spec.base.to_string(),
+                token: String::new(),
+                api_style: spec.api_style,
+                allow_insecure_tls: false,
+                kind: spec.kind,
+            });
         }
     }
 
@@ -215,6 +326,11 @@ impl ProvidersConfig {
                 .iter_mut()
                 .find(|p| p.id == id)
                 .ok_or_else(|| "Provider not found.".to_string())?;
+            if provider.kind.is_builtin() {
+                return Err(
+                    "Built-in providers keep a fixed address. Use Connect or Disconnect.".into(),
+                );
+            }
             provider.name = cleaned_name;
             provider.base = normalized;
             provider.api_style = api_style;
@@ -231,7 +347,12 @@ impl ProvidersConfig {
             return Ok(updated);
         }
 
-        if self.items.len() >= 32 {
+        let custom_count = self
+            .items
+            .iter()
+            .filter(|provider| provider.kind == ProviderKind::Custom)
+            .count();
+        if custom_count >= 32 {
             return Err("Maximum of 32 providers reached.".into());
         }
         let mut provider = Provider::new(cleaned_name, normalized, token.unwrap_or(""), api_style);
@@ -248,12 +369,17 @@ impl ProvidersConfig {
 
     pub fn delete(&mut self, id: &str) -> Result<(), String> {
         self.migrate();
-        if !self.items.iter().any(|p| p.id == id) {
+        let Some(provider) = self.items.iter_mut().find(|p| p.id == id) else {
             return Err("Provider not found.".into());
+        };
+        if provider.kind.is_builtin() {
+            provider.token.clear();
+            provider.allow_insecure_tls = false;
+            return Ok(());
         }
         self.items.retain(|p| p.id != id);
         if self.active_provider_id == id {
-            self.active_provider_id = self.items.first().map(|p| p.id.clone()).unwrap_or_default();
+            self.active_provider_id = self.default_active_id();
         }
         Ok(())
     }
@@ -326,7 +452,7 @@ pub fn provider_auth_headers(style: ApiStyle, token: &str) -> Vec<(String, Strin
     }
 
     match style {
-        ApiStyle::Openai => {
+        ApiStyle::Openai | ApiStyle::Responses => {
             if token.is_empty() {
                 Vec::new()
             } else {
@@ -398,6 +524,11 @@ pub fn mask_token(token: &str) -> String {
     if trimmed.is_empty() {
         return String::new();
     }
+    // Codex credentials are a JSON document. A prefix/suffix mask would expose
+    // the ends of the refresh token.
+    if trimmed.starts_with('{') {
+        return "Saved".into();
+    }
     let chars: Vec<char> = trimmed.chars().collect();
     if chars.len() <= 8 {
         return "••••••••".into();
@@ -458,6 +589,12 @@ pub struct RemoteModelOption {
     pub thinking_efforts: Vec<String>,
     #[serde(default)]
     pub thinking_can_disable: bool,
+    /// Responses `reasoning.summary` to request with an effort, when the catalog names one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_summary: Option<String>,
+    /// Responses `reasoning.context` required with an effort, when the catalog names one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reasoning_context: Option<String>,
     /// Native multimodal / vision attachments (images) when known from host metadata.
     #[serde(default)]
     pub attachments_supported: bool,
@@ -471,6 +608,12 @@ pub struct RemoteModelOption {
     pub provider_id: String,
     #[serde(default)]
     pub provider_name: String,
+    /// Surface this model is called with. Custom catalogs use the provider style.
+    #[serde(default)]
+    pub request_style: ApiStyle,
+    /// Set on a menu row that starts Connect instead of selecting a model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connect_kind: Option<String>,
 }
 
 /// Translate Gopher's canonical effort into the one request dialect this
@@ -501,7 +644,24 @@ pub fn apply_thinking_control(body: &mut serde_json::Value, model: Option<&Remot
     };
     match model.thinking_control.as_deref() {
         Some("reasoning") => {
-            object.insert("reasoning".into(), serde_json::json!({ "effort": effort }));
+            let mut reasoning = serde_json::json!({ "effort": effort });
+            if let Some(summary) = model
+                .reasoning_summary
+                .as_deref()
+                .map(str::trim)
+                .filter(|summary| !summary.is_empty())
+            {
+                reasoning["summary"] = serde_json::json!(summary);
+            }
+            if let Some(context) = model
+                .reasoning_context
+                .as_deref()
+                .map(str::trim)
+                .filter(|context| !context.is_empty())
+            {
+                reasoning["context"] = serde_json::json!(context);
+            }
+            object.insert("reasoning".into(), reasoning);
         }
         Some("reasoning_effort") => {
             object.insert("reasoning_effort".into(), serde_json::json!(effort));
@@ -878,6 +1038,7 @@ fn style_route_signal(base: &str, token: &str, style: ApiStyle, timeout: Duratio
     let path = match style {
         ApiStyle::Openai => "chat/completions",
         ApiStyle::Anthropic => "messages",
+        ApiStyle::Responses => "responses",
     };
     let url = format!("{base}/{path}");
     let client = http::llm_blocking_client(&base, timeout);
@@ -1059,11 +1220,15 @@ fn catalog_from_models_body(
             thinking_control: thinking.control,
             thinking_efforts: thinking.efforts,
             thinking_can_disable: thinking.can_disable,
+            reasoning_summary: None,
+            reasoning_context: None,
             attachments_supported,
             context_length,
             prompt_progress_supported,
             provider_id: String::new(),
             provider_name: String::new(),
+            request_style: style,
+            connect_kind: None,
         });
     }
     out.sort_by(|a, b| a.model.cmp(&b.model));
@@ -2077,11 +2242,15 @@ mod tests {
             thinking_control: control.map(str::to_string),
             thinking_efforts: efforts.iter().map(|value| (*value).into()).collect(),
             thinking_can_disable: can_disable,
+            reasoning_summary: None,
+            reasoning_context: None,
             attachments_supported: false,
             context_length: None,
             prompt_progress_supported: false,
             provider_id: String::new(),
             provider_name: String::new(),
+            request_style: ApiStyle::Openai,
+            connect_kind: None,
         }
     }
 
@@ -2215,6 +2384,18 @@ mod tests {
         assert_eq!(
             body,
             serde_json::json!({ "reasoning": { "effort": "max" } })
+        );
+
+        let mut shaped = unified.clone();
+        shaped.reasoning_summary = Some("auto".into());
+        shaped.reasoning_context = Some("all_turns".into());
+        let mut body = serde_json::json!({ "thinking_effort": "high" });
+        apply_thinking_control(&mut body, Some(&shaped));
+        assert_eq!(
+            body,
+            serde_json::json!({
+                "reasoning": { "effort": "high", "summary": "auto", "context": "all_turns" }
+            })
         );
 
         let legacy = reasoning_model(Some("reasoning_effort"), &["low", "high"], false);

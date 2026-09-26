@@ -7,6 +7,8 @@ pub const ORB_JS: &str = include_str!("../ui/orb.js");
 pub const HIGHLIGHT_JS: &str = include_str!("../ui/vendor/highlight.min.js");
 pub const MARKED_JS: &str = include_str!("../ui/vendor/marked.min.js");
 pub const PURIFY_JS: &str = include_str!("../ui/vendor/purify.min.js");
+pub const KATEX_JS: &str = include_str!("../ui/vendor/katex/katex.min.js");
+pub const KATEX_CSS: &str = include_str!("../ui/vendor/katex/katex.min.css");
 pub const OPTIONAL_FONTS_JS: &str = include_str!("../ui/optional-fonts.js");
 pub const XTERM_JS: &str = include_str!("../ui/vendor/xterm.min.js");
 pub const XTERM_FIT_JS: &str = include_str!("../ui/vendor/xterm-addon-fit.min.js");
@@ -16,6 +18,16 @@ pub const APP_ICON_PNG: &[u8] = include_bytes!("../../assets/browser-favicon.png
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn chat_typesets_latex_with_katex() {
+        assert!(CHAT_HTML.contains("/katex.min.js"));
+        assert!(CHAT_HTML.contains("/katex.min.css"));
+        assert!(CHAT_JS.contains("function shieldMarkdownMath("));
+        assert!(CHAT_JS.contains("katex.renderToString"));
+        assert!(KATEX_CSS.contains("/katex/fonts/KaTeX_Main-Regular.woff2"));
+        assert!(!KATEX_CSS.contains(".ttf"));
+    }
 
     #[test]
     fn chat_ui_does_not_block_paint_on_google_fonts() {
@@ -43,7 +55,10 @@ mod tests {
         assert!(!CHAT_JS.contains("pruneRecentModels("));
         assert!(CHAT_JS.contains("pinnedModelIds: pinnedModelIds.slice()"));
         assert!(CHAT_JS.contains("remote_catalog_pending"));
-        assert!(CHAT_JS.contains("if (!selectedChatModel && catalogComplete && !menuOpen)"));
+        assert!(CHAT_JS.contains(
+            "if (!selectedChatModel && catalogComplete && !menuOpen && selectable.length)"
+        ));
+        assert!(CHAT_JS.contains("!option.connectKind"));
         assert!(!CHAT_JS.contains("!allValues.includes(selectedChatModel)"));
     }
 
@@ -176,6 +191,9 @@ mod tests {
         assert!(CHAT_HTML.contains("id=\"providerList\""));
         assert!(!CHAT_HTML.contains("id=\"localLlmBody\""));
         assert!(CHAT_JS.contains("function bindProviderSettings("));
+        assert!(CHAT_HTML.contains("data-connect-panel"));
+        assert!(CHAT_HTML.contains("data-connect-action=\"codex-login\""));
+        assert!(CHAT_JS.contains("function openBuiltinConnect("));
         assert!(!CHAT_HTML.contains("settings-providers-frame"));
         assert!(!CHAT_HTML.contains("data-src=\"/settings?embedded=1\""));
         assert!(!CHAT_HTML.contains("id=\"btnProviders\""));

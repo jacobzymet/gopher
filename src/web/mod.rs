@@ -31,7 +31,7 @@ use crate::{
     attachments::{self, ExtractRequest},
     chat, encryption_transition,
     providers::{
-        ApiStyle, ProviderHealth, ProviderHealthKind, ProviderPublic, RemoteModelOption,
+        ApiStyle, ProviderHealth, ProviderHealthKind, ProviderKind, ProviderPublic, RemoteModelOption,
         apply_thinking_control, enrich_local_catalog, find_provider_for_base,
         normalize_openai_base, probe_provider_endpoint, probe_provider_style,
     },
@@ -40,7 +40,8 @@ use crate::{
 };
 pub(crate) use embed::APP_ICON_PNG;
 use embed::{
-    CHAT_CSS, CHAT_HTML, CHAT_JS, HIGHLIGHT_JS, MARKED_JS, OPTIONAL_FONTS_JS, ORB_JS, PURIFY_JS,
+    CHAT_CSS, CHAT_HTML, CHAT_JS, HIGHLIGHT_JS, KATEX_CSS, KATEX_JS, MARKED_JS, OPTIONAL_FONTS_JS,
+    ORB_JS, PURIFY_JS,
     XTERM_CSS, XTERM_FIT_JS, XTERM_JS,
 };
 
@@ -265,6 +266,31 @@ fn locked_api_request_allowed(method: &axum::http::Method, path: &str) -> bool {
 
 static PROVIDER_CACHE_WARM_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 static PROVIDER_CACHE_WARM_ALLOWED: AtomicBool = AtomicBool::new(true);
+static CODEX_LOGIN_BUSY: AtomicBool = AtomicBool::new(false);
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DevicePhase {
+    Idle,
+    Pending,
+    Ready,
+    Failed,
+}
+
+struct DeviceLoginState {
+    phase: DevicePhase,
+    user_code: String,
+    verification_url: String,
+    device_auth_id: String,
+    error: String,
+}
+
+static DEVICE_LOGIN: Mutex<DeviceLoginState> = Mutex::new(DeviceLoginState {
+    phase: DevicePhase::Idle,
+    user_code: String::new(),
+    verification_url: String::new(),
+    device_auth_id: String::new(),
+    error: String::new(),
+});
 const WARM_CONCURRENCY: usize = 4;
 
 fn schedule_provider_cache_warm(app: SharedApp) {
@@ -301,10 +327,7 @@ fn schedule_provider_cache_warm(app: SharedApp) {
     });
 }
 
-fn warm_provider_targets(
-    app: &SharedApp,
-    targets: Vec<(ApiStyle, String, zeroize::Zeroizing<String>, bool)>,
-) {
+fn warm_provider_targets(app: &SharedApp, targets: Vec<crate::app::WarmTarget>) {
     if targets.is_empty() {
         return;
     }
@@ -317,24 +340,32 @@ fn warm_provider_targets(
                     if !PROVIDER_CACHE_WARM_ALLOWED.load(Ordering::SeqCst) {
                         return;
                     }
-                    let Some((style, base, token, insecure)) =
+                    let Some((kind, id, style, base, token, insecure)) =
                         queue.lock().ok().and_then(|mut queue| queue.pop_front())
                     else {
                         return;
                     };
-                    let (health, catalog) =
+                    let (health, catalog) = if kind.is_builtin() {
+                        crate::subscription::probe_builtin(kind, &token)
+                    } else {
                         crate::http::with_insecure_provider_tls(insecure, || {
                             probe_provider_endpoint(&base, &token, style)
-                        });
+                        })
+                    };
+                    let cache_token =
+                        crate::providers::catalog_cache_material(kind, &id, &token);
                     if let Ok(guard) = app.lock() {
-                        guard.store_remote_health(style, &base, &token, health);
-                        guard.store_remote_catalog(style, &base, &token, catalog.clone());
+                        guard.store_remote_health(style, &base, &cache_token, health);
+                        guard.store_remote_catalog(style, &base, &cache_token, catalog.clone());
+                    }
+                    if kind.is_builtin() {
+                        continue;
                     }
                     let catalog = crate::http::with_insecure_provider_tls(insecure, || {
                         enrich_local_catalog(&base, &token, style, catalog)
                     });
                     if let Ok(guard) = app.lock() {
-                        guard.store_remote_catalog(style, &base, &token, catalog);
+                        guard.store_remote_catalog(style, &base, &cache_token, catalog);
                     }
                 }
             });
@@ -385,6 +416,13 @@ pub async fn serve(app: SharedApp, listener: TcpListener) -> anyhow::Result<()> 
             axum::routing::patch(update_provider).delete(delete_provider),
         )
         .route("/api/providers/{id}/activate", post(activate_provider))
+        .route("/api/subscription/codex/login", post(codex_login))
+        .route(
+            "/api/subscription/codex/device",
+            post(codex_device_start).get(codex_device_status),
+        )
+        .route("/api/subscription/codex/import", post(codex_import))
+        .route("/api/subscription/disconnect", post(subscription_disconnect))
         .route("/api/focus", post(focus))
         .route("/api/open-url", post(open_url))
         .route("/api/data", get(data_info).post(set_storage_mode))
@@ -444,6 +482,9 @@ pub async fn serve(app: SharedApp, listener: TcpListener) -> anyhow::Result<()> 
         .route("/highlight.min.js", get(highlight_script))
         .route("/marked.min.js", get(marked_script))
         .route("/purify.min.js", get(purify_script))
+        .route("/katex.min.js", get(katex_script))
+        .route("/katex.min.css", get(katex_stylesheet))
+        .route("/katex/fonts/{name}", get(katex_font))
         .route("/ocr/{asset}", get(ocr_asset))
         .route("/xterm.css", get(xterm_stylesheet))
         .route("/xterm.min.js", get(xterm_script))
@@ -563,6 +604,83 @@ async fn purify_script() -> impl IntoResponse {
         [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
         PURIFY_JS,
     )
+}
+
+async fn katex_script() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+        KATEX_JS,
+    )
+}
+
+async fn katex_stylesheet() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "text/css; charset=utf-8")],
+        KATEX_CSS,
+    )
+}
+
+async fn katex_font(Path(name): Path<String>) -> Response {
+    let bytes: &'static [u8] = match name.as_str() {
+        "KaTeX_AMS-Regular.woff2" => include_bytes!("../ui/vendor/katex/fonts/KaTeX_AMS-Regular.woff2"),
+        "KaTeX_Caligraphic-Bold.woff2" => {
+            include_bytes!("../ui/vendor/katex/fonts/KaTeX_Caligraphic-Bold.woff2")
+        }
+        "KaTeX_Caligraphic-Regular.woff2" => {
+            include_bytes!("../ui/vendor/katex/fonts/KaTeX_Caligraphic-Regular.woff2")
+        }
+        "KaTeX_Fraktur-Bold.woff2" => {
+            include_bytes!("../ui/vendor/katex/fonts/KaTeX_Fraktur-Bold.woff2")
+        }
+        "KaTeX_Fraktur-Regular.woff2" => {
+            include_bytes!("../ui/vendor/katex/fonts/KaTeX_Fraktur-Regular.woff2")
+        }
+        "KaTeX_Main-Bold.woff2" => include_bytes!("../ui/vendor/katex/fonts/KaTeX_Main-Bold.woff2"),
+        "KaTeX_Main-BoldItalic.woff2" => {
+            include_bytes!("../ui/vendor/katex/fonts/KaTeX_Main-BoldItalic.woff2")
+        }
+        "KaTeX_Main-Italic.woff2" => include_bytes!("../ui/vendor/katex/fonts/KaTeX_Main-Italic.woff2"),
+        "KaTeX_Main-Regular.woff2" => {
+            include_bytes!("../ui/vendor/katex/fonts/KaTeX_Main-Regular.woff2")
+        }
+        "KaTeX_Math-BoldItalic.woff2" => {
+            include_bytes!("../ui/vendor/katex/fonts/KaTeX_Math-BoldItalic.woff2")
+        }
+        "KaTeX_Math-Italic.woff2" => include_bytes!("../ui/vendor/katex/fonts/KaTeX_Math-Italic.woff2"),
+        "KaTeX_SansSerif-Bold.woff2" => {
+            include_bytes!("../ui/vendor/katex/fonts/KaTeX_SansSerif-Bold.woff2")
+        }
+        "KaTeX_SansSerif-Italic.woff2" => {
+            include_bytes!("../ui/vendor/katex/fonts/KaTeX_SansSerif-Italic.woff2")
+        }
+        "KaTeX_SansSerif-Regular.woff2" => {
+            include_bytes!("../ui/vendor/katex/fonts/KaTeX_SansSerif-Regular.woff2")
+        }
+        "KaTeX_Script-Regular.woff2" => {
+            include_bytes!("../ui/vendor/katex/fonts/KaTeX_Script-Regular.woff2")
+        }
+        "KaTeX_Size1-Regular.woff2" => {
+            include_bytes!("../ui/vendor/katex/fonts/KaTeX_Size1-Regular.woff2")
+        }
+        "KaTeX_Size2-Regular.woff2" => {
+            include_bytes!("../ui/vendor/katex/fonts/KaTeX_Size2-Regular.woff2")
+        }
+        "KaTeX_Size3-Regular.woff2" => {
+            include_bytes!("../ui/vendor/katex/fonts/KaTeX_Size3-Regular.woff2")
+        }
+        "KaTeX_Size4-Regular.woff2" => {
+            include_bytes!("../ui/vendor/katex/fonts/KaTeX_Size4-Regular.woff2")
+        }
+        "KaTeX_Typewriter-Regular.woff2" => {
+            include_bytes!("../ui/vendor/katex/fonts/KaTeX_Typewriter-Regular.woff2")
+        }
+        _ => return StatusCode::NOT_FOUND.into_response(),
+    };
+    (
+        [(header::CONTENT_TYPE, "font/woff2")],
+        bytes,
+    )
+        .into_response()
 }
 
 async fn ocr_asset(Path(asset): Path<String>) -> Response {
@@ -689,11 +807,77 @@ struct ChatTitleBody {
     model: Option<String>,
     #[serde(default)]
     remote_base: Option<String>,
+    #[serde(default)]
+    provider_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 struct ChatTitleResponse {
     title: String,
+}
+
+async fn prepare_upstream(
+    app: &SharedApp,
+    remote_base: Option<&str>,
+    provider_id: Option<&str>,
+    model: &str,
+    conversation_id: Option<&str>,
+) -> Result<(crate::subscription::PreparedUpstream, Option<RemoteModelOption>), ApiError> {
+    let provider = {
+        let guard = app.lock().map_err(|_| ApiError::lock())?;
+        let providers = &guard.config.providers;
+        let provider_id = provider_id.map(str::trim).filter(|id| !id.is_empty());
+        // Several providers can share a base URL, so the id decides when present.
+        if let Some(id) = provider_id {
+            providers
+                .items
+                .iter()
+                .find(|provider| provider.id == id)
+                .cloned()
+                .ok_or_else(|| ApiError::bad_request("No provider is configured for that model."))?
+        } else if let Some(requested) = remote_base {
+            find_provider_for_base(&providers.items, requested)
+                .cloned()
+                .ok_or_else(|| ApiError::bad_request("No provider is configured for that model."))?
+        } else {
+            providers
+                .active()
+                .cloned()
+                .ok_or_else(|| {
+                    ApiError::bad_request("No provider configured. Add one in Settings > Providers.")
+                })?
+        }
+    };
+    let mut provider = provider;
+    if provider.kind == crate::providers::ProviderKind::OpenaiCodex
+        && !provider.token.trim().is_empty()
+    {
+        let stored = provider.token.clone();
+        let refreshed = tokio::task::spawn_blocking(move || {
+            crate::subscription::refresh_codex_secret(&stored)
+        })
+        .await
+        .map_err(|error| ApiError::bad_request(format!("ChatGPT sign-in refresh failed: {error}")))?
+        .map_err(ApiError::bad_request)?;
+        if refreshed.changed {
+            let mut guard = app.lock().map_err(|_| ApiError::lock())?;
+            guard
+                .set_builtin_secret(provider.kind, &refreshed.secret_json)
+                .map_err(ApiError::bad_request)?;
+            provider.token = refreshed.secret_json;
+        }
+    }
+    let prepared = crate::subscription::prepare(&provider, model, conversation_id)
+        .map_err(ApiError::bad_request)?;
+    let thinking = {
+        let guard = app.lock().map_err(|_| ApiError::lock())?;
+        guard.remote_model_catalog_cached().into_iter().find(|option| {
+            option.connect_kind.is_none()
+                && option.provider_id == provider.id
+                && option.model == prepared.wire_model
+        })
+    };
+    Ok((prepared, thinking))
 }
 
 async fn chat_title(
@@ -710,69 +894,19 @@ async fn chat_title(
         .map(str::trim)
         .filter(|m| !m.is_empty())
         .map(str::to_string);
-    let (api_base, token, api_style, allow_insecure_tls, thinking_model) = {
-        let app = app.lock().map_err(|_| ApiError::lock())?;
-        let providers = &app.config.providers;
-        if let Some(requested) = body.remote_base.as_deref() {
-            let Some(linked) = find_provider_for_base(&providers.items, requested) else {
-                return Err(ApiError::bad_request(
-                    "No provider is configured for that model.",
-                ));
-            };
-            let api_base = normalize_openai_base(requested)
-                .ok_or_else(|| ApiError::bad_request("Invalid model API base."))?;
-            let thinking_model = model.as_ref().and_then(|model_id| {
-                app.remote_model_catalog_cached()
-                    .into_iter()
-                    .find(|option| {
-                        option.model == *model_id
-                            && normalize_openai_base(&option.base).as_ref() == Some(&api_base)
-                    })
-            });
-            (
-                api_base,
-                linked.token.clone(),
-                linked.api_style,
-                linked.allow_insecure_tls,
-                thinking_model,
-            )
-        } else {
-            let Some(active) = providers.active() else {
-                return Err(ApiError::bad_request(
-                    "No provider configured. Add one in Settings > Providers.",
-                ));
-            };
-            let api_base = normalize_openai_base(&active.base)
-                .ok_or_else(|| ApiError::bad_request("Active provider has an invalid base URL."))?;
-            let thinking_model = model.as_ref().and_then(|model_id| {
-                app.remote_model_catalog_cached()
-                    .into_iter()
-                    .find(|option| {
-                        option.model == *model_id
-                            && normalize_openai_base(&option.base).as_ref() == Some(&api_base)
-                    })
-            });
-            (
-                api_base,
-                active.token.clone(),
-                active.api_style,
-                active.allow_insecure_tls,
-                thinking_model,
-            )
-        }
-    };
-
-    let title = chat::generate_chat_title(
-        &api_base,
-        &token,
-        api_style,
-        model.as_deref(),
-        message,
-        allow_insecure_tls,
-        thinking_model.as_ref(),
+    let model_name = model.unwrap_or_default();
+    let (upstream, thinking_model) = prepare_upstream(
+        &app,
+        body.remote_base.as_deref(),
+        body.provider_id.as_deref(),
+        &model_name,
+        None,
     )
-    .await
-    .map_err(ApiError::bad_request)?;
+    .await?;
+
+    let title = chat::generate_chat_title(&upstream, message, thinking_model.as_ref())
+        .await
+        .map_err(ApiError::bad_request)?;
     Ok(Json(ChatTitleResponse { title }))
 }
 
@@ -784,78 +918,44 @@ async fn chat_completions(
         .as_object_mut()
         .and_then(|obj| obj.remove("remote_base"))
         .and_then(|v| v.as_str().map(str::to_string));
+    let provider_id = body
+        .as_object_mut()
+        .and_then(|obj| obj.remove("provider_id"))
+        .and_then(|v| v.as_str().map(str::to_string));
     let remote_model = body
         .get("model")
         .and_then(|v| v.as_str())
-        .map(str::to_string);
-
-    let (remote, user_skills, thinking_model) = {
-        let app = app.lock().map_err(|_| ApiError::lock())?;
-        let user_skills = app.enabled_user_skills();
-        let providers = &app.config.providers;
-        let remote = if let Some(requested) = remote_base_override.as_deref() {
-            let Some(linked) = find_provider_for_base(&providers.items, requested) else {
-                return Err(ApiError::bad_request(
-                    "No provider is configured for that model.",
-                ));
-            };
-            let api_base = normalize_openai_base(requested)
-                .ok_or_else(|| ApiError::bad_request("Invalid model API base."))?;
-            Some((
-                api_base,
-                linked.token.clone(),
-                linked.api_style,
-                linked.allow_insecure_tls,
-            ))
-        } else {
-            let Some(active) = providers.active() else {
-                return Err(ApiError::bad_request(
-                    "No provider configured. Add one in Settings > Providers.",
-                ));
-            };
-            let api_base = normalize_openai_base(&active.base)
-                .ok_or_else(|| ApiError::bad_request("Active provider has an invalid base URL."))?;
-            Some((
-                api_base,
-                active.token.clone(),
-                active.api_style,
-                active.allow_insecure_tls,
-            ))
-        };
-        let thinking_model = remote.as_ref().and_then(|(base, _, _, _)| {
-            remote_model.as_deref().and_then(|model| {
-                app.remote_model_catalog_cached()
-                    .into_iter()
-                    .find(|option| {
-                        option.model == model
-                            && normalize_openai_base(&option.base).as_ref() == Some(base)
-                    })
-            })
-        });
-        (remote, user_skills, thinking_model)
-    };
-
-    let Some((api_base, token, api_style, allow_insecure_tls)) = remote else {
-        return Err(ApiError::bad_request(
-            "No provider configured. Add one in Settings > Providers.",
-        ));
-    };
-
-    if let Some(model) = remote_model
-        && let Some(obj) = body.as_object_mut()
-    {
-        obj.insert("model".to_string(), serde_json::Value::String(model));
-    }
-    apply_thinking_control(&mut body, thinking_model.as_ref());
-    let prompt_progress_supported = thinking_model
-        .as_ref()
-        .is_some_and(|model| model.prompt_progress_supported);
+        .unwrap_or("")
+        .to_string();
     let conversation_id = body
         .as_object_mut()
         .and_then(|obj| obj.remove("conversation_id"))
         .and_then(|v| v.as_str().map(|s| s.trim().to_string()))
         .filter(|id| !id.is_empty());
     let conversation_id = conversation_id.map(validate_live_id).transpose()?;
+    let (upstream, thinking_model) = prepare_upstream(
+        &app,
+        remote_base_override.as_deref(),
+        provider_id.as_deref(),
+        &remote_model,
+        conversation_id.as_deref(),
+    )
+    .await?;
+    let user_skills = {
+        let app = app.lock().map_err(|_| ApiError::lock())?;
+        app.enabled_user_skills()
+    };
+
+    if let Some(obj) = body.as_object_mut() {
+        obj.insert(
+            "model".to_string(),
+            serde_json::Value::String(upstream.wire_model.clone()),
+        );
+    }
+    apply_thinking_control(&mut body, thinking_model.as_ref());
+    let prompt_progress_supported = thinking_model
+        .as_ref()
+        .is_some_and(|model| model.prompt_progress_supported);
     let requested_turn_id = body
         .as_object_mut()
         .and_then(|obj| obj.remove("turn_id"))
@@ -863,7 +963,6 @@ async fn chat_completions(
         .filter(|id| !id.is_empty())
         .map(validate_live_id)
         .transpose()?;
-    let key = (!token.trim().is_empty()).then_some(token.as_str());
     let wants_agent = body.get("agent").and_then(|v| v.as_bool()).unwrap_or(false)
         || body
             .get("deep_research")
@@ -879,11 +978,7 @@ async fn chat_completions(
         .filter(|value| *value == "brief")
         .unwrap_or("long")
         .to_string();
-    let turn_model = body
-        .get("model")
-        .and_then(|value| value.as_str())
-        .unwrap_or_default()
-        .to_string();
+    let turn_model = upstream.wire_model.clone();
     let model_context_window_tokens = thinking_model
         .as_ref()
         .and_then(|model| model.context_length)
@@ -901,14 +996,7 @@ async fn chat_completions(
             }
             request.model_context_window_tokens = model_context_window_tokens;
             request.prompt_progress_supported = prompt_progress_supported;
-            agent::stream_agent(
-                &api_base,
-                key,
-                api_style,
-                allow_insecure_tls,
-                request,
-                user_skills,
-            )
+            agent::stream_agent(upstream, request, user_skills)
         }
         Ok(_) => {
             if let Some(messages) = body.get_mut("messages").and_then(|v| v.as_array_mut()) {
@@ -921,7 +1009,7 @@ async fn chat_completions(
             if prompt_progress_supported && let Some(object) = body.as_object_mut() {
                 object.insert("return_progress".into(), serde_json::json!(true));
             }
-            chat::stream_remote_completion(&api_base, &token, api_style, allow_insecure_tls, body)
+            chat::stream_remote_completion(upstream, body)
         }
         Err(error) if wants_agent => {
             return Err(ApiError::bad_request(format!(
@@ -939,7 +1027,7 @@ async fn chat_completions(
             if prompt_progress_supported && let Some(object) = body.as_object_mut() {
                 object.insert("return_progress".into(), serde_json::json!(true));
             }
-            chat::stream_remote_completion(&api_base, &token, api_style, allow_insecure_tls, body)
+            chat::stream_remote_completion(upstream, body)
         }
     };
 
@@ -1266,6 +1354,248 @@ struct ProvidersResponse {
     state: AppState,
 }
 
+#[derive(Debug, Deserialize)]
+struct CodexImportBody {
+    #[serde(default)]
+    confirm: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct SubscriptionKindBody {
+    kind: String,
+}
+
+#[derive(Debug, Serialize)]
+struct SubscriptionStatus {
+    status: &'static str,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    user_code: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    verification_url: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    error: String,
+}
+
+fn device_status_snapshot() -> SubscriptionStatus {
+    let state = DEVICE_LOGIN.lock().unwrap_or_else(|error| error.into_inner());
+    let status = match state.phase {
+        DevicePhase::Idle => "idle",
+        DevicePhase::Pending => "pending",
+        DevicePhase::Ready => "ready",
+        DevicePhase::Failed => "error",
+    };
+    SubscriptionStatus {
+        status,
+        user_code: state.user_code.clone(),
+        verification_url: state.verification_url.clone(),
+        error: state.error.clone(),
+    }
+}
+
+fn providers_response(app: &App) -> ProvidersResponse {
+    ProvidersResponse {
+        providers: app.public_providers(),
+        state: AppState::from_app(app),
+    }
+}
+
+async fn codex_login(State(app): State<SharedApp>) -> Result<Json<ProvidersResponse>, ApiError> {
+    {
+        let guard = app.lock().map_err(|_| ApiError::lock())?;
+        guard.require_secret_write().map_err(ApiError::bad_request)?;
+    }
+    if CODEX_LOGIN_BUSY.swap(true, Ordering::AcqRel) {
+        return Err(ApiError::bad_request(
+            "A ChatGPT sign-in is already in progress.",
+        ));
+    }
+    let login = tokio::task::spawn_blocking(crate::subscription::codex_pkce_login).await;
+    CODEX_LOGIN_BUSY.store(false, Ordering::Release);
+    let mut login = login
+        .map_err(|error| ApiError::bad_request(format!("ChatGPT sign-in failed: {error}")))?
+        .map_err(|error| match error {
+            crate::subscription::PkceError::PortBusy => ApiError {
+                status: StatusCode::CONFLICT,
+                message: "Port 1455 is already in use (a Codex CLI sign-in may be running). \
+                          OpenAI only redirects to that port, so Gopher is switching to a device code."
+                    .into(),
+                code: Some("codex_browser_port_busy"),
+            },
+            crate::subscription::PkceError::Failed(message) => ApiError::bad_request(message),
+        })?;
+    let response = {
+        let mut guard = app.lock().map_err(|_| ApiError::lock())?;
+        guard
+            .set_builtin_secret(ProviderKind::OpenaiCodex, &login.secret_json)
+            .map_err(ApiError::bad_request)?;
+        providers_response(&guard)
+    };
+    login.secret_json.zeroize();
+    schedule_provider_cache_warm(Arc::clone(&app));
+    Ok(Json(response))
+}
+
+async fn codex_device_start(
+    State(app): State<SharedApp>,
+) -> Result<Json<SubscriptionStatus>, ApiError> {
+    {
+        let guard = app.lock().map_err(|_| ApiError::lock())?;
+        guard.require_secret_write().map_err(ApiError::bad_request)?;
+    }
+    {
+        let state = DEVICE_LOGIN.lock().unwrap_or_else(|error| error.into_inner());
+        if state.phase == DevicePhase::Pending {
+            return Ok(Json(device_status_snapshot()));
+        }
+    }
+    let code = tokio::task::spawn_blocking(crate::subscription::request_device_code)
+        .await
+        .map_err(|error| ApiError::bad_request(format!("ChatGPT sign-in failed: {error}")))?
+        .map_err(ApiError::bad_request)?;
+    {
+        let mut state = DEVICE_LOGIN.lock().unwrap_or_else(|error| error.into_inner());
+        state.phase = DevicePhase::Pending;
+        state.user_code = code.user_code.clone();
+        state.verification_url = code.verification_url.clone();
+        state.device_auth_id = code.device_auth_id.clone();
+        state.error.clear();
+    }
+    let _ = system::open_in_browser(&code.verification_url);
+    let user_code = code.user_code.clone();
+    let device_auth_id = code.device_auth_id.clone();
+    let interval = code.interval_secs.max(3);
+    let app = Arc::clone(&app);
+    tokio::spawn(async move {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15 * 60);
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
+            let still_pending = DEVICE_LOGIN
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .phase
+                == DevicePhase::Pending;
+            if !still_pending || std::time::Instant::now() > deadline {
+                let mut state = DEVICE_LOGIN.lock().unwrap_or_else(|error| error.into_inner());
+                if state.phase == DevicePhase::Pending {
+                    state.phase = DevicePhase::Failed;
+                    state.error = "ChatGPT device-code sign-in timed out.".into();
+                    state.device_auth_id.zeroize();
+                    state.device_auth_id.clear();
+                }
+                break;
+            }
+            let code = user_code.clone();
+            let id = device_auth_id.clone();
+            let polled = tokio::task::spawn_blocking(move || {
+                crate::subscription::poll_device_code(&code, &id)
+            })
+            .await;
+            match polled {
+                Ok(Ok(Some(mut secret))) => {
+                    let saved = app.lock().ok().and_then(|mut guard| {
+                        guard
+                            .set_builtin_secret(ProviderKind::OpenaiCodex, &secret)
+                            .ok()
+                    });
+                    secret.zeroize();
+                    let mut state = DEVICE_LOGIN.lock().unwrap_or_else(|error| error.into_inner());
+                    state.device_auth_id.zeroize();
+                    state.device_auth_id.clear();
+                    if saved.is_some() {
+                        state.phase = DevicePhase::Ready;
+                        state.error.clear();
+                        drop(state);
+                        schedule_provider_cache_warm(Arc::clone(&app));
+                    } else {
+                        state.phase = DevicePhase::Failed;
+                        state.error =
+                            "Unlock encrypted data before connecting ChatGPT.".into();
+                    }
+                    break;
+                }
+                Ok(Ok(None)) => continue,
+                Ok(Err(error)) => {
+                    let mut state = DEVICE_LOGIN.lock().unwrap_or_else(|error| error.into_inner());
+                    state.phase = DevicePhase::Failed;
+                    state.error = crate::subscription::redact(
+                        &error,
+                        &[state.user_code.as_str(), state.device_auth_id.as_str()],
+                    );
+                    state.device_auth_id.zeroize();
+                    state.device_auth_id.clear();
+                    break;
+                }
+                Err(_) => {
+                    let mut state = DEVICE_LOGIN.lock().unwrap_or_else(|error| error.into_inner());
+                    state.phase = DevicePhase::Failed;
+                    state.error = "ChatGPT device-code sign-in failed.".into();
+                    state.device_auth_id.zeroize();
+                    state.device_auth_id.clear();
+                    break;
+                }
+            }
+        }
+    });
+    Ok(Json(device_status_snapshot()))
+}
+
+async fn codex_device_status() -> Json<SubscriptionStatus> {
+    Json(device_status_snapshot())
+}
+
+async fn codex_import(
+    State(app): State<SharedApp>,
+    Json(body): Json<CodexImportBody>,
+) -> Result<Json<ProvidersResponse>, ApiError> {
+    if !body.confirm {
+        return Err(ApiError::bad_request(
+            "Confirm before importing a Codex CLI session.",
+        ));
+    }
+    {
+        let guard = app.lock().map_err(|_| ApiError::lock())?;
+        guard.require_secret_write().map_err(ApiError::bad_request)?;
+    }
+    let mut secret = tokio::task::spawn_blocking(crate::subscription::import_codex_cli_secret)
+        .await
+        .map_err(|error| ApiError::bad_request(format!("Codex import failed: {error}")))?
+        .map_err(ApiError::bad_request)?;
+    let response = {
+        let mut guard = app.lock().map_err(|_| ApiError::lock())?;
+        guard
+            .set_builtin_secret(ProviderKind::OpenaiCodex, &secret)
+            .map_err(ApiError::bad_request)?;
+        providers_response(&guard)
+    };
+    secret.zeroize();
+    schedule_provider_cache_warm(Arc::clone(&app));
+    Ok(Json(response))
+}
+
+async fn subscription_disconnect(
+    State(app): State<SharedApp>,
+    Json(body): Json<SubscriptionKindBody>,
+) -> Result<Json<ProvidersResponse>, ApiError> {
+    let kind = ProviderKind::parse(&body.kind)
+        .filter(|kind| kind.needs_secret())
+        .ok_or_else(|| ApiError::bad_request("Unknown built-in provider."))?;
+    let response = {
+        let mut guard = app.lock().map_err(|_| ApiError::lock())?;
+        let id = guard
+            .config
+            .providers
+            .items
+            .iter()
+            .find(|provider| provider.kind == kind)
+            .map(|provider| provider.id.clone())
+            .ok_or_else(|| ApiError::bad_request("Built-in provider is missing."))?;
+        guard.delete_provider(&id).map_err(ApiError::bad_request)?;
+        providers_response(&guard)
+    };
+    schedule_provider_cache_warm(Arc::clone(&app));
+    Ok(Json(response))
+}
+
 async fn list_providers(State(app): State<SharedApp>) -> Result<Json<ProvidersResponse>, ApiError> {
     let response = {
         let app = app.lock().map_err(|_| ApiError::lock())?;
@@ -1282,6 +1612,54 @@ async fn test_provider(
     State(app): State<SharedApp>,
     Json(body): Json<TestProviderBody>,
 ) -> Result<Json<TestProviderResponse>, ApiError> {
+    if body.token.trim_start().starts_with('{') {
+        return Err(ApiError::bad_request(
+            "ChatGPT sessions are not sent to a typed-in URL.",
+        ));
+    }
+    if let Some(id) = body.id.as_deref().map(str::trim).filter(|id| !id.is_empty()) {
+        let builtin = {
+            let app = app.lock().map_err(|_| ApiError::lock())?;
+            app.config.providers.items.iter().find(|provider| provider.id == id).and_then(
+                |provider| {
+                    provider.kind.is_builtin().then(|| {
+                        (
+                            provider.kind,
+                            provider.id.clone(),
+                            provider.token.clone(),
+                            provider.base.clone(),
+                            provider.api_style,
+                        )
+                    })
+                },
+            )
+        };
+        if let Some((kind, id, token, base, style)) = builtin {
+            let probe_token = token.clone();
+            let (health, catalog) = tokio::task::spawn_blocking(move || {
+                crate::subscription::probe_builtin(kind, &probe_token)
+            })
+            .await
+            .map_err(|error| ApiError::bad_request(format!("connection test failed: {error}")))?;
+            let cache_token = crate::providers::catalog_cache_material(kind, &id, &token);
+            let model_count = {
+                let app = app.lock().map_err(|_| ApiError::lock())?;
+                app.store_remote_health(style, &base, &cache_token, health.clone());
+                let model_count = catalog.len();
+                app.store_remote_catalog(style, &base, &cache_token, catalog);
+                model_count
+            };
+            return Ok(Json(TestProviderResponse {
+                ok: health.ok || matches!(health.kind, ProviderHealthKind::Empty),
+                base,
+                api_style: style.as_str(),
+                detected: false,
+                models: model_count,
+                health,
+            }));
+        }
+    }
+
     let base = normalize_openai_base(&body.base)
         .ok_or_else(|| ApiError::bad_request("Enter a valid base URL ending in /v1."))?;
 

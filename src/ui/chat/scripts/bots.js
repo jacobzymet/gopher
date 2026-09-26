@@ -423,6 +423,7 @@ async function collectCompletionText(messages, modelId) {
   const body = { messages, agent: false, skills: {}, force_tools: [] };
   if (remote) {
     body.remote_base = remote.base;
+    if (remote.provider_id) body.provider_id = remote.provider_id;
     body.model = remote.model;
   }
   const response = await fetch('/api/chat/completions', {

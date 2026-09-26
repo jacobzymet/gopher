@@ -116,7 +116,12 @@ function apiStyleLabel(style) {
 function apiStyleShort(style) {
   if (style === 'anthropic') return 'Anthropic';
   if (style === 'openai') return 'OpenAI';
+  if (style === 'responses' || style === 'codex_responses') return 'Responses';
   return 'Auto';
+}
+
+function providerLeavesMachine(provider) {
+  return !!provider?.builtin || /^ChatGPT\b/.test(String(provider?.name || ''));
 }
 
 function syncProviderStyleHints() {
@@ -186,6 +191,14 @@ function extractProviders(state) {
 }
 
 function providerHealthLabel(provider) {
+  if (provider.builtin && !provider.token_set) {
+    return {
+      text: 'Not signed in',
+      chip: 'warn',
+      kind: 'auth',
+      hint: 'Sign in to ChatGPT to list Codex models.',
+    };
+  }
   const health = provider.health || {};
   if (!provider.health) return { text: 'Checking…', chip: 'checking', kind: 'checking' };
   const kind = health.kind || (health.ok ? 'ready' : 'error');
@@ -199,7 +212,7 @@ function providerHealthLabel(provider) {
 
 function providerModelCount(providerId) {
   const models = latestState?.network?.remote_models || [];
-  return models.filter((m) => m.provider_id === providerId).length;
+  return models.filter((m) => m.provider_id === providerId && !m.connect_kind).length;
 }
 
 function activeProvider() {
@@ -216,8 +229,13 @@ function providerCardMeta(provider, health) {
   const bits = [health.text];
   const count = providerModelCount(provider.id);
   if (count) bits.push(count + (count === 1 ? ' model' : ' models'));
-  bits.push(apiStyleShort(provider.api_style));
-  bits.push(provider.token_set || provider.token_masked ? 'Token set' : 'No token');
+  if (provider.kind === 'openai-codex') {
+    if (provider.token_set) bits.push('Signed in');
+  } else {
+    bits.push(apiStyleShort(provider.api_style));
+    bits.push(provider.token_set || provider.token_masked ? 'Token set' : 'No token');
+  }
+  if (providerLeavesMachine(provider)) bits.push('Leaves this computer');
   return bits.join(' · ');
 }
 
@@ -233,9 +251,22 @@ function renderProviderSettings() {
   lastProviderSignature = signature;
   list.innerHTML = providerSettings.map((provider) => {
     const health = providerHealthLabel(provider);
+    const builtin = !!provider.builtin;
+    const needsSecret = provider.kind === 'openai-codex';
     const defaultMark = provider.active
       ? '<span class="profile-active-pill">Default</span>'
       : `<button type="button" class="btn btn-outline" data-provider-activate="${escapeHtml(provider.id)}" title="Use this provider when a request does not name a model">Make default</button>`;
+    const connectMark = builtin && needsSecret && !provider.token_set
+      ? `<button type="button" class="btn btn-outline" data-provider-connect="${escapeHtml(provider.kind)}">Connect</button>`
+      : '';
+    const editMark = builtin
+      ? ''
+      : `<button type="button" class="btn btn-outline" data-provider-edit="${escapeHtml(provider.id)}">Edit</button>`;
+    const removeMark = builtin
+      ? (needsSecret && provider.token_set
+        ? `<button type="button" class="btn btn-outline" data-provider-delete="${escapeHtml(provider.id)}">Disconnect</button>`
+        : '')
+      : `<button type="button" class="btn btn-outline" data-provider-delete="${escapeHtml(provider.id)}">Remove</button>`;
     return `
       <li class="provider-card${provider.active ? ' is-active' : ''}" data-provider-id="${escapeHtml(provider.id)}">
         <div class="provider-card-head">
@@ -245,8 +276,9 @@ function renderProviderSettings() {
           </div>
           <div class="provider-card-actions">
             ${defaultMark}
-            <button type="button" class="btn btn-outline" data-provider-edit="${escapeHtml(provider.id)}">Edit</button>
-            <button type="button" class="btn btn-outline" data-provider-delete="${escapeHtml(provider.id)}">Remove</button>
+            ${connectMark}
+            ${editMark}
+            ${removeMark}
           </div>
         </div>
         <p class="field-hint"${health.hint ? ` title="${escapeHtml(health.hint)}"` : ''}>${escapeHtml(providerCardMeta(provider, health))}</p>
@@ -324,7 +356,9 @@ async function providerApi(path, options = {}) {
   }
   if (!response.ok) {
     const message = body?.error || body?.message || ('HTTP ' + response.status);
-    throw new Error(typeof message === 'string' ? message : 'Request failed');
+    const error = new Error(typeof message === 'string' ? message : 'Request failed');
+    if (typeof body?.code === 'string') error.code = body.code;
+    throw error;
   }
   return body;
 }
@@ -393,7 +427,12 @@ function bindProviderSettings() {
     if (edit) {
       const id = edit.getAttribute('data-provider-edit');
       const provider = providerSettings.find((p) => p.id === id);
-      if (provider) beginProviderEdit(provider);
+      if (provider && !provider.builtin) beginProviderEdit(provider);
+      return;
+    }
+    const connect = event.target.closest('[data-provider-connect]');
+    if (connect) {
+      openBuiltinConnect(connect.getAttribute('data-provider-connect') || '');
       return;
     }
     const remove = event.target.closest('[data-provider-delete]');
@@ -401,17 +440,20 @@ function bindProviderSettings() {
       const id = remove.getAttribute('data-provider-delete');
       const provider = providerSettings.find((p) => p.id === id);
       const isDefault = activeProvider()?.id === id;
+      const builtin = !!provider?.builtin;
       const ok = await confirmDanger({
-        title: 'Remove provider?',
-        body: 'Remove “' + (provider?.name || 'this provider') + '” from Gopher? The API host is unchanged.'
-          + (isDefault ? ' Its models leave Chat’s picker, and another provider becomes the default.' : ''),
-        confirmLabel: 'Remove',
+        title: builtin ? 'Disconnect?' : 'Remove provider?',
+        body: builtin
+          ? 'Remove the saved ' + (provider?.name || 'sign-in') + ' from this computer? The account itself is unchanged.'
+          : 'Remove “' + (provider?.name || 'this provider') + '” from Gopher? The API host is unchanged.'
+            + (isDefault ? ' Its models leave Chat’s picker, and another provider becomes the default.' : ''),
+        confirmLabel: builtin ? 'Disconnect' : 'Remove',
       });
       if (!ok) return;
       try {
         await mutateProvider('/api/providers/' + encodeURIComponent(id), { method: 'DELETE' });
         clearProviderForm();
-        setProviderFormHint('Provider removed.', true);
+        setProviderFormHint(builtin ? 'Disconnected.' : 'Provider removed.', true);
       } catch (error) {
         showProviderError(error.message);
       }
@@ -523,3 +565,178 @@ function bindProviderSettings() {
 }
 
 bindProviderSettings();
+
+let builtinConnectKind = '';
+let builtinDeviceTimer = 0;
+
+function connectPanels() {
+  return [...document.querySelectorAll('[data-connect-panel]')];
+}
+
+function setConnectStatus(message) {
+  connectPanels().forEach((panel) => {
+    const status = panel.querySelector('.builtin-connect-status');
+    if (status) status.textContent = message || '';
+  });
+}
+
+function hideBuiltinConnect() {
+  window.clearInterval(builtinDeviceTimer);
+  builtinDeviceTimer = 0;
+  connectPanels().forEach((panel) => panel.classList.add('is-hidden'));
+}
+
+function openBuiltinConnect(kind) {
+  builtinConnectKind = String(kind || '');
+  window.clearInterval(builtinDeviceTimer);
+  builtinDeviceTimer = 0;
+  const codex = builtinConnectKind === 'openai-codex';
+  connectPanels().forEach((panel) => {
+    panel.classList.toggle('is-hidden', !codex);
+    const text = panel.querySelector('.builtin-connect-text');
+    if (text) {
+      text.textContent = 'Your Codex sign-in stays on this computer until you disconnect. Model requests go to the Codex service.';
+    }
+    const device = panel.querySelector('.builtin-connect-device');
+    if (device) {
+      device.textContent = '';
+      device.classList.add('is-hidden');
+    }
+    const status = panel.querySelector('.builtin-connect-status');
+    if (status) status.textContent = '';
+  });
+}
+
+async function refreshAfterSubscription(result) {
+  if (result?.state && typeof updateInferenceState === 'function') {
+    updateInferenceState(result.state);
+  } else if (typeof pollState === 'function') {
+    await pollState();
+  }
+  syncProviderSettingsFromState(latestState);
+}
+
+function builtinProviderModelsLoaded(kind) {
+  const provider = extractProviders(latestState).find((item) => item.kind === kind);
+  return !!provider && providerModelCount(provider.id) > 0;
+}
+
+/** Close the connect panel and keep refreshing until the provider's models are listed. */
+async function finishBuiltinConnect(kind, result) {
+  hideBuiltinConnect();
+  await refreshAfterSubscription(result);
+  const provider = extractProviders(latestState).find((item) => item.kind === kind);
+  if (provider && typeof modelProviderFold !== 'undefined') {
+    modelProviderFold.set(provider.id, false);
+    if (typeof modelMenuIsOpen === 'function' && modelMenuIsOpen()) {
+      applyModelFilter({ keepActive: true, keepScroll: true });
+    }
+  }
+  const deadline = Date.now() + 30000;
+  while (!builtinProviderModelsLoaded(kind) && Date.now() < deadline) {
+    await new Promise((resolve) => window.setTimeout(resolve, 1000));
+    if (typeof pollState === 'function') await pollState();
+    syncProviderSettingsFromState(latestState);
+  }
+}
+
+async function runConnectAction(action) {
+  if (action.dataset.busy === '1') return;
+  action.dataset.busy = '1';
+  action.disabled = true;
+  try {
+    clearProviderError();
+    if (action.getAttribute('data-connect-action') === 'codex-login') {
+      setConnectStatus('Finish signing in in your browser…');
+      let result;
+      try {
+        result = await providerApi('/api/subscription/codex/login', {
+          method: 'POST',
+          body: '{}',
+        });
+      } catch (error) {
+        if (error.code !== 'codex_browser_port_busy') throw error;
+        setConnectStatus(error.message);
+        await startCodexDeviceLogin();
+        return;
+      }
+      await finishBuiltinConnect('openai-codex', result);
+      return;
+    }
+    if (action.getAttribute('data-connect-action') === 'codex-device') {
+      await startCodexDeviceLogin();
+      return;
+    }
+    if (action.getAttribute('data-connect-action') === 'codex-import') {
+      const ok = await confirmDanger({
+        title: 'Import Codex CLI session?',
+        body: 'Gopher will read ~/.codex/auth.json and copy the session into encrypted storage. The Codex CLI file is left unchanged.',
+        confirmLabel: 'Import',
+      });
+      if (!ok) return;
+      const result = await providerApi('/api/subscription/codex/import', {
+        method: 'POST',
+        body: JSON.stringify({ confirm: true }),
+      });
+      await finishBuiltinConnect('openai-codex', result);
+    }
+  } catch (error) {
+    setConnectStatus(error.message);
+    showProviderError(error.message);
+  } finally {
+    delete action.dataset.busy;
+    action.disabled = false;
+  }
+}
+
+async function startCodexDeviceLogin() {
+  const started = await providerApi('/api/subscription/codex/device', {
+    method: 'POST',
+    body: '{}',
+  });
+  showDeviceCode(started);
+  window.clearInterval(builtinDeviceTimer);
+  builtinDeviceTimer = window.setInterval(async () => {
+    try {
+      const status = await providerApi('/api/subscription/codex/device');
+      showDeviceCode(status);
+      if (status.status === 'ready') {
+        window.clearInterval(builtinDeviceTimer);
+        builtinDeviceTimer = 0;
+        await finishBuiltinConnect('openai-codex', null);
+      } else if (status.status === 'error') {
+        window.clearInterval(builtinDeviceTimer);
+        builtinDeviceTimer = 0;
+        setConnectStatus(status.error || 'ChatGPT sign-in failed.');
+      }
+    } catch (error) {
+      window.clearInterval(builtinDeviceTimer);
+      builtinDeviceTimer = 0;
+      setConnectStatus(error.message);
+    }
+  }, 3000);
+}
+
+function showDeviceCode(status) {
+  const code = status?.user_code || '';
+  const url = status?.verification_url || '';
+  connectPanels().forEach((panel) => {
+    const device = panel.querySelector('.builtin-connect-device');
+    if (!device) return;
+    if (!code) {
+      device.textContent = '';
+      device.classList.add('is-hidden');
+      return;
+    }
+    device.classList.remove('is-hidden');
+    device.textContent = 'Enter ' + code + (url ? ' at ' + url : '') + '.';
+  });
+  if (status?.status === 'pending') setConnectStatus('Waiting for the device code…');
+}
+
+document.addEventListener('click', (event) => {
+  const action = event.target.closest('[data-connect-action]');
+  if (!action) return;
+  event.preventDefault();
+  void runConnectAction(action);
+});

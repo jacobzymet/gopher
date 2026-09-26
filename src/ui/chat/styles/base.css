@@ -635,33 +635,6 @@ html:not(.ui-ready) .chat-sidebar {
   background: var(--accent-wash-2);
   transform: scale(1.04);
 }
-.sidebar-encryption-badge {
-  position: absolute;
-  top: -0.3rem;
-  right: -0.3rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1rem;
-  height: 1rem;
-  border: 1.5px solid var(--color-paper-2);
-  border-radius: 50%;
-  color: var(--color-accent-ink);
-  background: var(--color-accent);
-  box-shadow: 0 1px 5px oklch(0% 0 0 / 0.22);
-  pointer-events: none;
-}
-.sidebar-encryption-badge svg {
-  width: 0.64rem;
-  height: 0.64rem;
-}
-.sidebar-encryption-badge.is-locked,
-.sidebar-encryption-badge.is-recovery,
-.sidebar-encryption-badge.is-browser {
-  color: var(--color-paper);
-  background: var(--color-warn);
-}
-.sidebar-encryption-badge.is-recovery { animation: encryption-status-pulse 1.8s ease-out infinite; }
 .sidebar-actions {
   display: flex;
   flex-direction: column;
@@ -1415,12 +1388,6 @@ button.sidebar-utility-row:hover .sidebar-utility-chevron {
 }
 .sidebar-encryption-indicator.is-recovery {
   background: color-mix(in oklch, var(--color-warn) 8%, transparent);
-}
-@keyframes encryption-status-pulse {
-  70%, 100% { box-shadow: 0 0 0 0.35rem transparent; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .sidebar-encryption-badge.is-recovery { animation: none; }
 }
 
 /* Privacy mode is a screen-sharing aid for identity-bearing UI surfaces. The mosaic is

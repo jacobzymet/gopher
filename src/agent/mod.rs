@@ -784,41 +784,31 @@ fn new_runtime_id(prefix: &str) -> String {
 }
 
 pub fn stream_agent(
-    api_base: &str,
-    api_key: Option<&str>,
-    style: ApiStyle,
-    allow_insecure_tls: bool,
+    upstream: crate::subscription::PreparedUpstream,
     mut request: AgentRequest,
     user_skills: Vec<UserSkill>,
 ) -> ChatStream {
-    let api_base = api_base.trim_end_matches('/').to_string();
-    let api_key = api_key
-        .map(str::trim)
-        .filter(|key| !key.is_empty())
-        .map(str::to_string);
     stream_from_worker(move |tx| async move {
-        run_agent_loop(
-            &api_base,
-            api_key.as_deref(),
-            style,
-            allow_insecure_tls,
-            &mut request,
-            &user_skills,
-            &tx,
-        )
-        .await
+        run_agent_loop(upstream, &mut request, &user_skills, &tx).await
     })
 }
 
 async fn run_agent_loop(
-    api_base: &str,
-    api_key: Option<&str>,
-    style: ApiStyle,
-    allow_insecure_tls: bool,
+    upstream: crate::subscription::PreparedUpstream,
     request: &mut AgentRequest,
     user_skills: &[UserSkill],
     tx: &mpsc::Sender<Result<Vec<u8>, std::io::Error>>,
 ) -> Result<(), StreamFail> {
+    let api_key = {
+        let token = upstream.token.trim();
+        if token.is_empty() {
+            None
+        } else {
+            Some(token.to_string())
+        }
+    };
+    let allow_insecure_tls = upstream.allow_insecure_tls;
+    request.model = Some(upstream.wire_model.clone());
     request.apply_deep_research();
     request.normalize_force_tools();
     let history = Arc::new(context::History::new().map_err(StreamFail::Other)?);
@@ -975,9 +965,7 @@ async fn run_agent_loop(
             send_sse(tx, sse_agent(json!({"phase":"notice", "message":"Older tool activity was archived to stay within the context budget. The agent can retrieve it; user instructions were preserved."}))).await?;
         }
         let turn = match stream_once(
-            api_base,
-            api_key,
-            style,
+            &upstream,
             request,
             user_skills,
             StreamOnceTools {
@@ -1651,14 +1639,14 @@ struct StreamOnceTools<'a> {
 }
 
 async fn stream_once(
-    api_base: &str,
-    api_key: Option<&str>,
-    style: ApiStyle,
+    upstream: &crate::subscription::PreparedUpstream,
     request: &AgentRequest,
     user_skills: &[UserSkill],
     tools: StreamOnceTools<'_>,
     tx: &mpsc::Sender<Result<Vec<u8>, std::io::Error>>,
 ) -> Result<StreamedTurn, StreamFail> {
+    let api_base = upstream.api_base.trim_end_matches('/');
+    let style = upstream.style;
     let model = request
         .model
         .as_deref()
@@ -1705,22 +1693,29 @@ async fn stream_once(
     let url = match style {
         ApiStyle::Openai => format!("{api_base}/chat/completions"),
         ApiStyle::Anthropic => format!("{api_base}/messages"),
+        ApiStyle::Responses => format!("{api_base}/responses"),
     };
     let body = match style {
         ApiStyle::Openai => payload,
         ApiStyle::Anthropic => {
             anthropic::openai_to_anthropic_messages(&payload).map_err(StreamFail::Other)?
         }
+        ApiStyle::Responses => crate::responses::openai_chat_to_responses(
+            &payload,
+            upstream.kind == crate::providers::ProviderKind::OpenaiCodex,
+        ),
     };
 
-    let token = api_key.map(str::trim).unwrap_or("");
+    let token = upstream.token.trim();
     let response = open_llm_sse(
-        api_base,
         &url,
         style,
         token,
         &body,
-        tools.allow_insecure_tls,
+        tools.allow_insecure_tls && !upstream.no_redirect,
+        &upstream.extra_headers,
+        upstream.no_redirect,
+        upstream.kind,
     )
     .await?;
     let mut byte_stream = response.bytes_stream();
@@ -1743,6 +1738,17 @@ async fn stream_once(
         }
         ApiStyle::Anthropic => {
             consume_anthropic_as_openai_agent(
+                &mut byte_stream,
+                &mut content,
+                &mut reasoning,
+                &mut native_tools,
+                &mut forwarding,
+                tx,
+            )
+            .await?;
+        }
+        ApiStyle::Responses => {
+            consume_responses_as_openai_agent(
                 &mut byte_stream,
                 &mut content,
                 &mut reasoning,
@@ -1794,6 +1800,56 @@ where
             }
             let line = String::from_utf8_lossy(line);
             apply_openai_sse_line(&line, content, reasoning, native_tools, forwarding, tx).await?;
+            consumed = end + 1;
+        }
+        if consumed != 0 {
+            buffer = buffer.split_off(consumed);
+        }
+        if buffer.len() > MAX_SSE_LINE_BYTES {
+            return Err(StreamFail::Other(
+                "Model SSE line exceeded the safety limit.".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+async fn consume_responses_as_openai_agent<S, B>(
+    stream: &mut S,
+    content: &mut String,
+    reasoning: &mut String,
+    native_tools: &mut Vec<Option<AccumToolCall>>,
+    forwarding: &mut bool,
+    tx: &mpsc::Sender<Result<Vec<u8>, std::io::Error>>,
+) -> Result<(), StreamFail>
+where
+    S: StreamExt<Item = Result<B, reqwest::Error>> + Unpin,
+    B: AsRef<[u8]>,
+{
+    let mut buffer = Vec::new();
+    let mut translator = crate::responses::ResponsesSseTranslator::default();
+    while let Some(chunk) = next_stream_chunk(stream).await? {
+        buffer.extend_from_slice(chunk.as_ref());
+        let mut consumed = 0usize;
+        while let Some(relative) = buffer[consumed..].iter().position(|byte| *byte == b'\n') {
+            if relative > MAX_SSE_LINE_BYTES {
+                return Err(StreamFail::Other(
+                    "Model SSE line exceeded the safety limit.".into(),
+                ));
+            }
+            let end = consumed + relative;
+            let mut line = &buffer[consumed..end];
+            if line.last() == Some(&b'\r') {
+                line = &line[..line.len() - 1];
+            }
+            let line = String::from_utf8_lossy(line);
+            for frame in translator.push_line(&line).map_err(StreamFail::Other)? {
+                let text = String::from_utf8_lossy(&frame);
+                for part in text.split('\n') {
+                    apply_openai_sse_line(part, content, reasoning, native_tools, forwarding, tx)
+                        .await?;
+                }
+            }
             consumed = end + 1;
         }
         if consumed != 0 {

@@ -272,8 +272,36 @@ function modelMenuSectionLabel(section, option) {
   return modelProviderLabel(option);
 }
 
+/** User overrides for provider groups. Absent means "collapsed when the group has more than one model". */
+const modelProviderFold = new Map();
+
+function modelMenuSectionCounts(options) {
+  const counts = new Map();
+  options.forEach((option) => {
+    const section = modelMenuSection(option);
+    counts.set(section, (counts.get(section) || 0) + 1);
+  });
+  return counts;
+}
+
+function providerFoldKey(section) {
+  return section.startsWith('provider:') ? section.slice('provider:'.length) : '';
+}
+
+function providerSectionIsCollapsed(section, count) {
+  const key = providerFoldKey(section);
+  if (!key || modelFilterTerms().length) return false;
+  if (modelProviderFold.has(key)) return modelProviderFold.get(key);
+  return count > 1;
+}
+
 function visibleModelMenuOptions() {
-  return modelMenuMatches;
+  if (modelFilterTerms().length) return modelMenuMatches;
+  const counts = modelMenuSectionCounts(modelMenuMatches);
+  return modelMenuMatches.filter((option) => {
+    const section = modelMenuSection(option);
+    return !providerSectionIsCollapsed(section, counts.get(section) || 0);
+  });
 }
 
 function modelMenuIsOpen() {
@@ -403,8 +431,21 @@ function renderModelOptionHtml(option, index, { terms }) {
   const prefix = picking
     ? (isSelected ? 'Selected · ' : '')
     : (isSelected ? 'Default · ' : 'Set as default · ');
+  const remoteBadge = /^ChatGPT\b/.test(String(option.provider || ''))
+    ? '<span class="chat-model-capability">Leaves this computer</span>'
+    : '';
+  const connect = !!option.connectKind;
+  const pinButton = connect
+    ? ''
+    : '<button type="button" class="chat-model-pin' + (pinned ? ' is-pinned' : '') + '"'
+      + ' tabindex="-1" data-model-pin="' + escapeModelAttr(option.value) + '"'
+      + ' aria-label="' + (pinned ? 'Unpin model' : 'Pin model') + '"'
+      + ' aria-pressed="' + (pinned ? 'true' : 'false') + '"'
+      + ' title="' + (pinned ? 'Unpin' : 'Pin') + '">'
+      + MODEL_PIN_ICON
+      + '</button>';
   return '<div class="chat-model-option' + (isSelected ? ' is-selected' : '')
-    + (local ? ' is-local' : '') + '" role="option" id="chat-model-option-' + index + '"'
+    + (local ? ' is-local' : '') + (connect ? ' is-connect' : '') + '" role="option" id="chat-model-option-' + index + '"'
     + ' data-value="' + escapeModelAttr(option.value) + '"'
     + ' title="' + escapeModelAttr(prefix + modelOptionTitle(option.label, option.provider)) + '"'
     + ' aria-selected="' + (isSelected ? 'true' : 'false') + '" tabindex="-1">'
@@ -419,35 +460,43 @@ function renderModelOptionHtml(option, index, { terms }) {
     + '<span class="chat-model-provider">' + highlightModelText(modelProviderLabel(option), terms) + '</span>'
     + localityBadge
     + thinkingBadge
+    + remoteBadge
     + '</span></span>'
     + '</button>'
-    + '<button type="button" class="chat-model-pin' + (pinned ? ' is-pinned' : '') + '"'
-    + ' tabindex="-1" data-model-pin="' + escapeModelAttr(option.value) + '"'
-    + ' aria-label="' + (pinned ? 'Unpin model' : 'Pin model') + '"'
-    + ' aria-pressed="' + (pinned ? 'true' : 'false') + '"'
-    + ' title="' + (pinned ? 'Unpin' : 'Pin') + '">'
-    + MODEL_PIN_ICON
-    + '</button>'
+    + pinButton
     + '</div>';
 }
 
+const MODEL_FOLD_ICON = '<svg class="chat-model-fold" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+
 function renderModelMenuList() {
   const terms = modelFilterTerms();
-  const counts = new Map();
-  modelMenuMatches.forEach((option) => {
-    const section = modelMenuSection(option);
-    counts.set(section, (counts.get(section) || 0) + 1);
-  });
+  const counts = modelMenuSectionCounts(modelMenuMatches);
   let previousSection = '';
   let html = '';
   modelMenuMatches.forEach((option, index) => {
     const section = terms.length ? 'results' : modelMenuSection(option);
     if (!terms.length && section !== previousSection) {
-      html += '<div class="chat-model-section-label" role="presentation">'
-        + '<span>' + escapeModelText(modelMenuSectionLabel(section, option)) + '</span>'
-        + '<span>' + counts.get(section) + '</span></div>';
+      const label = escapeModelText(modelMenuSectionLabel(section, option));
+      const count = counts.get(section) || 0;
+      const foldKey = providerFoldKey(section);
+      if (foldKey) {
+        const collapsed = providerSectionIsCollapsed(section, count);
+        html += '<button type="button" class="chat-model-section-label'
+          + (collapsed ? ' is-collapsed' : '') + '" data-provider-fold="'
+          + escapeModelAttr(foldKey) + '" aria-expanded="' + (collapsed ? 'false' : 'true')
+          + '" tabindex="-1">'
+          + '<span class="chat-model-section-name">' + MODEL_FOLD_ICON
+          + '<span>' + label + '</span></span>'
+          + '<span>' + count + '</span></button>';
+      } else {
+        html += '<div class="chat-model-section-label" role="presentation">'
+          + '<span>' + label + '</span>'
+          + '<span>' + count + '</span></div>';
+      }
       previousSection = section;
     }
+    if (!terms.length && providerSectionIsCollapsed(section, counts.get(section) || 0)) return;
     html += renderModelOptionHtml(option, index, { terms });
   });
   chatModelList.innerHTML = html;
@@ -471,7 +520,9 @@ function renderModelMenuList() {
   if (empty) {
     chatModelEmpty.textContent = terms.length
       ? 'No models match “' + modelMenuFilter.trim() + '”. Try a model or provider name.'
-      : 'No models are available. Add or reconnect a provider in Settings.';
+      : (latestState?.network?.remote_checking || latestState?.network?.remote_catalog_pending)
+        ? 'Loading models…'
+        : 'No models are available. Add or reconnect a provider in Settings.';
   }
   if (chatModelSearchCount) {
     chatModelSearchCount.textContent = terms.length
@@ -487,7 +538,7 @@ function renderModelMenuList() {
 }
 
 /** Re-filter and repaint the open menu after the query changed. */
-function applyModelFilter({ keepActive = false } = {}) {
+function applyModelFilter({ keepActive = false, keepScroll = false } = {}) {
   const visible = () => visibleModelMenuOptions();
   const previous = keepActive && modelMenuActiveIndex >= 0
     ? visible()[modelMenuActiveIndex]
@@ -503,8 +554,28 @@ function applyModelFilter({ keepActive = false } = {}) {
     modelMenuActiveIndex = options.findIndex((option) => option.value === modelMenuSelectedId());
     if (modelFilterTerms().length && options.length) modelMenuActiveIndex = 0;
   }
-  paintModelMenuActive();
+  paintModelMenuActive({ scroll: !keepScroll });
   if (modelMenuIsOpen()) positionModelMenu();
+}
+
+function toggleProviderFold(key) {
+  const section = 'provider:' + key;
+  const counts = modelMenuSectionCounts(modelMenuMatches);
+  const collapsed = providerSectionIsCollapsed(section, counts.get(section) || 0);
+  const scrollTop = chatModelList.scrollTop;
+  modelProviderFold.set(key, !collapsed);
+  applyModelFilter({ keepActive: true, keepScroll: true });
+  chatModelList.scrollTop = scrollTop;
+  const header = [...chatModelList.querySelectorAll('[data-provider-fold]')]
+    .find((node) => node.getAttribute('data-provider-fold') === key);
+  if (!header) return;
+  // Sticky headers report their stuck position; measure where it sits in the flow.
+  header.style.position = 'static';
+  const naturalTop = header.getBoundingClientRect().top
+    - chatModelList.getBoundingClientRect().top
+    + chatModelList.scrollTop;
+  header.style.position = '';
+  if (naturalTop < chatModelList.scrollTop) chatModelList.scrollTop = naturalTop;
 }
 
 function modelMenuViewport() {
@@ -564,6 +635,7 @@ function closeModelMenu({ restoreFocus = false } = {}) {
   modelMenuCloseTimer = null;
   chatModelMenu.classList.remove('is-open');
   chatModelBackdrop?.classList.remove('is-open');
+  if (typeof hideBuiltinConnect === 'function') hideBuiltinConnect();
   const finish = () => {
     chatModelMenu.classList.add('is-hidden');
     chatModelBackdrop?.classList.add('is-hidden');
@@ -585,7 +657,7 @@ function closeModelMenu({ restoreFocus = false } = {}) {
   }, 180);
 }
 
-function paintModelMenuActive() {
+function paintModelMenuActive({ scroll = true } = {}) {
   const activeValue = visibleModelMenuOptions()[modelMenuActiveIndex]?.value || '';
   const nodes = chatModelList.querySelectorAll('.chat-model-option');
   let active = null;
@@ -594,7 +666,7 @@ function paintModelMenuActive() {
     node.classList.toggle('is-active', isActive);
     if (isActive) active = node;
   });
-  if (active) active.scrollIntoView({ block: 'nearest' });
+  if (active && scroll) active.scrollIntoView({ block: 'nearest' });
   if (chatModelSearch) {
     if (active) chatModelSearch.setAttribute('aria-activedescendant', active.id);
     else chatModelSearch.removeAttribute('aria-activedescendant');
@@ -649,6 +721,11 @@ function openModelMenu(opts) {
 }
 
 function chooseModelOption(value) {
+  const picked = modelMenuOptions.find((item) => item.value === value);
+  if (picked?.connectKind || String(value || '').startsWith('connect|')) {
+    if (typeof openBuiltinConnect === 'function') openBuiltinConnect(picked?.connectKind || '');
+    return;
+  }
   if (!value) {
     closeModelMenu({ restoreFocus: true });
     return;
@@ -754,6 +831,7 @@ function catalogOptionFromRemote(model) {
     base: String(model.base || '').trim(),
     ready: !!model.ready,
     thinking: !!model.thinking_supported,
+    connectKind: String(model.connect_kind || '').trim(),
   };
 }
 
@@ -777,15 +855,18 @@ function syncModelSelector(data) {
 
   if (!remoteModels.length) {
     if (!menuOpen) closeModelMenu();
-    if (selectedChatModel) {
+    // An open menu is anchored to this control while a new sign-in's catalog loads.
+    if (selectedChatModel || menuOpen) {
       const restoring = !!network.remote_checking || !!network.remote_catalog_pending;
       chatModelSelectWrap.classList.remove('is-hidden');
       chatModelSelect.textContent = modelIdLabel(selectedChatModel) || 'Model';
       chatModelSelect.disabled = true;
       chatModelSelect.toggleAttribute('aria-busy', restoring);
-      chatModelSelect.title = restoring
-        ? 'Restoring saved model…'
-        : 'Saved model is unavailable';
+      chatModelSelect.title = !selectedChatModel
+        ? 'Loading models…'
+        : restoring
+          ? 'Restoring saved model…'
+          : 'Saved model is unavailable';
     } else {
       chatModelSelectWrap.classList.add('is-hidden');
     }
@@ -816,11 +897,16 @@ function syncModelSelector(data) {
     selectedChatModel = resolvedSelected;
     pickerChanged = true;
   }
+  if (remoteOptions.some((option) => option.value === selectedChatModel && option.connectKind)) {
+    selectedChatModel = '';
+    pickerChanged = true;
+  }
   const catalogComplete = modelCatalogIsComplete(network, remoteOptions);
+  const selectable = remoteOptions.filter((option) => !option.connectKind);
   // Only invent a default when nothing is saved. A saved id that is not in
   // this snapshot stays selected so a later provider catalog can match it.
-  if (!selectedChatModel && catalogComplete && !menuOpen) {
-    selectedChatModel = remoteOptions[0].value;
+  if (!selectedChatModel && catalogComplete && !menuOpen && selectable.length) {
+    selectedChatModel = selectable[0].value;
     pickerChanged = true;
   }
   if (pickerChanged) persistModelPickerState();
@@ -829,14 +915,19 @@ function syncModelSelector(data) {
     selectedChatModel,
     ...remoteOptions.map((o) => o.value + '|' + o.label + '|' + o.provider),
   ].join(';');
-  // Avoid nuking option nodes under the cursor while the menu is open
-  // (state poll runs every 2s and was cancelling clicks).
-  if (!menuOpen && chatModelMenu.dataset.signature !== signature) {
+  if (chatModelMenu.dataset.signature !== signature) {
     chatModelMenu.dataset.signature = signature;
-    // Menu is closed, so there is no live filter to preserve.
-    modelMenuFilter = '';
-    computeModelMatches();
-    renderModelMenuList();
+    if (menuOpen) {
+      // Only a changed catalog repaints an open menu, so polling does not
+      // replace rows under the cursor. Keep the query, active row, and scroll.
+      const scrollTop = chatModelList.scrollTop;
+      applyModelFilter({ keepActive: true, keepScroll: true });
+      chatModelList.scrollTop = scrollTop;
+    } else {
+      modelMenuFilter = '';
+      computeModelMatches();
+      renderModelMenuList();
+    }
   }
   const selected = remoteOptions.find((o) => o.value === selectedChatModel);
   const selectionPending = !!selectedChatModel && !selected && !catalogComplete;
@@ -1025,12 +1116,13 @@ async function pollState() {
   if (statePollInFlight) return;
   statePollInFlight = true;
   try {
+    const requestedAt = performance.now();
     const response = await fetch('/api/state');
     if (!response.ok) return;
     const data = await response.json();
     syncExternalEncryptionState(data);
     updateInferenceState(data);
-    await resumeLiveTurns(data.live_turns);
+    await resumeLiveTurns(data.live_turns, requestedAt);
   } catch {
     // control server briefly unreachable — retry on the next tick
   } finally {
@@ -1920,6 +2012,7 @@ async function runAssistantTurn(convo, {
   }
   if (remote) {
     requestBody.remote_base = remote.base;
+    if (remote.provider_id) requestBody.provider_id = remote.provider_id;
     requestBody.model = remote.model;
   }
 
@@ -1959,8 +2052,10 @@ async function runAssistantTurn(convo, {
       if (response.status === 409) {
         throw new Error('Could not start a new response because another is still stopping. Try again.');
       }
-      const problem = await response.json().catch(() => null);
-      throw new Error((problem && problem.error) || ('Request failed with status ' + response.status));
+      const failed = response;
+      response = null;
+      const problem = await failed.json().catch(() => null);
+      throw new Error((problem && problem.error) || ('Request failed with status ' + failed.status));
     }
   } catch (error) {
     if (error.name === 'AbortError') {
@@ -2076,7 +2171,7 @@ async function syncConvoFromStore(convoId) {
   }
 }
 
-async function resumeLiveTurns(list) {
+async function resumeLiveTurns(list, snapshotRequestedAt = performance.now()) {
   if (!Array.isArray(list) || diskEncryptionLocked() || !storageReady) return;
   const advertised = new Map();
   for (const info of list) {
@@ -2112,6 +2207,11 @@ async function resumeLiveTurns(list) {
     }
     const info = advertised.get(convoId + '\0' + turnId);
     if (info && (!info.finished || stream.catchingUp)) continue;
+    // The browser names a turn before the server registers it. A snapshot
+    // requested before the server confirmed the turn cannot show it was forgotten.
+    if (!info && !(stream.serverTurnSeenAt && stream.serverTurnSeenAt <= snapshotRequestedAt)) {
+      continue;
+    }
     stream.replaced = true;
     stream.skipQueue = true;
     try { stream.controller.abort(); } catch { /* ignore */ }
@@ -2239,6 +2339,7 @@ function beginLiveStream(convo, {
     pendingSteers: [],
     catchingUp: !!catchingUp,
     turnId: turnId || null,
+    serverTurnSeenAt: catchingUp ? performance.now() : 0,
     turnModel: String(turnModel || ''),
     startedAt: streamStartedAt,
     statusLabel: 'Processing…',
@@ -2650,6 +2751,7 @@ async function driveAssistantSse(convo, stream, response) {
               const meta = JSON.parse(parsed.data);
               if (meta.turn_id) {
                 stream.turnId = String(meta.turn_id);
+                stream.serverTurnSeenAt = performance.now();
                 if (typeof rememberHandledLiveTurn === 'function') {
                   rememberHandledLiveTurn(stream.turnId);
                 }
@@ -4109,36 +4211,82 @@ document.getElementById('encryptionUnlockPassphrase')?.addEventListener('keydown
     document.getElementById('btnUnlockEncryption')?.click();
   }
 });
+let unlockModalBusy = false;
+
+function unlockModalIsBusy() {
+  return unlockModalBusy;
+}
+
+function setUnlockPassphraseRevealed(revealed) {
+  const input = document.getElementById('unlockModalPassphrase');
+  const btn = document.getElementById('btnUnlockModalReveal');
+  if (!input || !btn) return;
+  const show = !!revealed;
+  input.type = show ? 'text' : 'password';
+  btn.classList.toggle('is-revealed', show);
+  btn.setAttribute('aria-pressed', show ? 'true' : 'false');
+  btn.setAttribute('aria-label', show ? 'Hide passphrase' : 'Show passphrase');
+}
+
 function setUnlockModalLoading(loading) {
+  unlockModalBusy = loading;
   const btn = document.getElementById('btnUnlockModalSubmit');
-  if (!btn) return;
-  btn.disabled = loading;
-  btn.classList.toggle('is-loading', loading);
-  btn.querySelector('.unlock-button-label')?.classList.toggle('is-hidden', loading);
-  btn.querySelector('.button-loading-spinner')?.classList.toggle('is-hidden', !loading);
-  btn.toggleAttribute('aria-busy', loading);
-  btn.setAttribute('aria-label', loading ? 'Unlocking encrypted data' : 'Unlock');
+  const label = btn?.querySelector('.unlock-button-label');
+  if (label) label.textContent = loading ? 'Unlocking' : 'Unlock';
+  if (btn) {
+    btn.disabled = loading;
+    btn.classList.toggle('is-loading', loading);
+    btn.querySelector('.button-loading-spinner')?.classList.toggle('is-hidden', !loading);
+    btn.toggleAttribute('aria-busy', loading);
+    btn.setAttribute('aria-label', loading ? 'Unlocking' : 'Unlock');
+  }
+  const input = document.getElementById('unlockModalPassphrase');
+  const shell = document.getElementById('unlockPassphraseShell');
+  if (input) {
+    input.readOnly = loading;
+    input.classList.toggle('is-sealed', loading);
+  }
+  shell?.classList.toggle('is-sealed', loading);
+  const reveal = document.getElementById('btnUnlockModalReveal');
+  if (reveal) reveal.disabled = loading;
+  const dismiss = document.getElementById('btnUnlockModalDismiss');
+  if (dismiss) dismiss.disabled = loading;
+  const status = document.getElementById('unlockModalStatus');
+  if (status) {
+    status.textContent = loading ? 'Decrypting chats and settings.' : '';
+    status.classList.toggle('is-hidden', !loading);
+  }
+  if (loading) setUnlockModalError('');
 }
 document.getElementById('btnUnlockModalSubmit')?.addEventListener('click', async () => {
-  const passphrase = document.getElementById('unlockModalPassphrase')?.value || '';
-  const btn = document.getElementById('btnUnlockModalSubmit');
+  const input = document.getElementById('unlockModalPassphrase');
+  const passphrase = input?.value || '';
+  if (unlockModalBusy) return;
   setUnlockModalLoading(true);
   try {
-    await unlockDiskEncryption(passphrase, btn);
+    await unlockDiskEncryption(passphrase, null);
   } catch (error) {
     setUnlockModalError(error.message || 'Could not unlock');
-    document.getElementById('unlockModalPassphrase')?.focus();
-  } finally {
     setUnlockModalLoading(false);
+    input?.focus();
   }
 });
 document.getElementById('unlockModalPassphrase')?.addEventListener('keydown', (event) => {
   if (event.key === 'Enter') {
     event.preventDefault();
+    if (unlockModalBusy) return;
     document.getElementById('btnUnlockModalSubmit')?.click();
   }
 });
+document.getElementById('btnUnlockModalReveal')?.addEventListener('click', () => {
+  if (unlockModalBusy) return;
+  const input = document.getElementById('unlockModalPassphrase');
+  const revealed = input?.type !== 'text';
+  setUnlockPassphraseRevealed(revealed);
+  input?.focus();
+});
 document.getElementById('btnUnlockModalDismiss')?.addEventListener('click', () => {
+  if (unlockModalBusy) return;
   hideUnlockSession();
 });
 document.getElementById('btnLockEncryption')?.addEventListener('click', async () => {
@@ -4274,6 +4422,7 @@ document.addEventListener('keydown', (event) => {
     }
     const unlockModal = document.getElementById('unlockModal');
     if (unlockModal && !unlockModal.classList.contains('is-hidden')) {
+      if (unlockModalBusy) return;
       hideUnlockSession();
       return;
     }
@@ -4395,6 +4544,13 @@ chatModelMenu.addEventListener('keydown', (event) => {
 });
 
 chatModelMenu.addEventListener('click', (event) => {
+  const fold = event.target.closest('[data-provider-fold]');
+  if (fold) {
+    event.preventDefault();
+    event.stopPropagation();
+    toggleProviderFold(fold.getAttribute('data-provider-fold') || '');
+    return;
+  }
 
   const pin = event.target.closest('[data-model-pin]');
   if (pin) {
@@ -4431,6 +4587,8 @@ document.addEventListener('click', (event) => {
   if (chatModelSelectWrap.contains(event.target)) return;
   if (modelMenuAnchorEl()?.contains(event.target)) return;
   if (chatModelMenu.contains(event.target)) return;
+  // Confirmations raised from inside the menu sit above it.
+  if (event.target.closest('#confirmModal')) return;
   closeModelMenu();
 });
 function repositionOpenModelMenu() {

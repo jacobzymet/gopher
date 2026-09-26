@@ -1843,6 +1843,13 @@ function closeUnbalancedEmphasis(src) {
   let italUnder = 0;
   while (i < src.length) {
     const ch = src.charAt(i);
+    if (!inCode && (ch === '\\' || ch === '$')) {
+      const next = skipProtectedSpan(src, i);
+      if (next > i) {
+        i = next;
+        continue;
+      }
+    }
     if (ch === '\\') {
       i += 2;
       continue;
@@ -3645,20 +3652,302 @@ if (window.DOMPurify) {
   });
 }
 
+const TEX_COMMANDS = new Set([
+  'alpha', 'beta', 'gamma', 'delta', 'epsilon', 'varepsilon', 'zeta', 'eta', 'theta',
+  'vartheta', 'iota', 'kappa', 'lambda', 'mu', 'nu', 'xi', 'pi', 'rho', 'sigma',
+  'tau', 'upsilon', 'phi', 'varphi', 'chi', 'psi', 'omega',
+  'Gamma', 'Delta', 'Theta', 'Lambda', 'Xi', 'Pi', 'Sigma', 'Phi', 'Psi', 'Omega',
+  'bar', 'hat', 'vec', 'dot', 'ddot', 'tilde', 'overline', 'underline', 'breve', 'check',
+  'frac', 'dfrac', 'tfrac', 'sum', 'prod', 'int', 'oint', 'lim', 'sqrt',
+  'ldots', 'cdots', 'dots', 'vdots', 'ddots', 'infty',
+  'leq', 'geq', 'neq', 'times', 'cdot', 'pm', 'mp', 'to', 'rightarrow', 'leftarrow',
+  'partial', 'nabla', 'forall', 'exists', 'in', 'subset', 'supset', 'approx', 'equiv',
+  'binom', 'text', 'mathrm', 'mathbf', 'mathit', 'operatorname', 'left', 'right',
+  'langle', 'rangle', 'quad', 'qquad', 'displaystyle', 'limits', 'begin', 'end',
+  'sin', 'cos', 'tan', 'log', 'ln', 'exp', 'max', 'min',
+]);
+const TEX_ACCENTS = new Set(['bar', 'hat', 'vec', 'dot', 'ddot', 'tilde', 'overline', 'underline', 'breve', 'check']);
+
+function oddEscape(src, index) {
+  let count = 0;
+  for (let i = index - 1; i >= 0 && src.charAt(i) === '\\'; i -= 1) count += 1;
+  return count % 2 === 1;
+}
+
+function atLineStart(src, index) {
+  return index === 0 || src.charAt(index - 1) === '\n';
+}
+
+function readFencedCode(src, index) {
+  if (!atLineStart(src, index)) return 0;
+  const mark = src.charAt(index);
+  if (mark !== '`' && mark !== '~') return 0;
+  let width = 0;
+  while (index + width < src.length && src.charAt(index + width) === mark) width += 1;
+  if (width < 3) return 0;
+  let cursor = index + width;
+  while (cursor < src.length && src.charAt(cursor) !== '\n') cursor += 1;
+  if (cursor < src.length) cursor += 1;
+  const fence = new RegExp('^' + mark + '{' + width + ',}\\s*$');
+  while (cursor < src.length) {
+    const lineEnd = src.indexOf('\n', cursor);
+    const end = lineEnd < 0 ? src.length : lineEnd;
+    if (fence.test(src.slice(cursor, end))) return (lineEnd < 0 ? src.length : lineEnd + 1);
+    if (lineEnd < 0) return src.length;
+    cursor = lineEnd + 1;
+  }
+  return src.length;
+}
+
+function readInlineCode(src, index) {
+  if (src.charAt(index) !== '`') return 0;
+  let width = 0;
+  while (index + width < src.length && src.charAt(index + width) === '`') width += 1;
+  const close = src.indexOf('`'.repeat(width), index + width);
+  if (close < 0) return 0;
+  return close + width;
+}
+
+function readWrapped(src, index, open, close, multiline) {
+  if (!src.startsWith(open, index) || oddEscape(src, index)) return null;
+  const start = index + open.length;
+  for (let cursor = start; cursor < src.length; cursor += 1) {
+    if (!multiline && src.charAt(cursor) === '\n') return null;
+    if (src.startsWith(close, cursor) && !oddEscape(src, cursor)) {
+      const tex = src.slice(start, cursor);
+      if (!tex.trim()) return null;
+      return { tex, end: cursor + close.length, display: multiline };
+    }
+  }
+  return null;
+}
+
+function readInlineDollar(src, index) {
+  if (src.charAt(index) !== '$' || src.startsWith('$$', index) || oddEscape(src, index)) return null;
+  if (index > 0 && /[0-9]/.test(src.charAt(index - 1))) return null;
+  const next = src.charAt(index + 1);
+  if (!next || next === '$' || /\s/.test(next)) return null;
+  for (let cursor = index + 1; cursor < src.length && src.charAt(cursor) !== '\n'; cursor += 1) {
+    if (src.charAt(cursor) !== '$' || oddEscape(src, cursor) || /\s/.test(src.charAt(cursor - 1))) continue;
+    const after = src.charAt(cursor + 1);
+    if (after && /[0-9]/.test(after)) continue;
+    const tex = src.slice(index + 1, cursor);
+    if (!tex.trim()) return null;
+    return { tex, end: cursor + 1, display: false };
+  }
+  return null;
+}
+
+function closeBrace(src, index) {
+  if (src.charAt(index) !== '{') return 0;
+  let depth = 0;
+  for (let cursor = index; cursor < src.length && src.charAt(cursor) !== '\n'; cursor += 1) {
+    if (src.charAt(cursor) === '{') depth += 1;
+    else if (src.charAt(cursor) === '}') {
+      depth -= 1;
+      if (depth === 0) return cursor + 1;
+    }
+  }
+  return 0;
+}
+
+function consumeTexTail(src, index) {
+  let cursor = index;
+  let grew = true;
+  while (grew && cursor < src.length && src.charAt(cursor) !== '\n') {
+    grew = false;
+    if (src.charAt(cursor) === '{') {
+      const end = closeBrace(src, cursor);
+      if (!end) break;
+      cursor = end;
+      grew = true;
+      continue;
+    }
+    if (src.charAt(cursor) === '_' || src.charAt(cursor) === '^') {
+      const atom = src.charAt(cursor + 1);
+      if (atom === '{') {
+        const end = closeBrace(src, cursor + 1);
+        if (!end) break;
+        cursor = end;
+        grew = true;
+        continue;
+      }
+      if (atom && /[A-Za-z0-9]/.test(atom)) {
+        cursor += 2;
+        grew = true;
+      }
+    }
+  }
+  return cursor;
+}
+
+function readEnvironment(src, index) {
+  if (!src.startsWith('\\begin{', index) || oddEscape(src, index)) return null;
+  const name = /^\\begin\{([A-Za-z*]+)\}/.exec(src.slice(index));
+  if (!name) return null;
+  const endTag = '\\end{' + name[1] + '}';
+  const at = src.indexOf(endTag, index + name[0].length);
+  if (at < 0) return null;
+  return { tex: src.slice(index, at + endTag.length), end: at + endTag.length, display: true };
+}
+
+function hasTexCommand(tex) {
+  const commands = String(tex).matchAll(/\\([A-Za-z]+)/g);
+  for (const command of commands) {
+    if (TEX_COMMANDS.has(command[1])) return true;
+  }
+  return false;
+}
+
+function readParenTex(src, index) {
+  if (src.charAt(index) !== '(' || (index > 0 && src.charAt(index - 1) === ']')) return null;
+  const lineEnd = src.indexOf('\n', index);
+  const limit = lineEnd < 0 ? src.length : lineEnd;
+  let depth = 0;
+  for (let cursor = index; cursor < limit; cursor += 1) {
+    if (src.charAt(cursor) === '(') depth += 1;
+    else if (src.charAt(cursor) === ')') {
+      depth -= 1;
+      if (depth === 0) {
+        const tex = src.slice(index, cursor + 1);
+        if (tex.length > 400 || !hasTexCommand(tex)) return null;
+        return { tex, end: cursor + 1, display: false };
+      }
+    }
+  }
+  return null;
+}
+
+function readCommandTex(src, index) {
+  if (src.charAt(index) !== '\\' || oddEscape(src, index)) return null;
+  const head = /^\\([A-Za-z]+)/.exec(src.slice(index));
+  if (!head || !TEX_COMMANDS.has(head[1])) return null;
+  let cursor = index + head[0].length;
+  cursor = consumeTexTail(src, cursor);
+  if (TEX_ACCENTS.has(head[1])) {
+    const spaced = /^\s+[A-Za-z0-9]/.exec(src.slice(cursor));
+    if (spaced) cursor = consumeTexTail(src, cursor + spaced[0].length);
+  }
+  if (cursor <= index + 1) return null;
+  return { tex: src.slice(index, cursor), end: cursor, display: false };
+}
+
+function closedMathAt(src, index) {
+  return readWrapped(src, index, '$$', '$$', true)
+    || readWrapped(src, index, '\\[', '\\]', true)
+    || readWrapped(src, index, '\\(', '\\)', false)
+    || readInlineDollar(src, index)
+    || readEnvironment(src, index)
+    || readParenTex(src, index)
+    || readCommandTex(src, index);
+}
+
+function unclosedDisplayAt(src, index) {
+  if (oddEscape(src, index)) return false;
+  if (src.startsWith('$$', index) || src.startsWith('\\[', index) || src.startsWith('\\begin{', index)) {
+    return !closedMathAt(src, index);
+  }
+  return false;
+}
+
+function skipProtectedSpan(src, index) {
+  const math = closedMathAt(src, index);
+  if (math) return math.end;
+  if (unclosedDisplayAt(src, index)) return src.length;
+  return index;
+}
+
+function shieldMarkdownMath(source) {
+  const slots = [];
+  const src = String(source);
+  let out = '';
+  let index = 0;
+  const put = (slot) => {
+    const id = slots.length;
+    slots.push(slot);
+    const token = 'GOPHERMATH' + id + 'END';
+    return slot.display ? '\n\n' + token + '\n\n' : token;
+  };
+  while (index < src.length) {
+    const fence = readFencedCode(src, index);
+    if (fence) {
+      out += src.slice(index, fence);
+      index = fence;
+      continue;
+    }
+    const code = readInlineCode(src, index);
+    if (code) {
+      out += src.slice(index, code);
+      index = code;
+      continue;
+    }
+    const math = closedMathAt(src, index);
+    if (math) {
+      out += put({ tex: math.tex.trim(), display: !!math.display });
+      index = math.end;
+      continue;
+    }
+    // An open display span stays source until its closer arrives, so a streaming
+    // formula is not typeset one command at a time.
+    if (unclosedDisplayAt(src, index)) {
+      out += src.slice(index);
+      break;
+    }
+    out += src.charAt(index);
+    index += 1;
+  }
+  return { text: out, slots };
+}
+
+function renderTex(tex, display) {
+  const source = String(tex || '').trim();
+  if (!source) return '';
+  if (!window.katex || typeof window.katex.renderToString !== 'function') {
+    return '<span class="math-source">' + escapeHtml(source) + '</span>';
+  }
+  try {
+    return window.katex.renderToString(source, {
+      displayMode: !!display,
+      throwOnError: false,
+      strict: 'ignore',
+      trust: false,
+      output: 'htmlAndMathml',
+      errorColor: 'currentColor',
+    });
+  } catch {
+    return '<span class="math-source">' + escapeHtml(source) + '</span>';
+  }
+}
+
+function restoreMarkdownMath(html, slots) {
+  if (!slots.length) return html;
+  const unwrapped = html.replace(/<p>\s*(GOPHERMATH(\d+)END)\s*<\/p>/g, (all, _token, id) => {
+    const slot = slots[Number(id)];
+    return slot && slot.display ? 'GOPHERMATH' + id + 'END' : all;
+  });
+  return unwrapped.replace(/GOPHERMATH(\d+)END/g, (all, id) => {
+    const slot = slots[Number(id)];
+    if (!slot) return all;
+    return renderTex(slot.tex, slot.display);
+  });
+}
+
 function renderMarkdown(text) {
   if (!text) return '';
   const source = applyMarkdownImageRefs(String(text));
   if (!window.marked || !window.DOMPurify) {
     return '<p>' + escapeHtml(source).replace(/\n/g, '<br>') + '</p>';
   }
-  const raw = window.marked.parse(source, { async: false });
-  return window.DOMPurify.sanitize(raw, {
+  const shielded = shieldMarkdownMath(source);
+  const raw = window.marked.parse(shielded.text, { async: false });
+  const clean = window.DOMPurify.sanitize(raw, {
     USE_PROFILES: { html: true },
     FORBID_TAGS: ['style', 'form', 'iframe', 'object', 'embed', 'base', 'link', 'meta'],
     FORBID_ATTR: ['style', 'id', 'name'],
     ADD_ATTR: ['target', 'align', 'loading', 'decoding', 'referrerpolicy'],
     ADD_DATA_URI_TAGS: ['img'],
   });
+  return restoreMarkdownMath(clean, shielded.slots);
 }
 
 let markdownImages = Object.create(null);

@@ -94,23 +94,21 @@ where
 }
 
 pub fn stream_remote_completion(
-    api_base: &str,
-    token: &str,
-    style: ApiStyle,
-    allow_insecure_tls: bool,
+    upstream: crate::subscription::PreparedUpstream,
     mut payload: serde_json::Value,
 ) -> ChatStream {
-    let api_base = api_base.trim_end_matches('/').to_string();
-    let token = token.trim().to_string();
     stream_from_worker(move |tx| async move {
         if let Some(object) = payload.as_object_mut() {
             object.insert("stream".into(), serde_json::json!(true));
             object.remove("agent");
             object.remove("skills");
-            object
-                .entry("model")
-                .or_insert_with(|| serde_json::json!("local"));
+            object.insert(
+                "model".into(),
+                serde_json::json!(upstream.wire_model),
+            );
         }
+        let style = upstream.style;
+        let api_base = upstream.api_base.trim_end_matches('/').to_string();
         match style {
             ApiStyle::Openai => {
                 if let Some(object) = payload.as_object_mut() {
@@ -120,38 +118,47 @@ pub fn stream_remote_completion(
                     );
                 }
                 let url = format!("{api_base}/chat/completions");
-                proxy_openai_sse(
-                    &api_base,
-                    &url,
-                    &token,
-                    &payload,
-                    &tx,
-                    "remote LLM",
-                    allow_insecure_tls,
-                )
-                .await
+                proxy_openai_sse(&url, &upstream, &payload, &tx, "remote LLM").await
             }
             ApiStyle::Anthropic => {
                 let url = format!("{api_base}/messages");
                 let anth =
                     anthropic::openai_to_anthropic_messages(&payload).map_err(StreamFail::Other)?;
-                proxy_anthropic_sse(&api_base, &url, &token, &anth, &tx, allow_insecure_tls).await
+                proxy_anthropic_sse(&url, &upstream, &anth, &tx).await
+            }
+            ApiStyle::Responses => {
+                let url = format!("{api_base}/responses");
+                let store_false = upstream.kind == crate::providers::ProviderKind::OpenaiCodex;
+                let body = crate::responses::openai_chat_to_responses(&payload, store_false);
+                proxy_responses_sse(&url, &upstream, &body, &tx).await
             }
         }
     })
 }
 
 pub(crate) async fn open_llm_sse(
-    _api_base: &str,
     url: &str,
     style: ApiStyle,
     token: &str,
     payload: &serde_json::Value,
     allow_insecure_tls: bool,
+    extra_headers: &[(String, String)],
+    no_redirect: bool,
+    kind: crate::providers::ProviderKind,
 ) -> Result<reqwest::Response, StreamFail> {
-    let client = http::llm_client(REQUEST_TIMEOUT, allow_insecure_tls);
+    if no_redirect {
+        crate::subscription::require_request_url(kind, url).map_err(StreamFail::Other)?;
+    }
+    let client = if no_redirect {
+        http::pinned_llm_client(REQUEST_TIMEOUT)
+    } else {
+        http::llm_client(REQUEST_TIMEOUT, allow_insecure_tls)
+    };
     let mut request = client.post(url).json(payload);
     for (name, value) in providers::provider_auth_headers(style, token) {
+        request = request.header(name, value);
+    }
+    for (name, value) in extra_headers {
         request = request.header(name, value);
     }
 
@@ -160,9 +167,18 @@ pub(crate) async fn open_llm_sse(
         .map_err(|_| StreamFail::Stalled)?
         .map_err(|error| StreamFail::Other(error.to_string()))?;
 
+    if response.status().is_redirection() {
+        return Err(StreamFail::Other(
+            "The provider redirected the request. Gopher did not follow it.".into(),
+        ));
+    }
     if response.status() != reqwest::StatusCode::OK {
         let status = response.status();
         let body = response_text_limited(response).await;
+        let secrets = std::iter::once(token)
+            .chain(extra_headers.iter().map(|(_, value)| value.as_str()))
+            .collect::<Vec<_>>();
+        let body = crate::subscription::redact(&body, &secrets);
         return Err(StreamFail::Other(format!(
             "LLM API responded with {status}: {body}"
         )));
@@ -171,21 +187,21 @@ pub(crate) async fn open_llm_sse(
 }
 
 async fn proxy_openai_sse(
-    api_base: &str,
     url: &str,
-    token: &str,
+    upstream: &crate::subscription::PreparedUpstream,
     payload: &serde_json::Value,
     tx: &mpsc::Sender<Result<Vec<u8>, io::Error>>,
     upstream_label: &str,
-    allow_insecure_tls: bool,
 ) -> Result<(), StreamFail> {
     let response = match open_llm_sse(
-        api_base,
         url,
-        ApiStyle::Openai,
-        token,
+        upstream.style,
+        &upstream.token,
         payload,
-        allow_insecure_tls,
+        upstream.allow_insecure_tls,
+        &upstream.extra_headers,
+        upstream.no_redirect,
+        upstream.kind,
     )
     .await
     {
@@ -203,20 +219,20 @@ async fn proxy_openai_sse(
 }
 
 async fn proxy_anthropic_sse(
-    api_base: &str,
     url: &str,
-    token: &str,
+    upstream: &crate::subscription::PreparedUpstream,
     payload: &serde_json::Value,
     tx: &mpsc::Sender<Result<Vec<u8>, io::Error>>,
-    allow_insecure_tls: bool,
 ) -> Result<(), StreamFail> {
     let response = open_llm_sse(
-        api_base,
         url,
-        ApiStyle::Anthropic,
-        token,
+        upstream.style,
+        &upstream.token,
         payload,
-        allow_insecure_tls,
+        upstream.allow_insecure_tls,
+        &upstream.extra_headers,
+        upstream.no_redirect,
+        upstream.kind,
     )
     .await?;
     let mut byte_stream = response.bytes_stream();
@@ -269,6 +285,67 @@ async fn proxy_anthropic_sse(
     Ok(())
 }
 
+async fn proxy_responses_sse(
+    url: &str,
+    upstream: &crate::subscription::PreparedUpstream,
+    payload: &serde_json::Value,
+    tx: &mpsc::Sender<Result<Vec<u8>, io::Error>>,
+) -> Result<(), StreamFail> {
+    let response = open_llm_sse(
+        url,
+        ApiStyle::Responses,
+        &upstream.token,
+        payload,
+        false,
+        &upstream.extra_headers,
+        true,
+        upstream.kind,
+    )
+    .await?;
+    let mut byte_stream = response.bytes_stream();
+    let mut buffer = Vec::new();
+    let mut translator = crate::responses::ResponsesSseTranslator::default();
+    while let Some(chunk) = next_stream_chunk(&mut byte_stream).await? {
+        buffer.extend_from_slice(&chunk);
+        let mut consumed = 0;
+        while let Some(relative) = buffer[consumed..].iter().position(|byte| *byte == b'\n') {
+            if relative > MAX_SSE_LINE_BYTES {
+                return Err(StreamFail::Other(
+                    "Model SSE line exceeded the safety limit.".into(),
+                ));
+            }
+            let end = consumed + relative;
+            let mut line = &buffer[consumed..end];
+            if line.last() == Some(&b'\r') {
+                line = &line[..line.len() - 1];
+            }
+            let line = String::from_utf8_lossy(line);
+            for frame in translator.push_line(&line).map_err(StreamFail::Other)? {
+                send_sse(tx, frame).await?;
+            }
+            consumed = end + 1;
+        }
+        if consumed != 0 {
+            buffer = buffer.split_off(consumed);
+        }
+        if buffer.len() > MAX_SSE_LINE_BYTES {
+            return Err(StreamFail::Other(
+                "Model SSE line exceeded the safety limit.".into(),
+            ));
+        }
+    }
+    if !buffer.is_empty() {
+        let line = String::from_utf8_lossy(&buffer);
+        for frame in translator
+            .push_line(line.trim_end_matches('\r'))
+            .map_err(StreamFail::Other)?
+        {
+            send_sse(tx, frame).await?;
+        }
+    }
+    Ok(())
+}
+
 async fn forward_raw_sse(
     response: reqwest::Response,
     tx: &mpsc::Sender<Result<Vec<u8>, io::Error>>,
@@ -315,23 +392,15 @@ const TITLE_MAX_TOKENS: u32 = 192;
 
 /// Ask the active provider for a short session title from the first user message.
 pub async fn generate_chat_title(
-    api_base: &str,
-    token: &str,
-    style: ApiStyle,
-    model: Option<&str>,
+    upstream: &crate::subscription::PreparedUpstream,
     user_message: &str,
-    allow_insecure_tls: bool,
     thinking_model: Option<&RemoteModelOption>,
 ) -> Result<String, String> {
-    let api_base = api_base.trim_end_matches('/');
     let snippet: String = user_message.chars().take(240).collect();
     if snippet.trim().is_empty() {
         return Err("message is empty".into());
     }
-    let model_name = model
-        .map(str::trim)
-        .filter(|m| !m.is_empty())
-        .unwrap_or("local");
+    let model_name = upstream.wire_model.clone();
     // Keep the request small, but leave room for hosts that still spend
     // tokens on hidden reasoning before the title line.
     let mut payload = serde_json::json!({
@@ -369,10 +438,11 @@ pub async fn generate_chat_title(
         );
     }
 
-    let value = post_title_completion(api_base, token, style, &payload, allow_insecure_tls).await?;
-    let raw = match style {
+    let value = post_title_completion(upstream, &payload).await?;
+    let raw = match upstream.style {
         ApiStyle::Openai => extract_openai_title_text(&value),
         ApiStyle::Anthropic => extract_anthropic_text(&value),
+        ApiStyle::Responses => crate::responses::responses_output_text(&value),
     };
     let candidate = sanitize_chat_title(&raw)
         .or_else(|| sanitize_chat_title(&extract_openai_reasoning_text(&value)))
@@ -386,28 +456,47 @@ pub async fn generate_chat_title(
 }
 
 async fn post_title_completion(
-    api_base: &str,
-    token: &str,
-    style: ApiStyle,
+    upstream: &crate::subscription::PreparedUpstream,
     payload: &serde_json::Value,
-    allow_insecure_tls: bool,
 ) -> Result<serde_json::Value, String> {
-    let client = http::llm_client(TITLE_TIMEOUT, allow_insecure_tls);
+    let api_base = upstream.api_base.trim_end_matches('/');
+    let style = upstream.style;
+    let codex = upstream.kind == crate::providers::ProviderKind::OpenaiCodex;
+    let client = if upstream.no_redirect {
+        http::pinned_llm_client(TITLE_TIMEOUT)
+    } else {
+        http::llm_client(TITLE_TIMEOUT, upstream.allow_insecure_tls)
+    };
     let (url, body) = match style {
         ApiStyle::Openai => (format!("{api_base}/chat/completions"), payload.clone()),
         ApiStyle::Anthropic => (
             format!("{api_base}/messages"),
             anthropic::openai_to_anthropic_messages(payload)?,
         ),
+        ApiStyle::Responses => {
+            let mut body = crate::responses::openai_chat_to_responses(payload, codex);
+            // The Codex backend only serves streamed responses.
+            if codex && let Some(object) = body.as_object_mut() {
+                object.insert("stream".into(), serde_json::json!(true));
+            }
+            (format!("{api_base}/responses"), body)
+        }
     };
+    if upstream.no_redirect {
+        crate::subscription::require_request_url(upstream.kind, &url)?;
+    }
 
     let send = |body: serde_json::Value| {
         let client = client.clone();
         let url = url.clone();
-        let token = token.to_string();
+        let token = upstream.token.clone();
+        let extra = upstream.extra_headers.clone();
         async move {
             let mut request = client.post(&url).timeout(TITLE_TIMEOUT).json(&body);
             for (name, value) in providers::provider_auth_headers(style, &token) {
+                request = request.header(name, value);
+            }
+            for (name, value) in extra {
                 request = request.header(name, value);
             }
             request.send().await.map_err(|error| error.to_string())
@@ -439,11 +528,44 @@ async fn post_title_completion(
 
     if !response.status().is_success() {
         let status = response.status();
+        if status.is_redirection() {
+            return Err("The provider redirected the request. Gopher did not follow it.".into());
+        }
         let text = response_text_limited(response).await;
+        let secrets = std::iter::once(upstream.token.as_str())
+            .chain(upstream.extra_headers.iter().map(|(_, value)| value.as_str()))
+            .collect::<Vec<_>>();
+        let text = crate::subscription::redact(&text, &secrets);
         return Err(format!("title request failed ({status}): {text}"));
     }
     let text = response_text_limited(response).await;
+    if codex {
+        return collect_responses_sse_text(&text).map(|text| serde_json::json!({ "output_text": text }));
+    }
     serde_json::from_str(&text).map_err(|error| error.to_string())
+}
+
+fn collect_responses_sse_text(body: &str) -> Result<String, String> {
+    let mut translator = crate::responses::ResponsesSseTranslator::default();
+    let mut text = String::new();
+    for line in body.lines() {
+        for frame in translator.push_line(line)? {
+            let frame = String::from_utf8_lossy(&frame);
+            let Some(data) = frame.trim().strip_prefix("data:") else {
+                continue;
+            };
+            let Ok(value) = serde_json::from_str::<serde_json::Value>(data.trim()) else {
+                continue;
+            };
+            if let Some(delta) = value
+                .pointer("/choices/0/delta/content")
+                .and_then(|item| item.as_str())
+            {
+                text.push_str(delta);
+            }
+        }
+    }
+    Ok(text)
 }
 
 fn truncate_for_error(raw: &str) -> String {

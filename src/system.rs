@@ -40,9 +40,31 @@ pub fn open_in_browser(url: &str) -> io::Result<()> {
     }
     #[cfg(target_os = "windows")]
     {
-        // URL metacharacters such as `&` are valid content but become command
-        // separators if this is routed through cmd.exe.
-        Command::new("explorer.exe").arg(url).spawn()?;
+        use windows_sys::Win32::{
+            UI::Shell::ShellExecuteW, UI::WindowsAndMessaging::SW_SHOWNORMAL,
+        };
+
+        let verb: Vec<u16> = "open\0".encode_utf16().collect();
+        let target: Vec<u16> = url.encode_utf16().chain(std::iter::once(0)).collect();
+        // ShellExecute asks Windows to use the registered handler for HTTPS.
+        // explorer.exe can interpret long OAuth URLs as filesystem targets and
+        // open File Explorer instead of the default browser.
+        let result = unsafe {
+            ShellExecuteW(
+                std::ptr::null_mut(),
+                verb.as_ptr(),
+                target.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                SW_SHOWNORMAL,
+            )
+        };
+        if result as isize <= 32 {
+            return Err(io::Error::other(format!(
+                "Windows could not open the URL (ShellExecuteW code {})",
+                result as isize
+            )));
+        }
     }
     #[cfg(target_os = "macos")]
     {

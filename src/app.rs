@@ -6,14 +6,21 @@ use crate::{
     crypto,
     encryption_transition::{self, Operation, Snapshot},
     providers::{
-        ApiStyle, CatalogCache, HealthCache, ProviderHealth, ProviderPublic, ProviderUpsertOptions,
-        ProvidersConfig, RemoteModelOption, enrich_local_catalog, mask_token,
+        ApiStyle, CatalogCache, HealthCache, ProviderHealth, ProviderHealthKind, ProviderPublic,
+        ProviderUpsertOptions, ProvidersConfig, RemoteModelOption, enrich_local_catalog, mask_token,
         probe_provider_endpoint,
     },
     store::{self, StorageMode, StoreError},
 };
 
-type WarmTarget = (ApiStyle, String, Zeroizing<String>, bool);
+pub type WarmTarget = (
+    crate::providers::ProviderKind,
+    String,
+    ApiStyle,
+    String,
+    Zeroizing<String>,
+    bool,
+);
 
 #[derive(Debug)]
 pub struct App {
@@ -95,7 +102,13 @@ impl App {
                 .save(&self.config_path)
                 .map_err(|error| format!("could not save config: {error:#}"))?;
         } else {
-            self.config
+            let mut public_config = self.config.clone();
+            for provider in &mut public_config.providers.items {
+                if provider.kind.needs_secret() {
+                    provider.token.clear();
+                }
+            }
+            public_config
                 .save(&self.config_path)
                 .map_err(|error| format!("could not save config: {error:#}"))?;
         }
@@ -196,7 +209,7 @@ impl App {
             return None;
         }
         self.remote_health
-            .peek(remote.api_style, base, remote.token.trim())
+            .peek(remote.api_style, base, &remote.catalog_cache_token())
     }
 
     pub fn remote_health_for_cached(
@@ -243,59 +256,46 @@ impl App {
         if self.encryption_enabled() && !self.encryption_unlocked() {
             return false;
         }
-        for remote in &self.config.providers.items {
-            let base = remote.base.trim();
-            if base.is_empty() {
-                continue;
-            }
-            if !self
-                .remote_health
-                .is_fresh(remote.api_style, base, remote.token.trim())
-            {
-                return true;
-            }
-        }
-        for remote in &self.config.providers.items {
-            let base = remote.base.trim();
-            if base.is_empty() {
-                continue;
-            }
-            if !self
-                .remote_catalog
-                .is_fresh(remote.api_style, base, remote.token.trim())
-            {
-                return true;
-            }
-        }
-        false
+        self.config
+            .providers
+            .items
+            .iter()
+            .any(|remote| self.provider_needs_probe(remote))
     }
 
     pub fn provider_warm_targets(&self) -> Vec<WarmTarget> {
         if self.encryption_enabled() && !self.encryption_unlocked() {
             return Vec::new();
         }
-        self.config
+            self.config
             .providers
             .items
             .iter()
-            .filter(|remote| {
-                let base = remote.base.trim();
-                if base.is_empty() {
-                    return false;
-                }
-                let token = remote.token.trim();
-                !self.remote_health.is_fresh(remote.api_style, base, token)
-                    || !self.remote_catalog.is_fresh(remote.api_style, base, token)
-            })
+            .filter(|remote| self.provider_needs_probe(remote))
             .map(|remote| {
                 (
+                    remote.kind,
+                    remote.id.clone(),
                     remote.api_style,
                     remote.base.trim().to_string(),
                     Zeroizing::new(remote.token.trim().to_string()),
-                    remote.allow_insecure_tls,
+                    remote.allow_insecure_tls && !remote.kind.is_builtin(),
                 )
             })
             .collect()
+    }
+
+    fn provider_needs_probe(&self, remote: &crate::providers::Provider) -> bool {
+        if remote.kind.needs_secret() && remote.token.trim().is_empty() {
+            return false;
+        }
+        let base = remote.base.trim();
+        if base.is_empty() {
+            return false;
+        }
+        let token = remote.catalog_cache_token();
+        !self.remote_health.is_fresh(remote.api_style, base, &token)
+            || !self.remote_catalog.is_fresh(remote.api_style, base, &token)
     }
 
     pub fn remote_model_catalog_cached(&self) -> Vec<RemoteModelOption> {
@@ -309,17 +309,20 @@ impl App {
             return false;
         }
         self.config.providers.items.iter().any(|provider| {
+            if provider.kind.needs_secret() && provider.token.trim().is_empty() {
+                return false;
+            }
             let base = provider.base.trim();
             if base.is_empty() {
                 return false;
             }
-            let token = provider.token.trim();
+            let token = provider.catalog_cache_token();
             self.remote_catalog
-                .peek(provider.api_style, base, token)
+                .peek(provider.api_style, base, &token)
                 .is_none()
                 && self
                     .remote_health
-                    .peek(provider.api_style, base, token)
+                    .peek(provider.api_style, base, &token)
                     .is_none()
         })
     }
@@ -333,13 +336,17 @@ impl App {
         let mut merged = Vec::new();
         let mut any_known = false;
         for provider in &self.config.providers.items {
+            if let Some(connect) = crate::subscription::connect_option(provider) {
+                merged.push(connect);
+                any_known = true;
+            }
             let base = provider.base.trim();
             if base.is_empty() {
                 continue;
             }
-            let Some(catalog) =
-                self.remote_catalog
-                    .peek(provider.api_style, base, provider.token.trim())
+            let Some(catalog) = self
+                .remote_catalog
+                .peek(provider.api_style, base, &provider.catalog_cache_token())
             else {
                 continue;
             };
@@ -383,17 +390,72 @@ impl App {
                 name: remote.name.clone(),
                 base: remote.base.clone(),
                 api_style: remote.api_style.as_str(),
+                kind: remote.kind.as_str(),
+                builtin: remote.kind.is_builtin(),
                 allow_insecure_tls: remote.allow_insecure_tls,
                 token_set: !remote.token.trim().is_empty(),
                 token_masked: mask_token(&remote.token),
                 active: remote.id == active_id,
-                health: self.remote_health_for_cached(
-                    remote.api_style,
-                    &remote.base,
-                    &remote.token,
-                ),
+                health: if remote.kind.needs_secret() && remote.token.trim().is_empty() {
+                    Some(ProviderHealth {
+                        ok: false,
+                        kind: ProviderHealthKind::Auth,
+                        model: None,
+                        status: None,
+                        error: Some(
+                            if remote.kind == crate::providers::ProviderKind::OpenaiCodex {
+                                "Sign in to ChatGPT to list Codex models.".into()
+                            } else {
+                                "Add an API key to list these models.".into()
+                            },
+                        ),
+                    })
+                } else {
+                    self.remote_health_for_cached(
+                        remote.api_style,
+                        &remote.base,
+                        &remote.catalog_cache_token(),
+                    )
+                },
             })
             .collect()
+    }
+
+    pub fn require_secret_write(&self) -> Result<(), String> {
+        if !self.encryption_enabled() {
+            return Err("Turn on encryption in Settings before connecting ChatGPT.".into());
+        }
+        if !self.encryption_unlocked() {
+            return Err("Unlock encrypted data before connecting ChatGPT.".into());
+        }
+        Ok(())
+    }
+
+    pub fn set_builtin_secret(
+        &mut self,
+        kind: crate::providers::ProviderKind,
+        secret: &str,
+    ) -> Result<(), String> {
+        if !kind.needs_secret() {
+            return Err("That provider does not store a credential.".into());
+        }
+        self.require_secret_write()?;
+        let spec = crate::subscription::builtin_spec(kind)
+            .ok_or_else(|| "Unknown built-in provider.".to_string())?;
+        self.mutate_providers(|providers| {
+            let provider = providers
+                .items
+                .iter_mut()
+                .find(|provider| provider.kind == kind)
+                .ok_or_else(|| "Built-in provider is missing.".to_string())?;
+            provider.id = spec.id.to_string();
+            provider.base = spec.base.to_string();
+            provider.name = spec.name.to_string();
+            provider.api_style = spec.api_style;
+            provider.allow_insecure_tls = false;
+            provider.token = secret.to_string();
+            Ok(())
+        })
     }
 
     pub fn create_provider(
@@ -937,16 +999,22 @@ impl App {
     }
 
     pub fn warm_provider_caches(&self) {
-        for (style, base, token, insecure) in self.provider_warm_targets() {
-            let (health, catalog) = crate::http::with_insecure_provider_tls(insecure, || {
-                probe_provider_endpoint(&base, &token, style)
-            });
-            self.store_remote_health(style, &base, &token, health);
-            self.store_remote_catalog(style, &base, &token, catalog.clone());
-            let catalog = crate::http::with_insecure_provider_tls(insecure, || {
-                enrich_local_catalog(&base, &token, style, catalog)
-            });
-            self.store_remote_catalog(style, &base, &token, catalog);
+        for (kind, id, style, base, token, insecure) in self.provider_warm_targets() {
+            let (health, mut catalog) = if kind.is_builtin() {
+                crate::subscription::probe_builtin(kind, &token)
+            } else {
+                crate::http::with_insecure_provider_tls(insecure, || {
+                    probe_provider_endpoint(&base, &token, style)
+                })
+            };
+            let cache_token = crate::providers::catalog_cache_material(kind, &id, &token);
+            self.store_remote_health(style, &base, &cache_token, health);
+            if !kind.is_builtin() {
+                catalog = crate::http::with_insecure_provider_tls(insecure, || {
+                    enrich_local_catalog(&base, &token, style, catalog)
+                });
+            }
+            self.store_remote_catalog(style, &base, &cache_token, catalog);
         }
     }
 }
@@ -959,6 +1027,24 @@ mod tests {
 
     fn test_app(root: &std::path::Path) -> App {
         App::new(Config::default(), root.join("config.toml")).unwrap()
+    }
+
+    fn provider_named<'a>(app: &'a App, name: &str) -> &'a crate::providers::Provider {
+        app.config
+            .providers
+            .items
+            .iter()
+            .find(|provider| provider.name == name)
+            .unwrap_or_else(|| panic!("missing provider {name}"))
+    }
+
+    fn payload_named<'a>(payload: &'a serde_json::Value, name: &str) -> &'a serde_json::Value {
+        payload["provider_config"]["providers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|provider| provider["name"] == name)
+            .unwrap_or_else(|| panic!("missing payload provider {name}"))
     }
 
     #[test]
@@ -994,7 +1080,7 @@ mod tests {
         )
         .unwrap();
 
-        let provider_id = app.config.providers.items[0].id.clone();
+        let provider_id = provider_named(&app, "Test").id.clone();
         app.update_provider(&provider_id, Some("Renamed"), None, None, None, None)
             .unwrap();
 
@@ -1002,14 +1088,9 @@ mod tests {
         assert!(!plaintext.contains("secret-provider-token"));
         let payload =
             store::load_provider_tokens(temp.path(), app.disk_key().expect("unlocked")).unwrap();
-        assert_eq!(
-            payload["provider_config"]["providers"][0]["token"],
-            "secret-provider-token"
-        );
-        assert_eq!(
-            payload["provider_config"]["providers"][0]["id"],
-            provider_id
-        );
+        let saved = payload_named(&payload, "Renamed");
+        assert_eq!(saved["token"], "secret-provider-token");
+        assert_eq!(saved["id"], provider_id);
         assert!(!plaintext.contains("Renamed"));
         assert!(!plaintext.contains("example.com"));
 
@@ -1026,7 +1107,7 @@ mod tests {
         assert!(app.provider_warm_targets().is_empty());
 
         app.unlock_disk_encryption(TEST_PASSPHRASE).unwrap();
-        let restored = &app.config.providers.items[0];
+        let restored = provider_named(&app, "Renamed");
         assert_eq!(restored.name, "Renamed");
         assert_eq!(restored.base, "https://example.com/v1");
         assert_eq!(restored.token, "secret-provider-token");
@@ -1083,7 +1164,7 @@ mod tests {
             true,
         )
         .unwrap();
-        let provider_id = app.config.providers.items[0].id.clone();
+        let provider_id = provider_named(&app, "Legacy private provider").id.clone();
 
         let salt = crypto::random_salt().unwrap();
         let key = crypto::derive_key(TEST_PASSPHRASE, &salt).unwrap();
@@ -1097,7 +1178,14 @@ mod tests {
         )
         .unwrap();
         crypto::save_meta(root, &meta).unwrap();
-        app.config.providers.items[0].token.clear();
+        app.config
+            .providers
+            .items
+            .iter_mut()
+            .find(|provider| provider.name == "Legacy private provider")
+            .unwrap()
+            .token
+            .clear();
         app.config.save(&config_path).unwrap();
         drop(app);
 
@@ -1107,7 +1195,7 @@ mod tests {
         assert!(!restarted.remote_caches_need_warm());
 
         restarted.unlock_disk_encryption(TEST_PASSPHRASE).unwrap();
-        let provider = &restarted.config.providers.items[0];
+        let provider = provider_named(&restarted, "Legacy private provider");
         assert_eq!(provider.name, "Legacy private provider");
         assert_eq!(provider.base, "https://legacy.example/v1");
         assert_eq!(provider.token, "legacy-secret-token");
@@ -1117,7 +1205,7 @@ mod tests {
         assert!(!plaintext.contains("legacy.example"));
         let migrated = store::load_provider_tokens(root, restarted.disk_key().unwrap()).unwrap();
         assert_eq!(
-            migrated["provider_config"]["providers"][0]["token"],
+            payload_named(&migrated, "Legacy private provider")["token"],
             "legacy-secret-token"
         );
     }
@@ -1264,5 +1352,62 @@ mod tests {
         let mut app = test_app(root);
         assert!(app.unlock_disk_encryption(TEST_PASSPHRASE).is_err());
         assert!(encryption_transition::exists(root));
+    }
+
+    #[test]
+    fn builtin_secrets_require_encryption_and_stay_out_of_plaintext() {
+        const SECRET: &str =
+            r#"{"access_token":"codex-access-secret","refresh_token":"codex-refresh-secret"}"#;
+        let codex = crate::providers::ProviderKind::OpenaiCodex;
+        let temp = tempfile::tempdir().unwrap();
+        let mut app = test_app(temp.path());
+        let refused = app.set_builtin_secret(codex, SECRET).unwrap_err();
+        assert!(refused.to_ascii_lowercase().contains("encryption"));
+        let plaintext = std::fs::read_to_string(temp.path().join("config.toml")).unwrap();
+        assert!(!plaintext.contains("codex-access-secret"));
+        let public = serde_json::to_string(&app.public_providers()).unwrap();
+        assert!(!public.contains("codex-access-secret"));
+
+        app.enable_disk_encryption(TEST_PASSPHRASE, TEST_PASSPHRASE)
+            .unwrap();
+        app.set_builtin_secret(codex, SECRET).unwrap();
+        let plaintext = std::fs::read_to_string(temp.path().join("config.toml")).unwrap();
+        assert!(!plaintext.contains("codex-access-secret"));
+        assert!(!plaintext.contains("codex-refresh-secret"));
+        let public = serde_json::to_string(&app.public_providers()).unwrap();
+        assert!(!public.contains("codex-access-secret"));
+        assert!(!public.contains("codex-refresh-secret"));
+        let chatgpt = app
+            .public_providers()
+            .into_iter()
+            .find(|provider| provider.kind == "openai-codex")
+            .unwrap();
+        assert!(chatgpt.token_set);
+
+        app.lock_disk_encryption();
+        let locked = app.set_builtin_secret(codex, SECRET).unwrap_err();
+        assert!(locked.to_ascii_lowercase().contains("unlock"));
+    }
+
+    #[test]
+    fn removed_opencode_providers_are_dropped_with_their_keys() {
+        let saved = serde_json::json!({
+            "providers": [
+                {"id": "builtin-opencode-zen", "name": "OpenCode Zen", "base": "https://opencode.ai/zen/v1",
+                 "token": "zen-secret-key-value", "kind": "opencode-zen"},
+                {"id": "builtin-opencode-free", "name": "OpenCode Free", "base": "https://opencode.ai/zen/v1",
+                 "kind": "opencode-free"},
+                {"id": "local", "name": "Local", "base": "http://127.0.0.1:8080/v1", "kind": "custom"}
+            ],
+            "active_provider_id": "builtin-opencode-free"
+        });
+        let mut providers: ProvidersConfig = serde_json::from_value(saved).unwrap();
+        providers.migrate();
+        let kinds: Vec<_> = providers.items.iter().map(|provider| provider.kind.as_str()).collect();
+        assert_eq!(kinds, ["custom", "openai-codex"]);
+        assert_eq!(providers.active_provider_id, "local");
+        let serialized = serde_json::to_string(&providers).unwrap();
+        assert!(!serialized.contains("zen-secret-key-value"));
+        assert!(!serialized.contains("opencode"));
     }
 }

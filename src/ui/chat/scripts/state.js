@@ -162,7 +162,6 @@ const settingsModal = document.getElementById('settingsModal');
 const encryptionIndicator = document.getElementById('encryptionIndicator');
 const encryptionIndicatorLabel = document.getElementById('encryptionIndicatorLabel');
 const encryptionIndicatorDetail = document.getElementById('encryptionIndicatorDetail');
-const sidebarEncryptionBadge = document.getElementById('sidebarEncryptionBadge');
 const projectModal = document.getElementById('projectModal');
 const projectsView = document.getElementById('projectsView');
 const projectsGrid = document.getElementById('projectsGrid');
@@ -1521,6 +1520,7 @@ async function requestGeneratedTitle(userText) {
   const remote = selectedRemoteModel(latestState);
   if (remote) {
     body.remote_base = remote.base;
+    if (remote.provider_id) body.provider_id = remote.provider_id;
     body.model = remote.model;
   }
   const response = await fetch('/api/chat/title', {
@@ -2033,9 +2033,7 @@ function refreshEncryptionIndicator() {
   if (!encryptionIndicator || !encryptionIndicatorLabel || !encryptionIndicatorDetail) return;
   const enabled = !!dataInfo?.encryption_enabled;
   encryptionIndicator.classList.toggle('is-hidden', !enabled);
-  sidebarEncryptionBadge?.classList.toggle('is-hidden', !enabled);
   encryptionIndicator.classList.remove('is-locked', 'is-recovery', 'is-browser');
-  sidebarEncryptionBadge?.classList.remove('is-locked', 'is-recovery', 'is-browser');
   const sidebarToggle = document.getElementById('btnToggleSidebar');
   if (!enabled) {
     if (sidebarToggle) delete sidebarToggle.dataset.encryptionDetail;
@@ -2051,19 +2049,16 @@ function refreshEncryptionIndicator() {
     shortDetail = 'Action needed';
     detail = 'Encryption recovery needed · enter your passphrase to finish safely';
     encryptionIndicator.classList.add('is-recovery');
-    sidebarEncryptionBadge?.classList.add('is-recovery');
   } else if (!dataInfo.encryption_unlocked) {
     label = 'Locked';
     shortDetail = 'Session locked';
     detail = 'Encrypted at rest · locked for this session';
     encryptionIndicator.classList.add('is-locked');
-    sidebarEncryptionBadge?.classList.add('is-locked');
   }
   encryptionIndicatorLabel.textContent = label;
   encryptionIndicatorDetail.textContent = shortDetail;
   encryptionIndicator.setAttribute('aria-label', detail + '. Open encryption settings');
   encryptionIndicator.title = detail + '. Open encryption settings';
-  if (sidebarEncryptionBadge) sidebarEncryptionBadge.title = detail;
   if (sidebarToggle) sidebarToggle.dataset.encryptionDetail = detail;
   if (typeof syncSidebarToggleUi === 'function') syncSidebarToggleUi();
 }
@@ -2241,9 +2236,11 @@ async function initLocalData() {
 
 function setUnlockModalError(message) {
   const el = document.getElementById('unlockModalError');
+  const input = document.getElementById('unlockModalPassphrase');
   if (!el) return;
   el.textContent = message || '';
   el.classList.toggle('is-hidden', !message);
+  if (input) input.setAttribute('aria-invalid', message ? 'true' : 'false');
 }
 
 function focusUnlockPassphrase() {
@@ -2255,13 +2252,18 @@ function focusUnlockPassphrase() {
   });
 }
 
+let unlockHideGeneration = 0;
+
 function promptUnlockSession() {
   const modal = document.getElementById('unlockModal');
   if (!modal) return;
+  if (typeof unlockModalIsBusy === 'function' && unlockModalIsBusy()) return;
+  unlockHideGeneration += 1;
   closeSettings();
   setUnlockModalError('');
   const input = document.getElementById('unlockModalPassphrase');
   if (input) input.value = '';
+  if (typeof setUnlockPassphraseRevealed === 'function') setUnlockPassphraseRevealed(false);
   openBackdrop(modal);
   focusUnlockPassphrase();
 }
@@ -2269,10 +2271,32 @@ function promptUnlockSession() {
 function hideUnlockSession() {
   const modal = document.getElementById('unlockModal');
   if (!modal) return;
+  const generation = ++unlockHideGeneration;
   closeBackdrop(modal);
-  setUnlockModalError('');
-  const input = document.getElementById('unlockModalPassphrase');
-  if (input) input.value = '';
+  const finish = () => {
+    if (generation !== unlockHideGeneration) return;
+    setUnlockModalError('');
+    const input = document.getElementById('unlockModalPassphrase');
+    if (input) input.value = '';
+    if (typeof setUnlockPassphraseRevealed === 'function') setUnlockPassphraseRevealed(false);
+    if (typeof setUnlockModalLoading === 'function') setUnlockModalLoading(false);
+  };
+  if (modal.classList.contains('is-hidden')) {
+    finish();
+    return;
+  }
+  let done = false;
+  const once = () => {
+    if (done) return;
+    done = true;
+    modal.removeEventListener('transitionend', onEnd);
+    finish();
+  };
+  const onEnd = (event) => {
+    if (event.target === modal && event.propertyName === 'opacity') once();
+  };
+  modal.addEventListener('transitionend', onEnd);
+  window.setTimeout(once, 360);
 }
 
 function refreshUiFromMemoryStore() {
@@ -2356,12 +2380,10 @@ async function unlockDiskEncryption(passphrase, buttonEl) {
   if (buttonEl) buttonEl.disabled = true;
   try {
     await postEncryption('/api/data/encryption/unlock', { passphrase });
-    const settingsInput = document.getElementById('encryptionUnlockPassphrase');
-    if (settingsInput) settingsInput.value = '';
-    const modalInput = document.getElementById('unlockModalPassphrase');
-    if (modalInput) modalInput.value = '';
     setUnlockModalError('');
     await loadDiskDataAfterUnlock();
+    const settingsInput = document.getElementById('encryptionUnlockPassphrase');
+    if (settingsInput) settingsInput.value = '';
   } finally {
     if (buttonEl) buttonEl.disabled = false;
   }

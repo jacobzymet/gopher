@@ -125,6 +125,27 @@ pub fn llm_client(timeout: Duration, allow_insecure_tls: bool) -> Client {
     build_llm_client(timeout, allow_insecure_tls)
 }
 
+/// HTTPS client that refuses redirects. Used for the pinned Codex hosts
+/// so a 3xx cannot carry a credential to another origin.
+pub fn pinned_llm_client(timeout: Duration) -> Client {
+    Client::builder()
+        .connect_timeout(Duration::from_secs(30))
+        .timeout(timeout)
+        .redirect(reqwest::redirect::Policy::none())
+        .user_agent(APP_UA)
+        .build()
+        .expect("pinned reqwest client")
+}
+
+pub fn pinned_blocking_client(timeout: Duration) -> reqwest::blocking::Client {
+    reqwest::blocking::Client::builder()
+        .timeout(timeout)
+        .redirect(reqwest::redirect::Policy::none())
+        .user_agent(APP_UA)
+        .build()
+        .expect("pinned blocking client")
+}
+
 /// Blocking client for provider probes. Reused so TLS sessions stay warm.
 /// The insecure-certificate opt-in is scoped by `with_insecure_provider_tls`.
 /// Callers should still set a per-request timeout; the pool default is 2s.
