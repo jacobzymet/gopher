@@ -1134,11 +1134,39 @@ html:not(.ui-ready) .chat-sidebar {
 .convo-item.is-drag-before::before { top: -1px; }
 .convo-item.is-drag-after::after { bottom: -1px; }
 .convo-title {
+  container-type: inline-size;
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
+}
+.convo-title-text {
+  display: block;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.convo-item.can-marquee-title:hover .convo-title:not(.is-typing-title) > .convo-title-text,
+.convo-item.can-marquee-title:focus-within .convo-title:not(.is-typing-title) > .convo-title-text {
+  width: max-content;
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+  animation: convo-title-marquee var(--marquee-duration, 4.8s) ease-in-out infinite alternate;
+  animation-delay: 0.28s;
+}
+@keyframes convo-title-marquee {
+  0%, 14% { transform: translateX(0); }
+  86%, 100% { transform: translateX(min(0px, calc(100cqi - 100%))); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .convo-item.can-marquee-title:hover .convo-title > .convo-title-text,
+  .convo-item.can-marquee-title:focus-within .convo-title > .convo-title-text {
+    width: auto;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    animation: none;
+  }
 }
 .convo-age {
   flex: 0 0 auto;
@@ -1148,7 +1176,7 @@ html:not(.ui-ready) .chat-sidebar {
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
 }
-.convo-title.is-typing-title,
+.convo-title.is-typing-title > .convo-title-text,
 .chat-topbar-title.is-typing-title {
   text-overflow: clip;
 }

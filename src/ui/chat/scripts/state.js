@@ -1579,36 +1579,45 @@ function needsGeneratedTitle(convo) {
 /** @type {Map<HTMLElement, number>} */
 const titleTypeTimers = new Map();
 
+function titleTypeHost(el) {
+  return el?.querySelector?.(':scope > .convo-title-text') || el;
+}
+
 function stopTitleTyping(el) {
   if (!el) return;
-  const timer = titleTypeTimers.get(el);
+  const host = titleTypeHost(el);
+  const timer = titleTypeTimers.get(host) || titleTypeTimers.get(el);
   if (timer) {
     clearTimeout(timer);
+    titleTypeTimers.delete(host);
     titleTypeTimers.delete(el);
   }
+  host.classList.remove('is-typing-title');
   el.classList.remove('is-typing-title');
-  el.querySelector('.title-typing-caret')?.remove();
+  host.querySelector('.title-typing-caret')?.remove();
 }
 
 function typeTitleInto(el, fullText) {
   if (!el) return;
+  const host = titleTypeHost(el);
   stopTitleTyping(el);
   const text = String(fullText || '');
   if (!text) {
-    el.textContent = '';
+    host.textContent = '';
     return;
   }
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    el.textContent = text;
+    host.textContent = text;
     return;
   }
-  el.classList.add('is-typing-title');
-  el.textContent = '';
+  host.classList.add('is-typing-title');
+  if (host !== el) el.classList.add('is-typing-title');
+  host.textContent = '';
   const textNode = document.createTextNode('');
   const caret = document.createElement('span');
   caret.className = 'title-typing-caret';
   caret.setAttribute('aria-hidden', 'true');
-  el.append(textNode, caret);
+  host.append(textNode, caret);
   let i = 0;
   const tick = () => {
     i += 1;
@@ -1616,9 +1625,11 @@ function typeTitleInto(el, fullText) {
     if (i < text.length) {
       const delay = i === 1 ? 40 : 22 + Math.floor(Math.random() * 28);
       const id = window.setTimeout(tick, delay);
-      titleTypeTimers.set(el, id);
+      titleTypeTimers.set(host, id);
     } else {
+      titleTypeTimers.delete(host);
       titleTypeTimers.delete(el);
+      host.classList.remove('is-typing-title');
       el.classList.remove('is-typing-title');
       caret.remove();
     }

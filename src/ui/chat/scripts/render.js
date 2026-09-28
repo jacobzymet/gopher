@@ -2794,7 +2794,10 @@ function createConvoItem(convo, { nested = false } = {}) {
   }
   const title = document.createElement('span');
   title.className = 'convo-title';
-  title.textContent = fullTitle;
+  const titleText = document.createElement('span');
+  titleText.className = 'convo-title-text';
+  titleText.textContent = fullTitle;
+  title.appendChild(titleText);
   applyPrivacyMosaic(title, 'conversation:' + convo.id);
   const identityTitle = convo.incognito ? fullTitle + ' (temporary session — not saved)' : fullTitle;
   setIdentityTitle(title, identityTitle);
@@ -4958,7 +4961,41 @@ function renderThread(convo, { drainQueue = true } = {}) {
   if (drainQueue) maybeSendNextQueued(convo.id);
 }
 
+let convoTitleMarqueeBound = false;
+
+function bindConvoTitleMarquee() {
+  if (convoTitleMarqueeBound) return;
+  const nav = document.getElementById('sidebarNav');
+  if (!nav) return;
+  convoTitleMarqueeBound = true;
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const arm = (item) => {
+    if (!item || reduced.matches) return;
+    const title = item.querySelector(':scope > .convo-title');
+    const text = title?.querySelector(':scope > .convo-title-text');
+    if (!text || title.classList.contains('is-typing-title')) return;
+    const overflow = text.scrollWidth - title.clientWidth;
+    if (overflow <= 1) {
+      item.classList.remove('can-marquee-title');
+      text.style.removeProperty('--marquee-duration');
+      return;
+    }
+    const seconds = Math.min(12, Math.max(2.6, 1.35 + overflow / 42));
+    text.style.setProperty('--marquee-duration', seconds.toFixed(2) + 's');
+    item.classList.add('can-marquee-title');
+  };
+  nav.addEventListener('pointerover', (event) => {
+    const item = event.target.closest?.('.convo-item');
+    if (!item || !nav.contains(item) || item.contains(event.relatedTarget)) return;
+    arm(item);
+  });
+  nav.addEventListener('focusin', (event) => {
+    arm(event.target.closest?.('.convo-item'));
+  });
+}
+
 function renderSidebar() {
+  bindConvoTitleMarquee();
   closeConvoMenu();
   for (const id of selectedConversationIds) {
     if (!conversations.some((convo) => convo.id === id)) selectedConversationIds.delete(id);
