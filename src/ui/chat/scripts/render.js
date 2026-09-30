@@ -2035,6 +2035,7 @@ function paintIncrementalMarkdown(host, markdown, { streaming = false } = {}) {
         el.dataset.highlighted = 'skip';
       });
       enhanceCiteFavicons(tailEl);
+      enhanceMarkdownTables(tailEl);
     } else {
       enhanceCodeBlocks(tailEl);
     }
@@ -3986,10 +3987,132 @@ function enhanceCiteFavicons(root) {
   });
 }
 
-/** Wrap fenced blocks with their persistent header and copy affordance. */
+/** Add column resizing without changing the message's Markdown. */
+function enhanceMarkdownTables(root) {
+  if (!root) return;
+  const targets = [...root.querySelectorAll('table.md-table')]
+    .filter((table) => !table._columnResizeReady && table.closest('.msg-bubble'));
+  if (!targets.length) return;
+  const owner = root.closest('.msg') || root.closest('.msg-bubble') || root;
+  const states = owner._markdownTableWidths || (owner._markdownTableWidths = new Map());
+  const tables = [...owner.querySelectorAll('table.md-table')];
+  targets.forEach((table) => {
+    const headers = [...(table.tHead?.rows[0]?.cells || [])];
+    if (!headers.length || headers.some((cell) => cell.colSpan !== 1 || cell.rowSpan !== 1)) return;
+    table._columnResizeReady = true;
+    const labels = headers.map((cell, index) => cell.textContent.trim() || 'Column ' + (index + 1));
+    const key = JSON.stringify([tables.indexOf(table), labels]);
+    const saved = states.get(key);
+    let widths = saved?.widths.slice() || null;
+    let defaults = saved?.defaults.slice() || null;
+    let group = null;
+    const handles = [];
+    const measure = () => headers.map((cell) => cell.getBoundingClientRect().width);
+    const apply = (next) => {
+      if (!group) {
+        group = document.createElement('colgroup');
+        headers.forEach(() => group.appendChild(document.createElement('col')));
+        table.insertBefore(group, table.tHead);
+      }
+      widths = next.slice();
+      [...group.children].forEach((col, index) => { col.style.width = widths[index] + 'px'; });
+      table.style.width = widths.reduce((total, width) => total + width, 0) + 'px';
+      table.classList.add('has-column-widths');
+      handles.forEach((handle, index) => {
+        handle.setAttribute('aria-valuemin', String(Math.min(48, Math.round(widths[index]))));
+        handle.setAttribute('aria-valuenow', String(Math.round(widths[index])));
+        handle.setAttribute('aria-valuetext', Math.round(widths[index]) + ' pixels wide');
+      });
+      states.set(key, { widths: widths.slice(), defaults: defaults.slice() });
+    };
+    const resizeColumn = (index, width) => {
+      const next = widths ? widths.slice() : measure();
+      if (!defaults) defaults = next.slice();
+      next[index] = Math.max(48, Math.min(2000, width));
+      apply(next);
+    };
+    headers.forEach((cell, index) => {
+      const handle = document.createElement('span');
+      handle.className = 'md-column-resize';
+      handle.tabIndex = 0;
+      handle.setAttribute('role', 'separator');
+      handle.setAttribute('aria-orientation', 'vertical');
+      handle.setAttribute('aria-label', 'Resize ' + labels[index] + ' column');
+      handle.setAttribute('aria-valuemin', '48');
+      handle.setAttribute('aria-valuemax', '2000');
+      handle.title = 'Drag to resize column. Double-click to reset.';
+      handles.push(handle);
+      cell.appendChild(handle);
+      let drag = null;
+      const finish = (cancel = false) => {
+        if (!drag) return;
+        const previous = drag;
+        drag = null;
+        if (cancel) apply(previous.widths);
+        table.classList.remove('is-resizing-column');
+        handle.classList.remove('is-resizing');
+        if (handle.hasPointerCapture(previous.pointerId)) handle.releasePointerCapture(previous.pointerId);
+      };
+      handle.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0 || !event.isPrimary) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const start = widths ? widths.slice() : measure();
+        if (!defaults) defaults = start.slice();
+        apply(start);
+        drag = {
+          pointerId: event.pointerId, x: event.clientX, widths: start,
+          direction: getComputedStyle(table).direction === 'rtl' ? -1 : 1,
+        };
+        handle.focus({ preventScroll: true });
+        handle.setPointerCapture(event.pointerId);
+        table.classList.add('is-resizing-column');
+        handle.classList.add('is-resizing');
+      });
+      handle.addEventListener('pointermove', (event) => {
+        if (!drag || drag.pointerId !== event.pointerId) return;
+        event.preventDefault();
+        resizeColumn(index, drag.widths[index] + (event.clientX - drag.x) * drag.direction);
+      });
+      handle.addEventListener('pointerup', () => finish());
+      handle.addEventListener('pointercancel', () => finish(true));
+      handle.addEventListener('lostpointercapture', () => finish());
+      handle.addEventListener('dblclick', (event) => {
+        event.preventDefault();
+        if (defaults) {
+          const next = widths.slice();
+          next[index] = defaults[index];
+          apply(next);
+        }
+      });
+      handle.addEventListener('focus', () => {
+        const width = (widths || measure())[index];
+        handle.setAttribute('aria-valuemin', String(Math.min(48, Math.round(width))));
+        handle.setAttribute('aria-valuenow', String(Math.round(width)));
+        handle.setAttribute('aria-valuetext', Math.round(width) + ' pixels wide');
+      });
+      handle.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && drag) {
+          event.preventDefault();
+          finish(true);
+          return;
+        }
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+        event.preventDefault();
+        const direction = getComputedStyle(table).direction === 'rtl' ? -1 : 1;
+        const step = (event.shiftKey ? 48 : 16) * (event.key === 'ArrowRight' ? 1 : -1) * direction;
+        resizeColumn(index, (widths || measure())[index] + step);
+      });
+    });
+    if (widths) apply(widths);
+  });
+}
+
+/** Enhance Markdown tables, citations, and fenced code blocks. */
 function enhanceCodeBlocks(root) {
   if (!root) return;
   enhanceCiteFavicons(root);
+  enhanceMarkdownTables(root);
   if (typeof decorateMentionTextNodes === 'function') decorateMentionTextNodes(root);
   root.querySelectorAll('pre > code').forEach((codeEl) => {
     let block = codeEl.closest('.md-code-block');
@@ -4974,15 +5097,33 @@ function bindConvoTitleMarquee() {
     const title = item.querySelector(':scope > .convo-title');
     const text = title?.querySelector(':scope > .convo-title-text');
     if (!text || title.classList.contains('is-typing-title')) return;
-    const overflow = text.scrollWidth - title.clientWidth;
+    resize.observe(title);
+    const padding = parseFloat(getComputedStyle(text).paddingInlineEnd) || 0;
+    const overflow = text.scrollWidth - padding - title.getBoundingClientRect().width;
     if (overflow <= 1) {
       item.classList.remove('can-marquee-title');
       text.style.removeProperty('--marquee-duration');
+      text.style.removeProperty('--marquee-distance');
       return;
     }
     const seconds = Math.min(12, Math.max(2.6, 1.35 + overflow / 42));
     text.style.setProperty('--marquee-duration', seconds.toFixed(2) + 's');
     item.classList.add('can-marquee-title');
+    // The hover button animates wider, so measure the actual clip area on every resize.
+    const distance = Math.ceil(text.getBoundingClientRect().width - title.getBoundingClientRect().width);
+    text.style.setProperty('--marquee-distance', -Math.max(0, distance) + 'px');
+  };
+  const resize = new ResizeObserver((entries) => {
+    for (const { target } of entries) {
+      const item = target.closest('.convo-item');
+      if (item && nav.contains(item) && item.matches(':hover, :focus-within')) arm(item);
+      else resize.unobserve(target);
+    }
+  });
+  const release = (item) => {
+    if (!item || item.matches(':hover, :focus-within')) return;
+    const title = item.querySelector(':scope > .convo-title');
+    if (title) resize.unobserve(title);
   };
   nav.addEventListener('pointerover', (event) => {
     const item = event.target.closest?.('.convo-item');
@@ -4991,6 +5132,14 @@ function bindConvoTitleMarquee() {
   });
   nav.addEventListener('focusin', (event) => {
     arm(event.target.closest?.('.convo-item'));
+  });
+  nav.addEventListener('pointerout', (event) => {
+    const item = event.target.closest?.('.convo-item');
+    if (item && !item.contains(event.relatedTarget)) release(item);
+  });
+  nav.addEventListener('focusout', (event) => {
+    const item = event.target.closest?.('.convo-item');
+    if (item && !item.contains(event.relatedTarget)) requestAnimationFrame(() => release(item));
   });
 }
 

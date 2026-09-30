@@ -1546,6 +1546,7 @@ button.chat-model-section-label:focus-visible {
   vertical-align: top;
 }
 .msg-bubble table.md-table th {
+  position: relative;
   font-weight: 600;
   color: var(--color-ink);
   background: color-mix(in oklch, var(--color-paper-2) 80%, var(--color-graphite));
@@ -1556,6 +1557,44 @@ button.chat-model-section-label:focus-visible {
 .msg-bubble table.md-table td[align="center"] { text-align: center; }
 .msg-bubble table.md-table th[align="right"],
 .msg-bubble table.md-table td[align="right"] { text-align: right; }
+.msg-bubble table.md-table.has-column-widths {
+  table-layout: fixed;
+}
+.msg-bubble table.md-table.has-column-widths th,
+.msg-bubble table.md-table.has-column-widths td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.md-column-resize {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0;
+  width: 10px;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+  outline: none;
+}
+.md-column-resize::after {
+  content: "";
+  position: absolute;
+  inset-block: 5px;
+  inset-inline-end: 3px;
+  width: 2px;
+  border-radius: var(--radius-round);
+  background: var(--color-rule-2);
+  opacity: 0;
+}
+.md-table:hover .md-column-resize::after,
+.md-column-resize:focus-visible::after { opacity: 1; }
+.md-column-resize:hover::after,
+.md-column-resize:focus-visible::after,
+.md-column-resize.is-resizing::after { background: var(--color-accent); opacity: 1; }
+.md-table.is-resizing-column,
+.md-table.is-resizing-column * {
+  cursor: col-resize;
+  user-select: none;
+}
 .msg-bubble del {
   color: var(--color-muted);
   text-decoration: line-through;

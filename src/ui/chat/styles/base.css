@@ -1134,8 +1134,7 @@ html:not(.ui-ready) .chat-sidebar {
 .convo-item.is-drag-before::before { top: -1px; }
 .convo-item.is-drag-after::after { bottom: -1px; }
 .convo-title {
-  container-type: inline-size;
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-width: 0;
   overflow: hidden;
 }
@@ -1158,7 +1157,7 @@ html:not(.ui-ready) .chat-sidebar {
 }
 @keyframes convo-title-marquee {
   0%, 14% { transform: translateX(0); }
-  86%, 100% { transform: translateX(min(0px, calc(100cqi - 100%))); }
+  86%, 100% { transform: translateX(var(--marquee-distance, 0px)); }
 }
 @media (prefers-reduced-motion: reduce) {
   .convo-item.can-marquee-title:hover .convo-title:not(.is-typing-title) > .convo-title-text,
