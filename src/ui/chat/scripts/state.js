@@ -82,10 +82,6 @@ const CHAT_BACKGROUND_POSITIONS = [
 ];
 const PROJECT_MEMORY_MODES = ['default', 'project_only'];
 const APPROVAL_MODES = ['manual', 'auto_safe'];
-const SIBLING_CHAT_MAX = 8;
-const SIBLING_CHAT_BUDGET = 10000;
-const SIBLING_MSG_CHARS = 420;
-const SIBLING_MSGS_PER_CHAT = 4;
 const DEFAULT_PROFILE_ID = 'personal';
 const PROFILE_CONTEXT_KEYS = ['about', 'instructions', 'memory'];
 const DEFAULT_SETTINGS = {
@@ -93,6 +89,7 @@ const DEFAULT_SETTINGS = {
   about: '',
   instructions: '',
   memory: '',
+  chatRetrieval: true,
   thinking: 'collapsed', // collapsed | hidden | visible
   thinkingEffort: 'auto', // auto | off | a provider-advertised effort
   enterSends: true,
@@ -1855,6 +1852,7 @@ function normalizeSettings(parsed) {
     about: typeof parsed.about === 'string' ? parsed.about : '',
     instructions: typeof parsed.instructions === 'string' ? parsed.instructions : '',
     memory: typeof parsed.memory === 'string' ? parsed.memory : '',
+    chatRetrieval: parsed.chatRetrieval !== false,
     thinking: ['collapsed', 'hidden', 'visible'].includes(parsed.thinking)
       ? parsed.thinking
       : 'collapsed',
@@ -2447,8 +2445,9 @@ function formatPromptToday(now = new Date()) {
 }
 
 function buildSystemPrompt(projectIdOverride, opts = {}) {
-  const excludeConvoId = opts.excludeConvoId || opts.excludeConvoId || null;
   const convo = opts.convo || null;
+  const temporary = convo ? !!convo.incognito
+    : typeof isIncognitoContext === 'function' && isIncognitoContext();
   const speakerBot = opts.speakerBot || opts.speakerBot || null;
   const P = window.GOPHER_PROMPTS || {};
   const fill = window.fillPrompt || ((t) => t);
@@ -2481,13 +2480,13 @@ function buildSystemPrompt(projectIdOverride, opts = {}) {
     parts.push(fill(P['chat.globalInstructions'], { instructions }));
   }
 
-  if (!projectOnly) {
+  if (!temporary && !projectOnly) {
     parts.push(fill(P['chat.globalMemory'], {
       memory: globalMemory || '(empty)',
     }));
   }
 
-  if (project) {
+  if (project && !temporary) {
     const memory = project.memory.trim();
     const scopeNote = projectOnly
       ? (P['chat.projectMemoryScopeProjectOnly'] || '')
@@ -2498,11 +2497,9 @@ function buildSystemPrompt(projectIdOverride, opts = {}) {
       memory: memory || '(empty)',
     }));
 
-    const continuity = buildProjectContinuityDigest(project.id, excludeConvoId);
-    if (continuity) parts.push(continuity);
   }
 
-  if (convo && typeof botSystemPromptParts === 'function') {
+  if (convo && !temporary && typeof botSystemPromptParts === 'function') {
     botSystemPromptParts(convo, speakerBot).forEach((part) => {
       if (part) parts.push(part);
     });
@@ -2539,51 +2536,6 @@ function messagePlainExcerpt(message, maxChars) {
   if (!content) return '';
   if (content.length > maxChars) return content.slice(0, Math.max(0, maxChars - 1)) + '…';
   return content;
-}
-
-/** Recent sibling-chat excerpts so project chats share continuity (minus file sources). */
-function buildProjectContinuityDigest(projectId, excludeConvoId) {
-  if (!projectId) return null;
-  const siblings = conversations
-    .filter((convo) => convo.projectId === projectId && convo.id !== excludeConvoId)
-    .filter((convo) => Array.isArray(convo.messages) && convo.messages.some((m) => (
-      m && (m.role === 'user' || m.role === 'assistant') && messagePlainExcerpt(m, SIBLING_MSG_CHARS)
-    )))
-    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
-    .slice(0, SIBLING_CHAT_MAX);
-  if (!siblings.length) return null;
-
-  let remaining = SIBLING_CHAT_BUDGET;
-  const blocks = [];
-  for (const convo of siblings) {
-    if (remaining < 180) break;
-    const title = (convo.title || 'Untitled').trim() || 'Untitled';
-    const lines = ['### Chat: "' + title + '"'];
-    const msgs = (convo.messages || [])
-      .filter((m) => m && (m.role === 'user' || m.role === 'assistant'))
-      .slice(-SIBLING_MSGS_PER_CHAT);
-    for (const message of msgs) {
-      const text = messagePlainExcerpt(message, SIBLING_MSG_CHARS);
-      if (!text) continue;
-      lines.push((message.role === 'user' ? 'User' : 'Assistant') + ': ' + text);
-    }
-    if (lines.length < 2) continue;
-    let block = lines.join('\n');
-    if (block.length > remaining) {
-      block = block.slice(0, Math.max(0, remaining - 1)) + '…';
-      blocks.push(block);
-      break;
-    }
-    blocks.push(block);
-    remaining -= block.length + 2;
-  }
-  if (!blocks.length) return null;
-  const P = window.GOPHER_PROMPTS || {};
-  const fill = window.fillPrompt || ((t) => t);
-  return fill(P['chat.projectContinuity'] || (
-    'Other chats in this project (for multi-chat continuity — prior context from sibling chats, not the current conversation):\n' +
-    'Use these when the user refers to earlier work in the project. Do not invent details that are not present.\n\n{{blocks}}'
-  ), { blocks: blocks.join('\n\n') });
 }
 
 function emptyBotActions() {

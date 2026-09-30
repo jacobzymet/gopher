@@ -986,7 +986,15 @@ async fn chat_completions(
         .and_then(|length| usize::try_from(length).ok());
     // LiveHub::start atomically checks whether an existing turn blocks this one.
     // A cancelled turn may still be finishing teardown and is replaceable.
-    let stream = match serde_json::from_value::<AgentRequest>(body.clone()) {
+    let parsed_request = serde_json::from_value::<AgentRequest>(body.clone()).map(|mut request| {
+        if request.skills.chat_retrieval
+            && let Some(id) = conversation_id.as_deref()
+        {
+            request.skills.chat_history = agent::chats::ChatHistory::open(app.clone(), id);
+        }
+        request
+    });
+    let stream = match parsed_request {
         Ok(mut request) if agent::should_run_agent(&request, &user_skills) => {
             if request.messages.is_empty() {
                 return Err(ApiError::bad_request("messages must not be empty"));

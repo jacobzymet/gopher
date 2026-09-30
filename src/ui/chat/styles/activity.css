@@ -331,6 +331,14 @@
 .agent-step-result.is-short {
   white-space: pre-wrap;
 }
+.chat-source { margin-top: 0.65rem; }
+.chat-source-link { color: var(--color-ink-2); text-decoration: underline; text-underline-offset: 0.18em; }
+.chat-source-link:focus-visible { outline: 2px solid var(--color-ink); outline-offset: 3px; }
+.chat-source-meta { display: block; color: var(--color-muted); font-size: var(--text-xs); }
+.chat-source-excerpt { margin-top: 0.25rem; }
+.chat-source-excerpt summary { cursor: pointer; }
+.chat-source-excerpt pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; margin: 0.4rem 0; }
+.msg.is-chat-source { outline: 2px solid var(--color-ink-2); outline-offset: 4px; border-radius: 0.5rem; }
 .agent-step-shot {
   margin-top: 0.55rem;
   border-radius: 0.5rem;

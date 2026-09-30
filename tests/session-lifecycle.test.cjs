@@ -38,6 +38,7 @@ function stateDeclaration(name) {
 
 function resumeHarness() {
   const state = vm.createContext({
+    performance: { now: () => 100 },
     activeStreams: new Map(),
     outboundStarting: new Set(),
     serverReady: true,
@@ -123,6 +124,7 @@ test('a vanished live turn removes its Processing row and releases the composer'
 test('state polling immediately retires a Processing row the server no longer owns', async () => {
   const state = resumeHarness();
   const stream = state.beginLiveStream(state.conversations[0], { turnId: 'lost-turn' });
+  stream.serverTurnSeenAt = 1;
   await state.resumeLiveTurns([]);
   assert.equal(stream.discarded, true);
   assert.equal(stream.controller.signal.aborted, true);

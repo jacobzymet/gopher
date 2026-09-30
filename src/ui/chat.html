@@ -607,8 +607,17 @@
               <div class="settings-row-stack">
                 <label class="field-label" for="settingMemory">Shared memory</label>
                 <textarea class="field-textarea" id="settingMemory" style="min-height:9rem" placeholder="Durable facts the model should remember across all chats and projects…"></textarea>
-                <p class="field-hint">All chats and projects in this profile use this memory. A project with project-only memory does not use it. The model can replace this memory with a &lt;global_memory_update&gt; block.</p>
+                <p class="field-hint">Saved chats and projects in this profile use this memory. Ghost chats and projects with project-only memory do not use it. The model can replace this memory with a &lt;global_memory_update&gt; block.</p>
               </div>
+            </div>
+            <div class="settings-section">
+              <h3 class="settings-section-title">Past conversations</h3>
+              <label class="field-check">
+                <input type="checkbox" id="settingChatRetrieval" checked>
+                <span>Search and reference past chats</span>
+              </label>
+              <p class="field-hint">Enabled by default, including outside Agent mode. The model can search and read other chats when useful. Activity shows the query, retrieved excerpts, and links to original messages. Retrieved text is sent to the selected model provider.</p>
+              <p class="field-hint">Project chats search only their project; other chats search non-project chats in the current profile. Temporary Ghost chats never search, appear in results, or use or update saved memory. Turning this off blocks future retrieval across the app; saved memory above is managed separately.</p>
             </div>
           </section>
 

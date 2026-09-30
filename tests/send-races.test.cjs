@@ -111,6 +111,7 @@ function conflictHarness() {
   const convo = { id: 'chat-1', messages: [user] };
   const queue = [];
   const events = [];
+  const requests = [];
   const fetchQueue = [];
   const state = vm.createContext({
     activeStreams: new Map(), outboundStarting: new Set(), outboundStartEpochs: new Map(),
@@ -138,7 +139,7 @@ function conflictHarness() {
       if (signal?.aborted) return Promise.resolve();
       return new Promise(() => {});
     },
-    fetch: () => new Promise((resolve) => { fetchQueue.push(resolve); }),
+    fetch: (url, options) => new Promise((resolve) => { requests.push(JSON.parse(options.body)); fetchQueue.push(resolve); }),
     scheduleCancel: async () => { events.push('cancel'); return true; },
     discardLiveStreamRow: () => events.push('discard'),
     getOutboundQueue: () => queue, saveConversations() {}, renderOutboundQueue() {}, updateComposerHint() {},
@@ -161,7 +162,7 @@ function conflictHarness() {
     queueItem: { id: 'queued-1' }, previousTitle: 'title',
   });
   return {
-    state, queue, events, convo, run, fetchQueue,
+    state, queue, events, convo, run, fetchQueue, requests,
     respond(status, extra = {}) {
       const resolve = fetchQueue.shift();
       assert.ok(resolve, 'no pending completions request');
@@ -169,6 +170,34 @@ function conflictHarness() {
     },
   };
 }
+
+test('temporary turns exclude retrieval and persistent conversation identifiers', async () => {
+  const h = conflictHarness();
+  h.convo.incognito = true;
+  h.state.settings.chatRetrieval = true;
+  const pending = h.run();
+  await new Promise((resolve) => setImmediate(resolve));
+  const request = h.requests[0];
+  assert.equal(request.skills.chat_retrieval, false);
+  assert.equal(request.conversation_id, undefined);
+  assert.equal(request.turn_id, undefined);
+  h.respond(200);
+  await pending;
+});
+
+test('normal turns enable retrieval by default and respect the current off setting', async () => {
+  for (const enabled of [true, false]) {
+    const h = conflictHarness();
+    h.state.settings.chatRetrieval = enabled;
+    const pending = h.run();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(h.requests[0].skills.chat_retrieval, enabled);
+    assert.equal(h.requests[0].agent, enabled);
+    assert.equal(h.requests[0].conversation_id, h.convo.id);
+    h.respond(200);
+    await pending;
+  }
+});
 
 test('conflict cancels the occupant and retries instead of attaching to it', async () => {
   const h = conflictHarness();

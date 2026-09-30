@@ -1368,6 +1368,7 @@ function fillSettingsFormFromState() {
   document.getElementById('settingAbout').value = settings.about;
   document.getElementById('settingInstructions').value = settings.instructions;
   document.getElementById('settingMemory').value = settings.memory || '';
+  document.getElementById('settingChatRetrieval').checked = settings.chatRetrieval !== false;
   document.getElementById('settingThinking').value = settings.thinking;
   document.getElementById('settingThinkingEffort').value = settings.thinkingEffort;
   document.getElementById('settingAutoOpenTraceSidebar').checked = settings.autoOpenTraceSidebar !== false;
@@ -1424,6 +1425,7 @@ function readSettingsForm() {
     about: document.getElementById('settingAbout').value,
     instructions: document.getElementById('settingInstructions').value,
     memory: document.getElementById('settingMemory').value,
+    chatRetrieval: document.getElementById('settingChatRetrieval').checked,
     thinking: document.getElementById('settingThinking').value,
     thinkingEffort: document.getElementById('settingThinkingEffort').value,
     autoOpenTraceSidebar: document.getElementById('settingAutoOpenTraceSidebar').checked,

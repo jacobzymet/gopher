@@ -1,0 +1,1 @@
+List titles, dates, and source links for other eligible chats in the current profile/project scope. Does not return message bodies. Incognito chats and the current conversation are excluded. Use returned chat_id with read_chat; paginate with next_cursor.

@@ -1147,7 +1147,9 @@ function resolveTurnSkills(mentionIds) {
   const filesystem = !!settings.agentMode && !!settings.skillFilesystem;
   const terminalCap = !!settings.agentMode && !!settings.skillTerminal;
   const browserCap = !!settings.agentMode && !!settings.skillBrowser;
+  const chatRetrieval = settings.chatRetrieval !== false;
   const useAgent = deep
+    || chatRetrieval
     || webSearch
     || fetchUrl
     || filesystem
@@ -1155,6 +1157,7 @@ function resolveTurnSkills(mentionIds) {
     || browserCap
     || (!!settings.agentMode && userSkills.some((skill) => skill.enabled));
   const skills = {
+      chat_retrieval: chatRetrieval,
       web_search: webSearch,
       web_search_depth: WEB_SEARCH_DEPTHS.includes(settings.webSearchDepth)
         ? settings.webSearchDepth

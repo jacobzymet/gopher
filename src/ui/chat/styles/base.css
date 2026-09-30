@@ -1156,7 +1156,7 @@ html:not(.ui-ready) .chat-sidebar {
   animation-delay: 0.28s;
 }
 @keyframes convo-title-marquee {
-  0%, 14% { transform: translateX(0); }
+  0% { transform: translateX(0); }
   86%, 100% { transform: translateX(var(--marquee-distance, 0px)); }
 }
 @media (prefers-reduced-motion: reduce) {

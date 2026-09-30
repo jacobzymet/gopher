@@ -34,7 +34,6 @@ pub mod chat {
         include_str!("../../prompts/chat/project-memory-scope-project-only.md");
     pub const PROJECT_MEMORY_SCOPE_DEFAULT: &str =
         include_str!("../../prompts/chat/project-memory-scope-default.md");
-    pub const PROJECT_CONTINUITY: &str = include_str!("../../prompts/chat/project-continuity.md");
     pub const BOT_IDENTITY: &str = include_str!("../../prompts/chat/bot-identity.md");
     pub const BOT_MEMORY: &str = include_str!("../../prompts/chat/bot-memory.md");
     pub const BOT_GROUP: &str = include_str!("../../prompts/chat/bot-group.md");
@@ -73,6 +72,7 @@ pub mod agent {
         include_str!("../../prompts/agent/fetch-url-with-search.md");
     pub const FETCH_URL_ALONE: &str = include_str!("../../prompts/agent/fetch-url-alone.md");
     pub const CITATIONS: &str = include_str!("../../prompts/agent/citations.md");
+    pub const CHAT_RETRIEVAL: &str = include_str!("../../prompts/agent/chat-retrieval.md");
     pub const FILESYSTEM: &str = include_str!("../../prompts/agent/filesystem.md");
     pub const FILESYSTEM_NO_WORKSPACE: &str =
         include_str!("../../prompts/agent/filesystem-no-workspace.md");
@@ -118,6 +118,9 @@ pub mod tools {
     pub const ACTIVATE_SKILL: &str = include_str!("../../prompts/tools/activate-skill.md");
     pub const READ_FILE: &str = include_str!("../../prompts/tools/read-file.md");
     pub const READ_TOOL_HISTORY: &str = include_str!("../../prompts/tools/read-tool-history.md");
+    pub const LIST_CHATS: &str = include_str!("../../prompts/tools/list-chats.md");
+    pub const SEARCH_CHATS: &str = include_str!("../../prompts/tools/search-chats.md");
+    pub const READ_CHAT: &str = include_str!("../../prompts/tools/read-chat.md");
     pub const LIST_DIR: &str = include_str!("../../prompts/tools/list-dir.md");
     pub const GLOB: &str = include_str!("../../prompts/tools/glob.md");
     pub const GREP: &str = include_str!("../../prompts/tools/grep.md");
@@ -160,7 +163,6 @@ pub fn frontend_js() -> &'static str {
                 "chat.projectMemoryScopeDefault",
                 chat::PROJECT_MEMORY_SCOPE_DEFAULT,
             ),
-            ("chat.projectContinuity", chat::PROJECT_CONTINUITY),
             ("chat.botIdentity", chat::BOT_IDENTITY),
             ("chat.botMemory", chat::BOT_MEMORY),
             ("chat.botGroup", chat::BOT_GROUP),

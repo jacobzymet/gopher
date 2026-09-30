@@ -3,6 +3,7 @@
 
 pub mod browser;
 pub mod chat;
+pub(crate) mod chats;
 mod context;
 pub mod fs;
 pub mod media;
@@ -487,6 +488,11 @@ fn clamp_page_fetch_chars(value: usize) -> usize {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AgentSkills {
+    #[serde(default = "default_chat_retrieval")]
+    pub chat_retrieval: bool,
+    /// Bound by the server to the persisted current conversation; never client data.
+    #[serde(skip)]
+    pub(crate) chat_history: Option<Arc<chats::ChatHistory>>,
     #[serde(default)]
     pub web_search: bool,
     #[serde(default)]
@@ -542,6 +548,8 @@ pub struct AgentSkills {
 impl Default for AgentSkills {
     fn default() -> Self {
         Self {
+            chat_retrieval: true,
+            chat_history: None,
             web_search: false,
             web_search_depth: WebSearchDepth::default(),
             web_search_backend: WebSearchBackend::default(),
@@ -572,7 +580,12 @@ impl Default for AgentSkills {
 
 impl AgentSkills {
     pub fn any_enabled(&self) -> bool {
-        self.web_search || self.fetch_url || self.filesystem || self.terminal || self.browser
+        self.web_search
+            || self.fetch_url
+            || self.filesystem
+            || self.terminal
+            || self.browser
+            || self.chat_history.is_some()
     }
 
     fn filesystem_ready(&self) -> bool {
@@ -620,6 +633,10 @@ impl AgentSkills {
             default_web_search_region()
         }
     }
+}
+
+fn default_chat_retrieval() -> bool {
+    true
 }
 
 impl AgentRequest {
@@ -738,6 +755,9 @@ fn is_recoverable_tool(name: &str) -> bool {
             | "run_terminal"
             | "wait_terminal"
             | "read_tool_history"
+            | "list_chats"
+            | "search_chats"
+            | "read_chat"
             | "browser_navigate"
             | "browser_snapshot"
             | "browser_click"
@@ -849,6 +869,10 @@ async fn run_agent_loop(
                 "Deep research"
             } else if !request.force_tools.is_empty() {
                 "Agent · required skills"
+            } else if request.skills.chat_history.is_some()
+                && !request.skills.web_search && !request.skills.fetch_url
+                && !request.skills.filesystem && !request.skills.terminal && !request.skills.browser {
+                "Past-chat retrieval enabled"
             } else {
                 "Agent mode"
             }
@@ -1330,6 +1354,7 @@ fn capability_allowed(name: &str, skills: &AgentSkills, user_skills: &[UserSkill
         | "delete_file" | "apply_patch" => skills.filesystem_ready(),
         "run_terminal" | "wait_terminal" => skills.terminal_ready(),
         "read_tool_history" => skills.history.is_some(),
+        "list_chats" | "search_chats" | "read_chat" => skills.chat_history.is_some(),
         name if browser::is_browser_tool(name) => skills.browser,
         "show_image" => true,
         _ => false,
@@ -1346,7 +1371,15 @@ fn tool_risk(name: &str) -> &'static str {
 }
 
 fn needs_approval(name: &str, mode: ApprovalMode) -> bool {
-    if matches!(name, "ask_user" | "wait_terminal" | "read_tool_history") {
+    if matches!(
+        name,
+        "ask_user"
+            | "wait_terminal"
+            | "read_tool_history"
+            | "list_chats"
+            | "search_chats"
+            | "read_chat"
+    ) {
         return false;
     }
     match mode {
@@ -1357,6 +1390,9 @@ fn needs_approval(name: &str, mode: ApprovalMode) -> bool {
 
 fn tool_call_summary(call: &ToolCall) -> String {
     match call.name.as_str() {
+        "list_chats" => "Past chats in current scope".into(),
+        "search_chats" => call.arguments["query"].as_str().unwrap_or("").into(),
+        "read_chat" => call.arguments["chat_id"].as_str().unwrap_or("").into(),
         "web_search" => call
             .arguments
             .get("query")
@@ -1528,6 +1564,9 @@ fn agent_system_block(
     }
     if skills.web_search || skills.fetch_url {
         lines.push(trim_prompt(agent::CITATIONS).to_string());
+    }
+    if skills.chat_history.is_some() {
+        lines.push(trim_prompt(agent::CHAT_RETRIEVAL).to_string());
     }
     if skills.filesystem_ready() {
         lines.push(fill(
@@ -2369,6 +2408,35 @@ fn openai_tools_payload(
                 "max_bytes": { "type": "integer", "description": "Record page budget, 256–12000 bytes; the active context budget may lower it" }
             }), &[]));
     }
+    if skills.chat_history.is_some() {
+        let paging = json!({
+            "cursor": { "type": "integer", "minimum": 0, "description": "Returned next_cursor; default 0" },
+            "limit": { "type": "integer", "minimum": 1, "maximum": 20, "description": "Maximum results; default 5 for search/read, 10 for list" }
+        });
+        tools_out.push(function_tool(
+            "list_chats",
+            trim_prompt(tools::LIST_CHATS),
+            paging.clone(),
+            &[],
+        ));
+        let mut search = paging.clone();
+        search["query"] = json!({ "type": "string", "description": "Distinctive keywords; all must match the title or message" });
+        tools_out.push(function_tool(
+            "search_chats",
+            trim_prompt(tools::SEARCH_CHATS),
+            search,
+            &["query"],
+        ));
+        let mut read = paging;
+        read["chat_id"] = json!({ "type": "string", "description": "chat_id returned by search_chats or list_chats" });
+        read["char_offset"] = json!({ "type": "integer", "minimum": 0, "description": "Returned next_char_offset for a long message; default 0" });
+        tools_out.push(function_tool(
+            "read_chat",
+            trim_prompt(tools::READ_CHAT),
+            read,
+            &["chat_id"],
+        ));
+    }
     if skills.filesystem_ready() {
         tools_out.push(function_tool(
             "grep",
@@ -3151,6 +3219,19 @@ async fn execute_tool(
     user_skills: &[UserSkill],
 ) -> Result<ToolOutcome, String> {
     match call.name.as_str() {
+        "list_chats" | "search_chats" | "read_chat" => {
+            let history = skills
+                .chat_history
+                .clone()
+                .ok_or("Chat retrieval is unavailable")?;
+            let name = call.name.clone();
+            let args = call.arguments.clone();
+            let max_bytes = skills.tool_output_bytes;
+            tokio::task::spawn_blocking(move || history.execute(&name, &args, max_bytes))
+                .await
+                .map_err(|err| err.to_string())?
+                .map(ToolOutcome::text)
+        }
         "web_search" => {
             let query = call
                 .arguments
@@ -3436,6 +3517,9 @@ fn parallel_read(name: &str) -> bool {
             | "web_search"
             | "fetch_url"
             | "read_tool_history"
+            | "list_chats"
+            | "search_chats"
+            | "read_chat"
     )
 }
 

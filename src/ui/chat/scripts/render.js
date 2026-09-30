@@ -988,6 +988,9 @@ function isThinkingOpen(text) {
 }
 
 function skillLabel(name, args) {
+  if (name === 'list_chats') return 'List past chats';
+  if (name === 'search_chats') return 'Search past chats';
+  if (name === 'read_chat') return 'Read past chat';
   if (name === 'web_search') return 'Web search';
   if (name === 'fetch_url') return 'Fetch URL';
   if (name === 'ask_user') return 'Clarifying questions';
@@ -1034,6 +1037,9 @@ function toolBodyFromArgs(name, args) {
 }
 
 function skillLiveVerb(name, args) {
+  if (name === 'list_chats') return 'Listing past chats';
+  if (name === 'search_chats') return 'Searching past chats';
+  if (name === 'read_chat') return 'Reading past chat';
   const approval = args && args.approval;
   const executing = !!(args && args.executing);
   if (name === 'web_search') return 'Searching';
@@ -1099,7 +1105,7 @@ function liveToolStatusLabel(stream, payload) {
 }
 
 function skillToolIcon(name, args) {
-  if (name === 'web_search') {
+  if (name === 'web_search' || name === 'search_chats') {
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
   }
   if (name === 'fetch_url') {
@@ -1613,6 +1619,8 @@ async function submitToolApproval(id, allow) {
 }
 
 function skillDetailLabel(name) {
+  if (name === 'read_chat') return 'Chat';
+  if (name === 'list_chats') return 'Scope';
   if (name === 'fetch_url' || name === 'browser_navigate') return 'URL';
   if (name === 'activate_skill' || name === 'read_skill') return 'Skill';
   if (name === 'run_terminal') return 'Command';
@@ -1632,7 +1640,62 @@ function skillDetailLabel(name) {
   return 'Query';
 }
 
-function agentStepResultHtml(result) {
+function chatSourceTarget(href) {
+  try {
+    const url = new URL(String(href || ''), window.location.origin);
+    if (url.origin !== window.location.origin || !/^\/c\/[^/]+$/.test(url.pathname)) return null;
+    const id = decodeURIComponent(url.pathname.slice(3));
+    const raw = url.searchParams.get('message');
+    const message = raw != null && /^\d+$/.test(raw) && Number.isSafeInteger(Number(raw))
+      ? Number(raw) : null;
+    return { id, message };
+  } catch { return null; }
+}
+
+function scrollToChatSource(index) {
+  if (!Number.isSafeInteger(index) || index < 0) return;
+  stickToBottom = false;
+  userScrollOverride = true;
+  requestAnimationFrame(() => {
+    const row = chatThread.querySelector('.msg[data-msg-index="' + index + '"]');
+    if (!row) return;
+    row.scrollIntoView({ behavior: 'instant', block: 'center' });
+    row.classList.add('is-chat-source');
+    row.setAttribute('tabindex', '-1');
+    row.focus({ preventScroll: true });
+    window.setTimeout(() => row.classList.remove('is-chat-source'), 2400);
+  });
+}
+
+function chatRetrievalResultHtml(result) {
+  let data;
+  try { data = JSON.parse(String(result || '')); } catch { return ''; }
+  if (!Array.isArray(data?.results)) return '';
+  const sources = data.results.map((item) => {
+    const target = chatSourceTarget(item.url);
+    if (!target || target.id !== item.chat_id) return '';
+    const excerpt = String(item.excerpt ?? item.content ?? '');
+    const role = item.role === 'user' ? 'User' : item.role === 'assistant' ? 'Assistant' : '';
+    const label = String(item.title || 'Untitled chat');
+    const date = Number(item.updated_at);
+    const when = Number.isFinite(date) && date > 0 ? new Date(date).toLocaleDateString() : '';
+    return '<div class="chat-source">' +
+      '<a class="chat-source-link" href="' + escapeHtml(item.url) + '">' + escapeHtml(label) + '</a>' +
+      (role || when ? '<span class="chat-source-meta">' + escapeHtml([role, when].filter(Boolean).join(' · ')) + '</span>' : '') +
+      (excerpt ? '<details class="chat-source-excerpt"><summary>View retrieved text</summary><pre>' + escapeHtml(excerpt) + '</pre></details>' : '') +
+      (item.truncated ? '<span class="chat-source-meta">Partial message</span>' : '') + '</div>';
+  }).filter(Boolean);
+  return '<div class="agent-step-result chat-retrieval-result">' +
+    '<div>' + escapeHtml(data.scope || 'Past chats') + ' · ' + (sources.length ? sources.length + (sources.length === 1 ? ' source' : ' sources') : 'No matching messages') + '</div>' +
+    sources.join('') +
+    (data.next_cursor != null ? '<div class="chat-source-meta">More results available</div>' : '') + '</div>';
+}
+
+function agentStepResultHtml(result, name) {
+  if (name === 'list_chats' || name === 'search_chats' || name === 'read_chat') {
+    const html = chatRetrievalResultHtml(result);
+    if (html) return html;
+  }
   const text = String(result || '').trim();
   if (!text) return '';
   const expandable = text.length > 180 || (text.match(/\n/g) || []).length >= 3;
@@ -1739,7 +1802,7 @@ function agentStepHtml({
       (live && !resultText && executing
         ? '<div class="agent-step-await" aria-hidden="true"><span class="agent-step-await-bar"></span></div>'
         : '') +
-      agentStepResultHtml(result) +
+      agentStepResultHtml(result, name) +
     '</div>',
     {
       live: !!live,
@@ -2186,6 +2249,8 @@ function applyLocationRoute() {
       const convo = conversations.find((item) => item.id === route.id);
       if (convo) {
         selectConversation(convo.id);
+        const source = chatSourceTarget(window.location.href);
+        if (source) scrollToChatSource(source.message);
       } else if (locked) {
         activeId = null;
         draftIncognito = false;
@@ -3433,8 +3498,8 @@ function syncProjectMemoryModeControls(mode) {
   const hint = document.getElementById('projectMemoryModeHint');
   if (hint) {
     hint.textContent = value === 'project_only'
-      ? 'Project-only blocks long-term (global) memory. Sibling chats in this project still provide continuity.'
-      : 'Default uses long-term memory plus other chats in this project. Project-only keeps context inside the project.';
+      ? 'Project-only blocks shared memory. Past-chat retrieval, when enabled in Settings, stays inside this project.'
+      : 'Default uses shared and project memory. Past-chat retrieval, when enabled in Settings, stays inside this project.';
   }
 }
 
@@ -3620,6 +3685,9 @@ if (window.marked) {
         const label = this.parser.parseInline(tokens);
         if (!href || !/^(https?:|mailto:|\/|#)/i.test(href)) return label;
         const titleAttr = title ? (' title="' + escapeHtml(title) + '"') : '';
+        if (chatSourceTarget(href)) {
+          return '<a class="chat-source-link" href="' + escapeHtml(href) + '"' + titleAttr + '>' + label + '</a>';
+        }
         const favicon = citeFaviconUrl(href);
         if (favicon) {
           return '<a class="md-cite" href="' + escapeHtml(href) + '"' + titleAttr +
@@ -3638,6 +3706,7 @@ if (window.marked) {
 function citeFaviconUrl(href) {
   try {
     const url = new URL(String(href || ''), window.location.origin);
+    if (url.origin === window.location.origin) return '';
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
     if (!url.hostname) return '';
     return 'https://www.google.com/s2/favicons?domain=' +
@@ -3650,6 +3719,11 @@ function citeFaviconUrl(href) {
 if (window.DOMPurify) {
   window.DOMPurify.addHook('afterSanitizeAttributes', (node) => {
     if (node.tagName === 'A' && node.getAttribute('href')) {
+      if (chatSourceTarget(node.getAttribute('href'))) {
+        node.removeAttribute('target');
+        node.setAttribute('rel', 'noopener noreferrer');
+        return;
+      }
       node.setAttribute('target', '_blank');
       node.setAttribute('rel', 'noopener noreferrer');
     }
@@ -5092,12 +5166,17 @@ function bindConvoTitleMarquee() {
   if (!nav) return;
   convoTitleMarqueeBound = true;
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let hoveredItem = null;
+  let focusedItem = null;
+  let pointer = null;
+  const isActive = (item) => item === hoveredItem || item === focusedItem;
   const arm = (item) => {
     if (!item || reduced.matches) return;
     const title = item.querySelector(':scope > .convo-title');
     const text = title?.querySelector(':scope > .convo-title-text');
-    if (!text || title.classList.contains('is-typing-title')) return;
+    if (!text) return;
     resize.observe(title);
+    if (title.classList.contains('is-typing-title')) return;
     const padding = parseFloat(getComputedStyle(text).paddingInlineEnd) || 0;
     const overflow = text.scrollWidth - padding - title.getBoundingClientRect().width;
     if (overflow <= 1) {
@@ -5107,39 +5186,89 @@ function bindConvoTitleMarquee() {
       return;
     }
     const seconds = Math.min(12, Math.max(2.6, 1.35 + overflow / 42));
+    const tailPadding = parseFloat(getComputedStyle(document.documentElement).fontSize) / 2;
+    // Configure the endpoint before adding the class that starts the animation.
+    text.style.setProperty('--marquee-distance', -Math.ceil(overflow + tailPadding) + 'px');
     text.style.setProperty('--marquee-duration', seconds.toFixed(2) + 's');
     item.classList.add('can-marquee-title');
-    // The hover button animates wider, so measure the actual clip area on every resize.
-    const distance = Math.ceil(text.getBoundingClientRect().width - title.getBoundingClientRect().width);
-    text.style.setProperty('--marquee-distance', -Math.max(0, distance) + 'px');
   };
   const resize = new ResizeObserver((entries) => {
     for (const { target } of entries) {
       const item = target.closest('.convo-item');
-      if (item && nav.contains(item) && item.matches(':hover, :focus-within')) arm(item);
+      if (item && nav.contains(item) && isActive(item)) arm(item);
       else resize.unobserve(target);
     }
   });
   const release = (item) => {
-    if (!item || item.matches(':hover, :focus-within')) return;
+    if (!item || isActive(item)) return;
     const title = item.querySelector(':scope > .convo-title');
     if (title) resize.unobserve(title);
   };
+  let refreshFrame = null;
+  const refreshActive = () => {
+    if (refreshFrame !== null) return;
+    refreshFrame = requestAnimationFrame(() => {
+      refreshFrame = null;
+      if (pointer) {
+        const hit = document.elementFromPoint(pointer.x, pointer.y)?.closest('.convo-item');
+        const previous = hoveredItem;
+        hoveredItem = hit && nav.contains(hit) ? hit : null;
+        if (previous !== hoveredItem) release(previous);
+      }
+      if (focusedItem && !nav.contains(focusedItem)) {
+        const previous = focusedItem;
+        focusedItem = null;
+        release(previous);
+      }
+      for (const item of new Set([hoveredItem, focusedItem])) {
+        if (item && nav.contains(item)) arm(item);
+      }
+    });
+  };
+  // Title typing and sidebar redraws can finish while the pointer stays in place.
+  const changes = new MutationObserver((records) => {
+    if (records.some(({ type, target }) => (
+      type !== 'attributes' || target.matches('.convo-title, .convo-title-text')
+    ))) refreshActive();
+  });
+  changes.observe(nav, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['class'] });
   nav.addEventListener('pointerover', (event) => {
     const item = event.target.closest?.('.convo-item');
     if (!item || !nav.contains(item) || item.contains(event.relatedTarget)) return;
+    hoveredItem = item;
+    if (Number.isFinite(event.clientX) && Number.isFinite(event.clientY)) {
+      pointer = { x: event.clientX, y: event.clientY };
+    }
     arm(item);
+    refreshActive();
   });
   nav.addEventListener('focusin', (event) => {
-    arm(event.target.closest?.('.convo-item'));
+    focusedItem = event.target.closest?.('.convo-item') || null;
+    arm(focusedItem);
+    refreshActive();
   });
   nav.addEventListener('pointerout', (event) => {
     const item = event.target.closest?.('.convo-item');
-    if (item && !item.contains(event.relatedTarget)) release(item);
+    if (item && !item.contains(event.relatedTarget)) {
+      if (hoveredItem === item) hoveredItem = null;
+      release(item);
+    }
+  });
+  nav.addEventListener('pointermove', (event) => {
+    pointer = { x: event.clientX, y: event.clientY };
+  });
+  nav.addEventListener('pointerleave', () => {
+    pointer = null;
+    const previous = hoveredItem;
+    hoveredItem = null;
+    release(previous);
   });
   nav.addEventListener('focusout', (event) => {
     const item = event.target.closest?.('.convo-item');
-    if (item && !item.contains(event.relatedTarget)) requestAnimationFrame(() => release(item));
+    if (item && !item.contains(event.relatedTarget)) {
+      if (focusedItem === item) focusedItem = null;
+      release(item);
+    }
   });
 }
 

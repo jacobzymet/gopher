@@ -1875,7 +1875,7 @@ async function runAssistantTurn(convo, {
   }
   resetTraceAutoOpenState();
 
-  const turnSkills = skills || {
+  const turnSkills = { ...(skills || {
     web_search: !!settings.skillWebSearch,
     web_search_depth: WEB_SEARCH_DEPTHS.includes(settings.webSearchDepth)
       ? settings.webSearchDepth
@@ -1923,7 +1923,8 @@ async function runAssistantTurn(convo, {
     terminal: !!settings.skillTerminal,
     terminal_timeout_secs: Math.min(30, Math.max(5, Number(settings.terminalTimeoutSecs) || 30)),
     browser: !!settings.skillBrowser,
-  };
+  }), chat_retrieval: settings.chatRetrieval !== false && !convo.incognito };
+  if (turnSkills.chat_retrieval) useAgent = true;
   if (deepResearch) {
     useAgent = true;
     turnSkills.web_search = true;
@@ -2018,6 +2019,12 @@ async function runAssistantTurn(convo, {
 
   let response = null;
   try {
+    // New chats must be persisted before the server binds their retrieval scope.
+    if (turnSkills.chat_retrieval && typeof saveStore === 'function') {
+      saveStore({ immediate: true });
+      if (typeof storeWriteChain !== 'undefined') await storeWriteChain;
+      if (typeof settingsWriteChain !== 'undefined') await settingsWriteChain;
+    }
     for (let attempt = 0; attempt < 2; attempt += 1) {
       if (stream.controller.signal.aborted || stream.cancelled) break;
       response = await Promise.race([
@@ -3178,6 +3185,21 @@ chatThread.addEventListener('click', (event) => {
   if (!Number.isFinite(index)) return;
   selectTraceMessage(index, { animate: true, ensureOpen: false });
 });
+
+document.addEventListener('click', (event) => {
+  if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+  const link = event.target.closest?.('a[href]');
+  const source = link && chatSourceTarget(link.getAttribute('href'));
+  if (!source) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (!conversations.some((chat) => chat.id === source.id) || diskEncryptionLocked()) {
+    alert('This source chat is no longer available in the current profile.');
+    return;
+  }
+  selectConversation(source.id);
+  scrollToChatSource(source.message);
+}, true);
 
 document.addEventListener('click', (event) => {
   const allowBtn = event.target.closest('[data-tool-allow]');
