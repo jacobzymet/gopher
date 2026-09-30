@@ -465,10 +465,6 @@ fn probe_codex(stored: &str) -> (ProviderHealth, Vec<RemoteModelOption>) {
     }
 }
 
-/// Efforts the shared thinking control already knows how to send. Codex-only
-/// names such as `xhigh` and `ultra` stay in this file and are not advertised.
-const SHARED_THINKING_EFFORTS: &[&str] = &["low", "medium", "high", "max"];
-
 fn codex_catalog_models(body: &Value) -> Vec<RemoteModelOption> {
     let entries = body.get("models").and_then(|value| value.as_array());
     let Some(entries) = entries else {
@@ -538,27 +534,7 @@ fn codex_thinking_efforts(item: &Value) -> Vec<String> {
     else {
         return Vec::new();
     };
-    let mut efforts = Vec::new();
-    for level in levels {
-        let Some(effort) = level
-            .get("effort")
-            .and_then(|value| value.as_str())
-            .map(str::trim)
-            .filter(|effort| !effort.is_empty())
-        else {
-            continue;
-        };
-        let effort = effort.to_ascii_lowercase();
-        if !SHARED_THINKING_EFFORTS
-            .iter()
-            .any(|known| *known == effort)
-            || efforts.iter().any(|existing| existing == &effort)
-        {
-            continue;
-        }
-        efforts.push(effort);
-    }
-    efforts
+    crate::providers::normalize_thinking_efforts(levels)
 }
 
 /// Models already recorded by the Codex CLI on this machine. Used only when the
@@ -613,6 +589,7 @@ fn codex_model_option(
     wire: (Option<String>, Option<String>),
 ) -> RemoteModelOption {
     let controllable = !efforts.is_empty();
+    let can_disable = efforts.iter().any(|effort| effort == "none");
     let (reasoning_summary, reasoning_context) = if controllable {
         wire
     } else {
@@ -627,8 +604,12 @@ fn codex_model_option(
         label: model.to_string(),
         thinking_supported: controllable,
         thinking_control: controllable.then(|| "reasoning".to_string()),
-        thinking_efforts: efforts.to_vec(),
-        thinking_can_disable: false,
+        thinking_efforts: efforts
+            .iter()
+            .filter(|effort| *effort != "none")
+            .cloned()
+            .collect(),
+        thinking_can_disable: can_disable,
         reasoning_summary,
         reasoning_context,
         attachments_supported: false,
@@ -1111,7 +1092,7 @@ mod tests {
     }
 
     #[test]
-    fn codex_catalog_advertises_only_shared_reasoning_efforts() {
+    fn codex_catalog_preserves_advertised_reasoning_efforts() {
         let body = json!({
             "models": [
                 {
@@ -1164,7 +1145,10 @@ mod tests {
         let luna = &models[0];
         assert!(luna.thinking_supported);
         assert_eq!(luna.thinking_control.as_deref(), Some("reasoning"));
-        assert_eq!(luna.thinking_efforts, ["low", "medium", "high", "max"]);
+        assert_eq!(
+            luna.thinking_efforts,
+            ["low", "Medium", "high", "xhigh", "max", "ultra"]
+        );
         assert!(!luna.thinking_can_disable);
         assert_eq!(luna.reasoning_summary.as_deref(), Some("detailed"));
         assert_eq!(luna.reasoning_context.as_deref(), Some("all_turns"));
@@ -1178,6 +1162,26 @@ mod tests {
         assert!(models[2].thinking_control.is_none());
         assert!(models[2].thinking_efforts.is_empty());
         assert!(models[2].reasoning_summary.is_none());
-        assert!(!models[3].thinking_supported);
+        assert!(models[3].thinking_supported);
+        assert_eq!(models[3].thinking_efforts, ["xhigh", "ultra"]);
+    }
+
+    #[test]
+    fn codex_catalog_accepts_future_levels_and_explicit_disable() {
+        let models = codex_catalog_models(&json!({ "models": [{
+            "slug": "future-model",
+            "supported_reasoning_levels": [
+                { "effort": "none" }, { "effort": "provider-future-tier" },
+                { "effort": "provider-future-tier" }, { "effort": "" },
+                { "effort": 42 }
+            ]
+        }] }));
+        assert_eq!(models[0].thinking_efforts, ["provider-future-tier"]);
+        assert!(models[0].thinking_can_disable);
+        let mut request = json!({ "thinking_effort": "off" });
+        crate::providers::apply_thinking_control(&mut request, Some(&models[0]));
+        assert_eq!(request, json!({ "reasoning": { "effort": "none" } }));
+        let responses = crate::responses::openai_chat_to_responses(&request, true);
+        assert_eq!(responses["reasoning"]["effort"], "none");
     }
 }

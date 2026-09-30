@@ -378,6 +378,55 @@ async function withProviderBusy(button, label, work) {
   }
 }
 
+async function refreshModelCatalog(button) {
+  await withProviderBusy(button, 'Refreshing…', async () => {
+    const status = document.getElementById('chatModelRefreshStatus');
+    const report = (message) => {
+      if (!status) return;
+      status.textContent = message;
+      status.classList.remove('is-hidden');
+    };
+    report('Refreshing models from all connected providers…');
+    try {
+      const current = await providerApi('/api/providers');
+      const providers = (current.providers || []).filter((provider) =>
+        provider.base && (!provider.builtin || provider.token_set)
+      );
+      const results = await Promise.allSettled(providers.map((provider) =>
+        providerApi('/api/providers/test', {
+          method: 'POST',
+          body: JSON.stringify({
+            id: provider.id,
+            base: provider.base,
+            api_style: provider.api_style,
+            allow_insecure_tls: !!provider.allow_insecure_tls,
+          }),
+        })
+      ));
+      const refreshed = await providerApi('/api/providers');
+      updateInferenceState(refreshed.state);
+      syncProviderSettingsFromState(latestState);
+      const failed = results.filter((result) =>
+        result.status === 'rejected' || !result.value?.ok
+      ).length;
+      report(!providers.length
+        ? 'No connected providers to refresh.'
+        : failed
+          ? 'Refresh finished · ' + failed + (failed === 1 ? ' provider failed.' : ' providers failed.')
+            + ' Check Manage providers for details.'
+          : 'Models refreshed.');
+    } catch (error) {
+      report('Could not refresh models: ' + error.message);
+    }
+  });
+}
+
+document.getElementById('btnModelRefresh')?.addEventListener('click', (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  refreshModelCatalog(event.currentTarget);
+});
+
 async function mutateProvider(path, options) {
   const result = await providerApi(path, options);
   if (result?.state && typeof updateInferenceState === 'function') {

@@ -104,12 +104,11 @@ pub fn openai_chat_to_responses(payload: &Value, codex: bool) -> Value {
     body
 }
 
-/// Keep the reasoning object the catalog built. An effort of `none` means the
-/// caller asked to omit reasoning, so summary and context go with it.
+/// Keep the catalog's reasoning object, including an explicit disable effort.
 fn responses_reasoning(payload: &Value) -> Option<Value> {
     if let Some(object) = payload.get("reasoning").and_then(|value| value.as_object()) {
         let effort = object.get("effort").and_then(|value| value.as_str());
-        if effort.is_some_and(|effort| effort == "none" || effort.trim().is_empty()) {
+        if effort.is_some_and(|effort| effort.trim().is_empty()) {
             return None;
         }
         if object.is_empty() {
@@ -121,7 +120,7 @@ fn responses_reasoning(payload: &Value) -> Option<Value> {
         .get("reasoning_effort")
         .and_then(|value| value.as_str())
         .map(str::trim)
-        .filter(|effort| !effort.is_empty() && *effort != "none")?;
+        .filter(|effort| !effort.is_empty())?;
     Some(json!({ "effort": effort }))
 }
 
@@ -452,10 +451,12 @@ mod tests {
         let disabled = json!({
             "model": "gpt-5.6-sol",
             "messages": [{"role": "user", "content": "hey"}],
-            "reasoning": { "effort": "none", "summary": "auto", "context": "all_turns" }
+            "reasoning": { "effort": "none" }
         });
         let codex = openai_chat_to_responses(&disabled, true);
-        assert!(codex.get("reasoning").is_none());
+        assert_eq!(codex["reasoning"], json!({ "effort": "none" }));
+        let legacy = openai_chat_to_responses(&json!({ "reasoning_effort": "none" }), false);
+        assert_eq!(legacy["reasoning"], json!({ "effort": "none" }));
     }
 
     #[test]

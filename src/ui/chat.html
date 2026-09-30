@@ -240,11 +240,6 @@
                           <div class="think-menu is-hidden" id="thinkMenu" role="menu" aria-label="Thinking intensity">
                             <div class="think-menu-label">Intensity</div>
                             <button type="button" role="menuitemradio" data-effort="auto">Auto <span class="hint">default</span></button>
-                            <button type="button" role="menuitemradio" data-effort="off">Off <span class="hint">no think</span></button>
-                            <button type="button" role="menuitemradio" data-effort="low">Low <span class="hint">faster</span></button>
-                            <button type="button" role="menuitemradio" data-effort="medium">Medium</button>
-                            <button type="button" role="menuitemradio" data-effort="high">High <span class="hint">slower</span></button>
-                            <button type="button" role="menuitemradio" data-effort="max">Max</button>
                           </div>
                         </div>
                         <button type="button" class="btn-terminal" id="btnTerminal" aria-pressed="false" title="Open terminal" aria-label="Open terminal">
@@ -327,9 +322,11 @@
                           </div>
                           <p class="builtin-connect-status" role="status"></p>
                         </div>
+                        <p id="chatModelRefreshStatus" class="chat-model-refresh-status is-hidden" role="status"></p>
                         <div class="chat-model-menu-footer">
                           <span id="chatModelCatalogMeta">Available models</span>
                           <div>
+                            <button type="button" class="btn btn-ghost" id="btnModelRefresh">Refresh models</button>
                             <button type="button" class="btn btn-ghost" id="btnModelProviders">Manage providers</button>
                             <button type="button" class="btn" id="btnModelClose">Cancel</button>
                           </div>
@@ -744,11 +741,6 @@
                 <div>
                   <select class="field-select" id="settingThinkingEffort">
                     <option value="auto">Auto (model default)</option>
-                    <option value="off">Off</option>
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                    <option value="max">Maximum</option>
                   </select>
                   <p class="field-hint">Only the values that the selected model supports are available.</p>
                 </div>

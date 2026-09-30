@@ -1149,6 +1149,8 @@ html:not(.ui-ready) .chat-sidebar {
 .convo-item.can-marquee-title:focus-within .convo-title:not(.is-typing-title) > .convo-title-text {
   width: max-content;
   max-width: none;
+  /* Include breathing room in the travel distance so the last glyph clears the clip edge. */
+  padding-inline-end: 0.5rem;
   overflow: visible;
   text-overflow: clip;
   animation: convo-title-marquee var(--marquee-duration, 4.8s) ease-in-out infinite alternate;
@@ -1159,10 +1161,11 @@ html:not(.ui-ready) .chat-sidebar {
   86%, 100% { transform: translateX(min(0px, calc(100cqi - 100%))); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .convo-item.can-marquee-title:hover .convo-title > .convo-title-text,
-  .convo-item.can-marquee-title:focus-within .convo-title > .convo-title-text {
+  .convo-item.can-marquee-title:hover .convo-title:not(.is-typing-title) > .convo-title-text,
+  .convo-item.can-marquee-title:focus-within .convo-title:not(.is-typing-title) > .convo-title-text {
     width: auto;
     max-width: 100%;
+    padding-inline-end: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     animation: none;

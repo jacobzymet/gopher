@@ -62,7 +62,9 @@ function syncIdentityTitles(privacyOn) {
   });
 }
 
-const THINKING_EFFORTS = ['auto', 'off', 'low', 'medium', 'high', 'max'];
+function normalizeThinkingEffort(value) {
+  return typeof value === 'string' && value.trim() ? value.trim() : 'auto';
+}
 const WEB_SEARCH_DEPTHS = ['auto', 'off', 'light', 'standard', 'deep'];
 const WEB_SEARCH_PROVIDERS = ['auto', 'parallel', 'tinyfish', 'searxng', 'duckduckgo'];
 const WEB_SEARCH_PARALLEL_MODES = ['turbo', 'fast', 'basic', 'advanced'];
@@ -92,7 +94,7 @@ const DEFAULT_SETTINGS = {
   instructions: '',
   memory: '',
   thinking: 'collapsed', // collapsed | hidden | visible
-  thinkingEffort: 'auto', // auto | off | low | medium | high | max
+  thinkingEffort: 'auto', // auto | off | a provider-advertised effort
   enterSends: true,
   skillWebSearch: true,
   webSearchDepth: 'off', // off | auto | light | standard | deep
@@ -1856,9 +1858,7 @@ function normalizeSettings(parsed) {
     thinking: ['collapsed', 'hidden', 'visible'].includes(parsed.thinking)
       ? parsed.thinking
       : 'collapsed',
-    thinkingEffort: THINKING_EFFORTS.includes(parsed.thinkingEffort)
-      ? parsed.thinkingEffort
-      : DEFAULT_SETTINGS.thinkingEffort,
+    thinkingEffort: normalizeThinkingEffort(parsed.thinkingEffort),
     enterSends: parsed.enterSends !== false,
     skillWebSearch: parsed.skillWebSearch !== false,
     webSearchDepth: WEB_SEARCH_DEPTHS.includes(parsed.webSearchDepth)

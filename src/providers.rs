@@ -584,7 +584,7 @@ pub struct RemoteModelOption {
     /// reasoning may exist, but Gopher cannot safely control its intensity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thinking_control: Option<String>,
-    /// Exact effort values accepted by this model, normalized to the UI set.
+    /// Exact effort values advertised by this model, in catalog order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub thinking_efforts: Vec<String>,
     #[serde(default)]
@@ -632,12 +632,7 @@ pub fn apply_thinking_control(body: &mut serde_json::Value, model: Option<&Remot
     let Some(model) = model else { return };
     let effort = match requested.as_str() {
         "off" if model.thinking_can_disable => "none",
-        "low" | "medium" | "high" | "max"
-            if model
-                .thinking_efforts
-                .iter()
-                .any(|value| value == &requested) =>
-        {
+        _ if model.thinking_efforts.iter().any(|value| value == &requested) => {
             requested.as_str()
         }
         _ => return,
@@ -645,19 +640,21 @@ pub fn apply_thinking_control(body: &mut serde_json::Value, model: Option<&Remot
     match model.thinking_control.as_deref() {
         Some("reasoning") => {
             let mut reasoning = serde_json::json!({ "effort": effort });
-            if let Some(summary) = model
-                .reasoning_summary
-                .as_deref()
-                .map(str::trim)
-                .filter(|summary| !summary.is_empty())
+            if effort != "none"
+                && let Some(summary) = model
+                    .reasoning_summary
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|summary| !summary.is_empty())
             {
                 reasoning["summary"] = serde_json::json!(summary);
             }
-            if let Some(context) = model
-                .reasoning_context
-                .as_deref()
-                .map(str::trim)
-                .filter(|context| !context.is_empty())
+            if effort != "none"
+                && let Some(context) = model
+                    .reasoning_context
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|context| !context.is_empty())
             {
                 reasoning["context"] = serde_json::json!(context);
             }
@@ -1403,44 +1400,22 @@ fn thinking_capabilities_from_model_object(
     // the provider that produced it.
     if let Some(reasoning) = entry.get("reasoning") {
         if let Some(object) = reasoning.as_object() {
-            // Only trust an explicit boolean. Missing `mandatory` must not unlock Off.
-            let can_disable = object.get("mandatory").and_then(|v| v.as_bool()) == Some(false);
-            let efforts = match object.get("supported_efforts") {
+            let mut efforts = match object.get("supported_efforts") {
                 Some(serde_json::Value::Array(values)) => normalize_thinking_efforts(values),
-                // null = "host accepts its full set" — we only expose the shared UI
-                // subset that every such host is known to accept (never invent `max`).
+                // An unrestricted descriptor supplies no model-specific enum.
+                // Keep the existing protocol baseline; explicit lists are never capped.
                 Some(serde_json::Value::Null) => standard_thinking_efforts(),
                 _ => Vec::new(),
             };
+            let mandatory = object.get("mandatory").and_then(|v| v.as_bool());
+            let can_disable = mandatory != Some(true)
+                && (mandatory == Some(false) || efforts.iter().any(|effort| effort == "none"));
+            efforts.retain(|effort| effort != "none");
             return Some(ThinkingCapabilities {
                 supported: true,
                 control: (!efforts.is_empty() || can_disable).then(|| "reasoning".to_string()),
                 efforts,
                 can_disable,
-            });
-        }
-        if let Some(flag) = reasoning.as_bool() {
-            return Some(ThinkingCapabilities {
-                supported: flag,
-                ..Default::default()
-            });
-        }
-    }
-    // A parameter name proves reasoning exists, but does not prove which effort
-    // values are legal. Keep it informational unless richer metadata follows.
-    if let Some(params) = entry.get("supported_parameters").and_then(|v| v.as_array()) {
-        let has = |name: &str| params.iter().any(|p| p.as_str() == Some(name));
-        if has("reasoning_effort") {
-            return Some(ThinkingCapabilities {
-                supported: true,
-                ..Default::default()
-            });
-        }
-        if has("reasoning") || has("include_reasoning") || has("thinking") || has("thinking_budget")
-        {
-            return Some(ThinkingCapabilities {
-                supported: true,
-                ..Default::default()
             });
         }
     }
@@ -1449,12 +1424,11 @@ fn thinking_capabilities_from_model_object(
         if let Some(reasoning) = caps.get("reasoning") {
             if let Some(object) = reasoning.as_object() {
                 let options = object.get("allowed_options").and_then(|v| v.as_array());
-                let efforts = options
+                let mut efforts = options
                     .map(|values| normalize_thinking_efforts(values))
                     .unwrap_or_default();
-                let can_disable = options.is_some_and(|values| {
-                    values.iter().any(|value| value.as_str() == Some("none"))
-                });
+                let can_disable = efforts.iter().any(|value| value == "none");
+                efforts.retain(|value| value != "none");
                 return Some(ThinkingCapabilities {
                     supported: true,
                     control: (!efforts.is_empty() || can_disable)
@@ -1477,16 +1451,45 @@ fn thinking_capabilities_from_model_object(
             });
         }
     }
+    if let Some(flag) = entry.get("reasoning").and_then(|value| value.as_bool()) {
+        return Some(ThinkingCapabilities {
+            supported: flag,
+            ..Default::default()
+        });
+    }
+    // Parameter names are only hints. They must not mask the richer descriptor above.
+    if let Some(params) = entry.get("supported_parameters").and_then(|v| v.as_array()) {
+        if params.iter().any(|value| {
+            matches!(
+                value.as_str(),
+                Some("reasoning_effort" | "reasoning" | "include_reasoning" | "thinking" | "thinking_budget")
+            )
+        }) {
+            return Some(ThinkingCapabilities {
+                supported: true,
+                ..Default::default()
+            });
+        }
+    }
     None
 }
 
-fn normalize_thinking_efforts(values: &[serde_json::Value]) -> Vec<String> {
-    const UI_EFFORTS: &[&str] = &["low", "medium", "high", "max"];
-    UI_EFFORTS
-        .iter()
-        .filter(|effort| values.iter().any(|value| value.as_str() == Some(**effort)))
-        .map(|effort| (*effort).to_string())
-        .collect()
+pub(crate) fn normalize_thinking_efforts(values: &[serde_json::Value]) -> Vec<String> {
+    let mut efforts = Vec::new();
+    for value in values {
+        let Some(effort) = value
+            .as_str()
+            .or_else(|| value.get("effort").and_then(|v| v.as_str()))
+            .map(str::trim)
+            .filter(|effort| !effort.is_empty())
+        else {
+            continue;
+        };
+        if !efforts.iter().any(|existing| existing == effort) {
+            efforts.push(effort.to_string());
+        }
+    }
+    efforts
 }
 
 fn standard_thinking_efforts() -> Vec<String> {
@@ -2355,7 +2358,7 @@ mod tests {
         });
         let caps = thinking_capabilities_from_model_object(&entry).unwrap();
         assert_eq!(caps.control.as_deref(), Some("reasoning"));
-        assert_eq!(caps.efforts, ["low", "high"]);
+        assert_eq!(caps.efforts, ["high", "low"]);
         assert!(!caps.can_disable);
 
         let optional = serde_json::json!({
@@ -2407,6 +2410,58 @@ mod tests {
         let mut body = serde_json::json!({ "thinking_effort": "off" });
         apply_thinking_control(&mut body, Some(&disableable));
         assert_eq!(body, serde_json::json!({ "reasoning_effort": "none" }));
+    }
+
+    #[test]
+    fn advertised_efforts_survive_catalog_and_wire_without_an_allowlist() {
+        for effort in ["minimal", "xhigh", "ultra", "provider-future-tier"] {
+            let body = serde_json::json!({ "data": [{
+                "id": "arbitrary-model-name",
+                "reasoning": { "supported_efforts": [effort, "high", effort], "mandatory": true }
+            }] });
+            let catalog = catalog_from_models_body("https://example.com/v1", ApiStyle::Openai, &body);
+            assert_eq!(catalog[0].thinking_efforts, [effort, "high"]);
+            let mut request = serde_json::json!({ "thinking_effort": effort });
+            apply_thinking_control(&mut request, Some(&catalog[0]));
+            assert_eq!(request["reasoning"]["effort"], effort);
+            let responses = crate::responses::openai_chat_to_responses(&request, true);
+            assert_eq!(responses["reasoning"]["effort"], effort);
+
+            for control in ["reasoning_effort", "chat_template"] {
+                let model = reasoning_model(Some(control), &[effort], false);
+                let mut request = serde_json::json!({ "thinking_effort": effort });
+                apply_thinking_control(&mut request, Some(&model));
+                let sent = if control == "chat_template" {
+                    &request["chat_template_kwargs"]["reasoning_effort"]
+                } else {
+                    &request["reasoning_effort"]
+                };
+                assert_eq!(sent, effort);
+            }
+        }
+    }
+
+    #[test]
+    fn richer_capabilities_are_not_masked_by_reasoning_hints() {
+        let entry = serde_json::json!({
+            "reasoning": true,
+            "supported_parameters": ["reasoning_effort"],
+            "capabilities": { "reasoning": { "allowed_options": ["none", "minimal", "xhigh", "future"] } }
+        });
+        let caps = thinking_capabilities_from_model_object(&entry).unwrap();
+        assert_eq!(caps.control.as_deref(), Some("reasoning_effort"));
+        assert_eq!(caps.efforts, ["minimal", "xhigh", "future"]);
+        assert!(caps.can_disable);
+    }
+
+    #[test]
+    fn mandatory_reasoning_rejects_disable_even_if_listed() {
+        let entry = serde_json::json!({
+            "reasoning": { "supported_efforts": ["none", "xhigh"], "mandatory": true }
+        });
+        let caps = thinking_capabilities_from_model_object(&entry).unwrap();
+        assert_eq!(caps.efforts, ["xhigh"]);
+        assert!(!caps.can_disable);
     }
 
     #[test]

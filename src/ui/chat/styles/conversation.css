@@ -1853,6 +1853,14 @@ button.chat-model-section-label:focus-visible {
   background: color-mix(in oklch, var(--color-accent) 13%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-accent) 26%, transparent);
 }
+.chat-model-refresh-status {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0.65rem 0.9rem;
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
 .chat-model-menu-footer {
   flex: 0 0 auto;
   min-height: 3.4rem;

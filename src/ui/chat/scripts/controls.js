@@ -1755,25 +1755,17 @@ async function importSkillFile(file) {
   openSkillEditor(body);
 }
 
-const THINKING_EFFORT_SUFFIX = {
-  auto: '',
-  off: 'off',
-  low: 'low',
-  medium: 'med',
-  high: 'high',
-  max: 'max',
-};
 let thinkMenuCloseTimer = 0;
 
 function syncThinkingEffortControls(effort) {
-  const value = THINKING_EFFORTS.includes(effort) ? effort : 'auto';
+  const value = availableThinkingEfforts.has(effort) ? effort : 'auto';
   const setting = document.getElementById('settingThinkingEffort');
   if (setting && setting.value !== value) setting.value = value;
 
   const btn = document.getElementById('btnThink');
   const effortEl = document.getElementById('btnThinkEffort');
   const menu = document.getElementById('thinkMenu');
-  const suffix = THINKING_EFFORT_SUFFIX[value] || '';
+  const suffix = value === 'auto' ? '' : (value === 'medium' ? 'med' : value);
   if (effortEl) {
     if (suffix) {
       effortEl.textContent = suffix;
@@ -2188,30 +2180,57 @@ function thinkingEffortForModel(model) {
   return efforts.includes(wanted) ? wanted : null;
 }
 
+function renderThinkingEffortOptions(values) {
+  const signature = JSON.stringify(values);
+  const menu = document.getElementById('thinkMenu');
+  const setting = document.getElementById('settingThinkingEffort');
+  for (const container of [menu, setting]) {
+    if (!container || container.dataset.efforts === signature) continue;
+    container.dataset.efforts = signature;
+    const items = values.map((value) => {
+      const item = document.createElement(container === menu ? 'button' : 'option');
+      item.textContent = value === 'auto' && container === setting
+        ? 'Auto (model default)'
+        : value.charAt(0).toUpperCase() + value.slice(1);
+      if (container === menu) {
+        item.type = 'button';
+        item.setAttribute('role', 'menuitemradio');
+        item.dataset.effort = value;
+      } else {
+        item.value = value;
+      }
+      return item;
+    });
+    if (container === menu) {
+      const label = document.createElement('div');
+      label.className = 'think-menu-label';
+      label.textContent = 'Intensity';
+      items.unshift(label);
+    }
+    container.replaceChildren(...items);
+  }
+}
+
 function syncComposerThinkVisibility(model) {
   const efforts = Array.isArray(model?.thinking_efforts) ? model.thinking_efforts : [];
   const canDisable = !!model?.thinking_can_disable;
   thinkingSupported = modelExposesThinkingControl(model);
   const onLoop = typeof isBotsSurface === 'function' && isBotsSurface();
-  const allowed = (value) => value === 'auto'
-    || (value === 'off' ? canDisable : efforts.includes(value));
-  availableThinkingEfforts = new Set(THINKING_EFFORTS.filter(allowed));
-  activeThinkingEffort = allowed(settings.thinkingEffort) ? settings.thinkingEffort : 'auto';
+  availableThinkingEfforts = new Set([
+    'auto',
+    ...(thinkingSupported && canDisable ? ['off'] : []),
+    ...(thinkingSupported ? efforts : []),
+  ]);
+  activeThinkingEffort = availableThinkingEfforts.has(settings.thinkingEffort) ? settings.thinkingEffort : 'auto';
+  renderThinkingEffortOptions([...availableThinkingEfforts]);
   const wrap = document.getElementById('composerThinkWrap');
   if (!wrap) return;
   wrap.classList.toggle('is-hidden', onLoop || !thinkingSupported);
   if (onLoop || !thinkingSupported) setThinkMenuOpen(false);
-  document.querySelectorAll('#thinkMenu [data-effort]').forEach((item) => {
-    item.classList.toggle('is-hidden', !allowed(item.dataset.effort));
-  });
   const effort = document.getElementById('settingThinkingEffort');
   const effortRow = effort && effort.closest('.settings-row');
   if (effort) {
     effort.disabled = !thinkingSupported;
-    effort.querySelectorAll('option').forEach((option) => {
-      option.hidden = !allowed(option.value);
-      option.disabled = !allowed(option.value);
-    });
     if (effortRow) {
       effortRow.style.opacity = thinkingSupported ? '' : '0.55';
       effortRow.title = thinkingSupported
