@@ -18,7 +18,8 @@ use tokio::net::TcpListener;
 #[derive(Debug, Parser)]
 #[command(
     name = "gopher",
-    version,
+    version = env!("GOPHER_BUILD_ID"),
+    long_version = concat!(env!("GOPHER_BUILD_ID"), "\nCommit: ", env!("GOPHER_BUILD_COMMIT")),
     about = "Gopher — a local, lightweight, open source LLM harness for humanity"
 )]
 struct Cli {
@@ -169,4 +170,24 @@ fn focus_running_instance(bind: SocketAddr) -> Option<()> {
         return None;
     }
     Some(())
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::*;
+    use clap::{CommandFactory, error::ErrorKind};
+
+    #[test]
+    fn version_output_identifies_the_source_commit() {
+        let error = Cli::command()
+            .try_get_matches_from(["gopher", "--version"])
+            .unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::DisplayVersion);
+        let text = error.to_string();
+        assert!(text.starts_with(concat!("gopher ", env!("GOPHER_BUILD_ID"))));
+        assert!(
+            text.lines()
+                .any(|line| line == concat!("Commit: ", env!("GOPHER_BUILD_COMMIT")))
+        );
+    }
 }

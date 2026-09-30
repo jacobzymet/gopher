@@ -635,7 +635,7 @@ impl App {
     }
 
     pub fn app_version(&self) -> &'static str {
-        env!("CARGO_PKG_VERSION")
+        crate::updates::build_label()
     }
 
     pub fn data_dir(&self) -> std::path::PathBuf {

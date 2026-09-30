@@ -352,7 +352,7 @@ async fn parallel_mcp_initialize(client: &reqwest::Client) -> Result<String, Str
                 "capabilities": {},
                 "clientInfo": {
                     "name": "gopher",
-                    "version": env!("CARGO_PKG_VERSION")
+                    "version": crate::updates::build_label()
                 }
             }
         }));

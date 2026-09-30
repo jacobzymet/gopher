@@ -1,222 +1,50 @@
 #!/bin/sh
-# Gopher installer for macOS.
-# Usage: curl -fsSL https://github.com/jacobzymet/gopher/releases/latest/download/install-macos.sh | sh
+# Build the current master commit locally. Requires Rust and Xcode Command Line Tools.
 set -eu
-(set -o pipefail) 2>/dev/null && set -o pipefail
-
-REPO="jacobzymet/gopher"
-GITHUB="https://github.com/${REPO}"
-BIN_NAME="gopher"
-
-usage() {
-  cat <<'EOF'
-Install Gopher from GitHub Releases (macOS).
-
-Usage:
-  install-macos.sh [options]
-  curl -fsSL https://github.com/jacobzymet/gopher/releases/latest/download/install-macos.sh | sh -s -- [options]
-
-Options:
-  --version, -v <ver>  Release to install (default: latest)
-  --dir, -d <path>     Install directory (default: ~/.local/bin)
-  --no-path            Skip PATH setup hints
-  -h, --help           Show this help
-
-Environment:
-  GOPHER_VERSION       Same as --version
-  GOPHER_INSTALL_DIR   Same as --dir
-  GITHUB_TOKEN         Optional token if GitHub rate-limits you
-EOF
-}
-
-err() {
-  printf 'error: %s\n' "$*" >&2
-  exit 1
-}
-
-info() {
-  printf '%s\n' "$*"
-}
-
-github_curl() {
-  if [ -n "${GITHUB_TOKEN:-}" ]; then
-    curl --connect-timeout 20 --retry 3 --retry-delay 1 -H "User-Agent: gopher-install" -H "Authorization: Bearer ${GITHUB_TOKEN}" "$@"
-  else
-    curl --connect-timeout 20 --retry 3 --retry-delay 1 -H "User-Agent: gopher-install" "$@"
-  fi
-}
-
-need_cmd() {
-  command -v "$1" >/dev/null 2>&1 || err "missing required command: $1"
-}
-
-version="${GOPHER_VERSION:-}"
-install_dir="${GOPHER_INSTALL_DIR:-}"
-no_path=0
-
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --version|-v)
-      [ $# -ge 2 ] || err "--version requires a value"
-      version=$2
-      shift 2
-      ;;
-    --dir|-d)
-      [ $# -ge 2 ] || err "--dir requires a value"
-      install_dir=$2
-      shift 2
-      ;;
-    --no-path)
-      no_path=1
-      shift
-      ;;
-    -h|--help)
-      usage
-      exit 0
-      ;;
-    *)
-      err "unknown argument: $1"
-      ;;
-  esac
+fail() { printf 'gopher: %s\n' "$*" >&2; exit 1; }
+install_dir=${GOPHER_INSTALL_DIR:-"$HOME/.local/bin"}
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --dir) [ "$#" -ge 2 ] || fail '--dir requires a directory'; install_dir=$2; shift 2 ;;
+        --help|-h) printf 'Usage: sh install-macos.sh [--dir DIRECTORY]\nBuilds master; requires Rust and Xcode Command Line Tools.\n'; exit 0 ;;
+        *) fail "Unknown option: $1" ;;
+    esac
 done
-
-os=$(uname -s)
-[ "$os" = Darwin ] || err "this installer is for macOS. On Linux run:
-  curl -fsSL https://github.com/jacobzymet/gopher/releases/latest/download/install-linux.sh | sh"
-
-need_cmd curl
-need_cmd tar
-need_cmd uname
-need_cmd mktemp
-
-[ -n "${HOME:-}" ] || err "HOME is not set"
-if [ -z "$install_dir" ]; then
-  install_dir="${HOME}/.local/bin"
-fi
-
-arch=$(uname -m)
-# A Rosetta-translated shell reports x86_64; prefer the native Apple Silicon build.
-if [ "$(sysctl -n sysctl.proc_translated 2>/dev/null || true)" = 1 ]; then
-  arch=arm64
-fi
-case "$arch" in
-  x86_64|amd64) arch=x86_64 ;;
-  aarch64|arm64) arch=aarch64 ;;
-  *) err "unsupported architecture: $(uname -m). Releases cover Apple Silicon and Intel." ;;
-esac
-target="${arch}-apple-darwin"
-
-if [ -z "$version" ]; then
-  info "Looking up the latest Gopher release..."
-  final=$(github_curl -fsSLI --max-time 30 -o /dev/null -w '%{url_effective}' "${GITHUB}/releases/latest") || err "could not resolve the latest release"
-  final=$(printf '%s' "$final" | tr -d '\r')
-  tag=${final##*/}
-else
-  tag=$version
-fi
-case "$tag" in
-  v*) ;;
-  *) tag="v${tag}" ;;
-esac
-version=${tag#v}
-[ -n "$version" ] || err "could not determine a release version"
-info "Installing Gopher ${version} (${target})..."
-
-WORKDIR=$(mktemp -d "${TMPDIR:-/tmp}/gopher-install.XXXXXX")
-cleanup() {
-  if [ -n "${WORKDIR:-}" ] && [ -d "$WORKDIR" ]; then
-    rm -rf "$WORKDIR"
-  fi
-}
-trap cleanup EXIT INT HUP
-
-asset=""
-url=""
-archive="${WORKDIR}/gopher.tgz"
-base="${GITHUB}/releases/download/${tag}"
-for prefix in gopher; do
-  candidate="${prefix}-${version}-${target}.tar.gz"
-  candidate_url="${base}/${candidate}"
-  if github_curl -fsSLI --max-time 30 -o /dev/null "$candidate_url" 2>/dev/null; then
-    asset=$candidate
-    url=$candidate_url
-    break
-  fi
-done
-[ -n "$asset" ] || err "no macOS archive found for ${tag} (${target})"
-info "Downloading ${asset}..."
-github_curl -fL --max-time 600 -o "$archive" "$url"
-
-sums="${WORKDIR}/SHA256SUMS"
-if github_curl -fsSL --max-time 30 -o "$sums" "${base}/SHA256SUMS" 2>/dev/null; then
-  expected=$(awk -v f="$asset" '$2 == f || $2 == "*"f || $2 == "./"f { print $1; exit }' "$sums")
-  [ -n "$expected" ] || err "SHA256SUMS does not list ${asset}"
-  actual=""
-  if command -v shasum >/dev/null 2>&1; then
-    actual=$(shasum -a 256 "$archive" | awk '{ print $1 }')
-  elif command -v sha256sum >/dev/null 2>&1; then
-    actual=$(sha256sum "$archive" | awk '{ print $1 }')
-  else
-    err "need shasum or sha256sum to verify ${asset}"
-  fi
-  [ "$actual" = "$expected" ] || err "checksum mismatch for ${asset}"
-  info "Checksum verified."
-fi
-
-extract="${WORKDIR}/extract"
-mkdir "$extract"
-tar -xzf "$archive" -C "$extract"
-
-src=""
-for candidate in "$extract"/*/gopher "$extract"/gopher; do
-  if [ -f "$candidate" ]; then
-    src=$candidate
-    break
-  fi
-done
-[ -n "$src" ] || err "archive did not contain a gopher binary"
-
+[ "$(uname -s)" = Darwin ] || fail 'Use install-linux.sh on Linux or install.ps1 on Windows.'
+command -v curl >/dev/null 2>&1 || fail 'Install curl, then retry.'
+cargo_bin=$(command -v cargo || true)
+if [ -z "$cargo_bin" ]; then cargo_bin="${CARGO_HOME:-$HOME/.cargo}/bin/cargo"; fi
+[ -x "$cargo_bin" ] && "$cargo_bin" --version >/dev/null 2>&1 || fail 'Install Rust with Cargo from https://rustup.rs, then retry.'
+rust_bin="$(dirname "$cargo_bin")/rustc"
+if [ ! -x "$rust_bin" ]; then rust_bin=$(command -v rustc || true); fi
+[ -n "$rust_bin" ] && "$rust_bin" --version >/dev/null 2>&1 || fail 'Install a Rust toolchain with rustup, then retry.'
+export PATH="$(dirname "$cargo_bin"):$PATH"
+xcode-select -p >/dev/null 2>&1 && xcrun --find clang >/dev/null 2>&1 || fail 'Install Xcode Command Line Tools with: xcode-select --install'
+target=$("$rust_bin" -vV | sed -n 's/^host: //p')
+[ -n "$target" ] || fail 'Could not determine the Rust host target.'
+commit=$(curl --fail --silent --show-error --location --connect-timeout 15 --max-time 60 \
+    -H 'Accept: application/vnd.github.sha' -H 'X-GitHub-Api-Version: 2022-11-28' \
+    https://api.github.com/repos/jacobzymet/gopher/commits/master)
+case "$commit" in *[!0-9a-fA-F]*|'') fail 'GitHub did not return a valid master commit.' ;; esac
+[ "${#commit}" -eq 40 ] || fail 'GitHub did not return a full master commit.'
+commit=$(printf '%s' "$commit" | tr 'A-F' 'a-f')
 mkdir -p "$install_dir"
-dest="${install_dir}/${BIN_NAME}"
-if command -v install >/dev/null 2>&1; then
-  install -m 755 "$src" "$dest"
-else
-  cp "$src" "$dest"
-  chmod 755 "$dest"
+install_dir=$(cd "$install_dir" && pwd -P)
+work=$(mktemp -d "${TMPDIR:-/tmp}/gopher-build.XXXXXXXX")
+trap 'rm -rf "$work"' EXIT HUP INT TERM
+cache="$HOME/Library/Caches/gopher/update-build/$target"
+printf 'Building Gopher master@%.12s locally. The first build may take several minutes.\n' "$commit"
+cd "$work"
+GOPHER_BUILD_COMMIT="$commit" "$cargo_bin" install --git https://github.com/jacobzymet/gopher \
+    --rev "$commit" --locked --force --bin gopher --target "$target" \
+    --root "$work/build" --target-dir "$cache" || fail 'Build failed; check Rust and Xcode Command Line Tools. Your installed app was not replaced.'
+identity=$("$work/build/bin/gopher" --version)
+printf '%s\n' "$identity" | grep -Fx "Commit: $commit" >/dev/null || fail 'The built app does not identify the requested commit.'
+staged=$(mktemp "$install_dir/.gopher-install.XXXXXXXX")
+if ! cp "$work/build/bin/gopher" "$staged" || ! chmod 755 "$staged" || ! mv -f "$staged" "$install_dir/gopher"; then
+    rm -f "$staged"
+    fail 'Could not install the locally built app.'
 fi
-
-if command -v xattr >/dev/null 2>&1; then
-  xattr -d com.apple.quarantine "$dest" 2>/dev/null || true
-fi
-
-info "Installed ${BIN_NAME} ${version} to ${dest}"
-
-if "$dest" --version >/dev/null 2>&1; then
-  "$dest" --version
-fi
-
-onpath=0
-case ":${PATH}:" in
-  *:"${install_dir}":*) onpath=1 ;;
-esac
-if [ "$no_path" -eq 0 ] && [ "$onpath" -eq 0 ]; then
-  info ""
-  info "${install_dir} is not on PATH. Add it for the current shell:"
-  info "  export PATH=\"${install_dir}:\$PATH\""
-  case "${SHELL:-}" in
-    */zsh)
-      info "Then persist it in ~/.zshrc."
-      ;;
-    */fish)
-      info "Or in fish:  fish_add_path ${install_dir}"
-      ;;
-    *)
-      info "Then persist it in ~/.zprofile or ~/.bash_profile."
-      ;;
-  esac
-fi
-
-info ""
-info "Launch Gopher with:  gopher"
-info "Browser UI:          gopher --browser"
-info "Headless:            gopher --headless"
+printf 'Installed %s to %s/gopher\n' "$identity" "$install_dir"
+case ":$PATH:" in *":$install_dir:"*) ;; *) printf 'Add %s to PATH to launch with: gopher\n' "$install_dir" ;; esac
+printf 'Run gopher. Check master and build future updates in Settings → App.\n'

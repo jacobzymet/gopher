@@ -1,11 +1,10 @@
 name: CI
 
 on:
-  workflow_call:
   push:
-    branches: [master, main]
+    branches: [master]
   pull_request:
-    branches: [master, main]
+    branches: [master]
 
 permissions:
   contents: read
@@ -68,7 +67,15 @@ jobs:
             libwebkit2gtk-4.1-dev
 
       - name: Test
-        run: cargo test --all-targets
+        run: cargo test --all-targets --locked
+
+      - name: Update UI and source installer regression tests
+        run: node --test tests/updates.test.cjs tests/source-installers.test.cjs
+
+      - name: Windows source installer regression tests
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: ./tests/source-installers.test.ps1
 
       - name: Backported GLib iterator regression tests (optimized)
         if: runner.os == 'Linux'

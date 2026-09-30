@@ -2185,7 +2185,7 @@ async fn focus(State(_app): State<SharedApp>) -> Result<Json<InstanceInfo>, ApiE
     let focused = crate::desktop::request_focus();
     Ok(Json(InstanceInfo {
         app: INSTANCE_MARKER,
-        version: env!("CARGO_PKG_VERSION"),
+        version: crate::updates::build_label(),
         focused,
     }))
 }

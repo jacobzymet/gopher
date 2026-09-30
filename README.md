@@ -13,52 +13,58 @@ Gopher does not bundle an inference engine. Connect Ollama, OpenAI, Gemini, Anth
 
 ## Install and run
 
-Install the latest GitHub Release with a platform script. The one-liners fetch the installer and the `gopher` archive from that release, not from the development branch. Archives cover Windows x64, Linux x64/ARM64, and macOS Apple Silicon/Intel.
+Gopher is built on your computer from the current **master** commit. Install [current stable Rust with Cargo](https://rustup.rs) and the native build tools for your platform first. The installers compile a pinned commit with the repository’s lockfile, then install the resulting executable. The first build may take several minutes.
 
 ### Windows
 
+Install Rust’s **MSVC** toolchain and [Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/) with **Desktop development with C++** and the Windows SDK. The desktop window also needs [Microsoft Edge WebView2](https://developer.microsoft.com/microsoft-edge/webview2/).
+
 ```powershell
-irm https://github.com/jacobzymet/gopher/releases/latest/download/install.ps1 | iex
+irm https://raw.githubusercontent.com/jacobzymet/gopher/master/install.ps1 | iex
 ```
 
-The script installs `gopher.exe` to `%LOCALAPPDATA%\gopher\bin` and adds that directory to your user PATH.
+The script installs to `%LOCALAPPDATA%\gopher\bin` and adds that directory to your user PATH.
 
 ### macOS
 
+Install Rust and Xcode Command Line Tools (`xcode-select --install`), then run:
+
 ```sh
-curl -fsSL https://github.com/jacobzymet/gopher/releases/latest/download/install-macos.sh | sh
+curl -fsSL https://raw.githubusercontent.com/jacobzymet/gopher/master/install-macos.sh | sh
 ```
 
 ### Linux
 
-```sh
-curl -fsSL https://github.com/jacobzymet/gopher/releases/latest/download/install-linux.sh | sh
-```
-
-The Linux desktop window needs WebKitGTK 4.1 at runtime. The script prints the package to install if it is missing.
-
-Unix scripts install to `~/.local/bin` by default. Inspect a script before piping it to a shell if you prefer.
-
-Pin a version or install directory with `GOPHER_VERSION` and `GOPHER_INSTALL_DIR`, or pass `--version` and `--dir`:
+Install Rust, a C/C++ compiler, pkg-config, and GLib, GTK3 and WebKitGTK 4.1 development packages. On Debian/Ubuntu:
 
 ```sh
-curl -fsSL https://github.com/jacobzymet/gopher/releases/latest/download/install-linux.sh | sh -s -- --version 0.3.0
+sudo apt install build-essential pkg-config libglib2.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev
+curl -fsSL https://raw.githubusercontent.com/jacobzymet/gopher/master/install-linux.sh | sh
 ```
 
-```powershell
-$env:GOPHER_VERSION = "0.3.0"
-irm https://github.com/jacobzymet/gopher/releases/latest/download/install.ps1 | iex
+The script prints equivalent Fedora and Arch requirements when dependencies are missing. Unix scripts install to `~/.local/bin`; add it to PATH if needed. Inspect scripts before running them if you prefer. Use `GOPHER_INSTALL_DIR` or `--dir DIRECTORY` to choose the destination; Windows also supports `--no-path`.
+
+### Stay up to date
+
+Run `gopher`. **Settings → App** compares this build’s commit with `master` on GitHub. **Build and restart** compiles the current master commit locally with Cargo, verifies the built app’s identity, installs it, and restarts. Build failures leave your installed app intact. Rust and native build tools must remain installed for updates. Compiled dependencies are cached for subsequent builds.
+
+Builds use commit IDs such as `master@0123456789ab`, also shown by `gopher --version`. Modified local checkouts are marked `+modified`; unknown source revisions can be rebuilt from master. Rerunning the platform installer also updates to master. There are no numbered release channels or binary downloads.
+
+To migrate an existing installation that checks numbered releases, install Rust and the build dependencies, then rerun the platform installer above.
+
+To work from a checkout with Git:
+
+```sh
+git clone --branch master https://github.com/jacobzymet/gopher
+cd gopher
+cargo run --locked
+# Later, with your local changes committed or otherwise saved:
+git switch master
+git pull --ff-only origin master
+cargo build --release --locked
 ```
 
-You can also download a platform archive from [GitHub Releases](https://github.com/jacobzymet/gopher/releases) and run the bundled executable.
-
-To run from source:
-
-```powershell
-cargo run
-```
-
-This starts a loopback-only control plane and, by default, opens Gopher in a native desktop window. When a newer GitHub Release exists, Gopher downloads that release archive, verifies its checksum, installs the `gopher` binary, and restarts. Source copies install into the user install folder used by the platform scripts. **Settings → App** shows the installed version, the latest GitHub Release, and an Install and restart button when an update can be applied.
+The default launch opens a native desktop window and starts a loopback-only control plane. Updates applied from a Cargo checkout install into the user install folder used by the platform scripts.
 
 | Option | Behavior |
 | --- | --- |
@@ -67,18 +73,7 @@ This starts a loopback-only control plane and, by default, opens Gopher in a nat
 | `--bind ADDR` | Override the loopback listen address |
 | `--config PATH` | Use another `config.toml`; other data is stored beside it |
 
-Default URL: `http://gopher.localhost:3930`. `/settings` redirects to **Settings → Providers**.
-
-### Platform requirements
-
-- Building from source requires [Rust](https://www.rust-lang.org/tools/install).
-- The Linux desktop window requires WebKitGTK 4.1; source builds also need its development packages:
-
-```sh
-sudo apt install pkg-config libglib2.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev
-```
-
-- The optional browser-control tool requires Chrome or Edge.
+Default URL: `http://gopher.localhost:3930`. `/settings` redirects to **Settings → Providers**. The optional browser-control tool requires Chrome or Edge.
 
 ## Web search
 
@@ -160,10 +155,10 @@ Workspace files, terminal history, downloads, OS caches, and browser profiles fr
 ## Build and verify
 
 ```powershell
-cargo build --release
-cargo fmt --all -- --check
-cargo clippy --all-targets -- -D warnings
-cargo test --all-targets
+cargo build --release --locked
+cargo fmt --package gopher -- --check
+cargo clippy --all-targets --locked -- -D warnings
+cargo test --all-targets --locked
 ```
 
 The binary embeds the UI, prompts, fonts loader, syntax highlighting, Markdown renderer, sanitizer, terminal assets, and icons.

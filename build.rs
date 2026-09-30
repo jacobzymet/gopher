@@ -1,4 +1,73 @@
-use std::{env, fs, path::PathBuf};
+use std::{env, fs, path::PathBuf, process::Command};
+
+fn git_output(args: &[&str]) -> Option<String> {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(env::var_os("CARGO_MANIFEST_DIR")?)
+        .output()
+        .ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+fn build_identity() {
+    println!("cargo:rerun-if-env-changed=GOPHER_BUILD_COMMIT");
+    for path in ["src", "vendor", "Cargo.toml", "Cargo.lock", "build.rs"] {
+        println!("cargo:rerun-if-changed={path}");
+    }
+    let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("manifest directory"));
+    let own_checkout = git_output(&["rev-parse", "--show-toplevel"])
+        .and_then(|path| fs::canonicalize(path).ok())
+        .zip(fs::canonicalize(&manifest).ok())
+        .is_some_and(|(checkout, source)| checkout == source);
+    // Track ordinary checkouts and worktree refs without borrowing a parent repository's identity.
+    if own_checkout {
+        for name in ["HEAD", "refs", "packed-refs", "index"] {
+            if let Some(path) = git_output(&["rev-parse", "--git-path", name])
+                && manifest.join(&path).exists()
+            {
+                println!("cargo:rerun-if-changed={path}");
+            }
+        }
+    }
+    let supplied = env::var("GOPHER_BUILD_COMMIT").ok();
+    let commit = supplied
+        .clone()
+        .or_else(|| {
+            own_checkout
+                .then(|| git_output(&["rev-parse", "HEAD"]))
+                .flatten()
+        })
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    assert!(
+        commit.is_empty()
+            || (commit.len() == 40 && commit.bytes().all(|byte| byte.is_ascii_hexdigit())),
+        "GOPHER_BUILD_COMMIT must be a full Git commit hash"
+    );
+    let dirty = supplied.is_none()
+        && own_checkout
+        && git_output(&["status", "--porcelain", "--untracked-files=no"])
+            .is_some_and(|output| !output.is_empty());
+    let label = if commit.is_empty() {
+        "source (unknown commit)".to_string()
+    } else {
+        format!(
+            "master@{}{}",
+            &commit[..12],
+            if dirty { "+modified" } else { "" }
+        )
+    };
+    println!("cargo:rustc-env=GOPHER_BUILD_COMMIT={commit}");
+    println!("cargo:rustc-env=GOPHER_BUILD_ID={label}");
+    println!("cargo:rustc-env=GOPHER_BUILD_DIRTY={dirty}");
+    println!(
+        "cargo:rustc-env=GOPHER_BUILD_TARGET={}",
+        env::var("TARGET").expect("TARGET is not set")
+    );
+}
 
 const CHAT_STYLE_FILES: &[&str] = &[
     "src/ui/chat/styles/base.css",
@@ -55,6 +124,7 @@ fn windows_icon_path() -> PathBuf {
     output
 }
 fn main() {
+    build_identity();
     println!("cargo:rerun-if-changed=assets/browser-favicon.png");
     println!("cargo:rerun-if-changed=prompts");
 

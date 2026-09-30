@@ -1,30 +1,24 @@
-//! Check GitHub Releases for a newer Gopher version and install it in place.
+//! Build updates locally from the current master commit.
 
-use std::cmp::Ordering;
 use std::ffi::OsString;
-use std::io::{Cursor, Read};
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use std::{env, fs, thread};
 
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 use tokio::sync::{Mutex as TokioMutex, Notify};
 
 use crate::http;
 
-const GITHUB_OWNER: &str = "jacobzymet";
-const GITHUB_REPO: &str = "gopher";
+const REPOSITORY: &str = "https://github.com/jacobzymet/gopher";
+const BRANCH: &str = "master";
 const CACHE_TTL: Duration = Duration::from_secs(6 * 60 * 60);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(12);
-const DOWNLOAD_CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
-const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const MAX_GITHUB_RESPONSE_BYTES: usize = 1024 * 1024;
-const MAX_ARCHIVE_BYTES: usize = 128 * 1024 * 1024;
-const MAX_BINARY_BYTES: usize = 80 * 1024 * 1024;
 const RESTART_BIND_ATTEMPTS: u32 = 40;
 const RESTART_BIND_DELAY: Duration = Duration::from_millis(50);
 const RESTART_SPAWN_DELAY: Duration = Duration::from_millis(350);
@@ -34,15 +28,14 @@ const UPDATE_RESTART_FLAG: &str = "--update-restart";
 #[derive(Debug, Clone, Serialize)]
 pub struct UpdateStatus {
     pub current: String,
+    pub current_commit: Option<String>,
     pub latest: Option<String>,
+    pub branch: &'static str,
+    pub commit_url: String,
     pub update_available: bool,
     pub can_install: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub install_blocked: Option<String>,
-    pub release_name: Option<String>,
-    pub release_url: Option<String>,
-    /// True when this build's version is newer than the latest GitHub Release.
-    pub development_ahead: bool,
     pub checked: bool,
     pub error: Option<String>,
 }
@@ -51,29 +44,12 @@ pub struct UpdateStatus {
 pub struct ApplyResult {
     pub ok: bool,
     pub restarting: bool,
-    pub version: String,
+    pub commit: String,
 }
 
-#[derive(Debug, Clone)]
-struct ReleaseOffer {
-    status: UpdateStatus,
-    asset_name: Option<String>,
-    asset_url: Option<String>,
-    asset_sha256: Option<String>,
-    sums_url: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct ReleaseAsset {
-    pub name: String,
-    pub url: String,
-    pub sha256: Option<String>,
-}
-
-#[derive(Debug, Clone)]
 struct CachedCheck {
     at: Instant,
-    offer: ReleaseOffer,
+    commit: String,
 }
 
 #[derive(Debug, Clone)]
@@ -85,7 +61,7 @@ struct RestartPlan {
 }
 
 static CACHE: OnceLock<Mutex<Option<CachedCheck>>> = OnceLock::new();
-static APPLYING: OnceLock<TokioMutex<()>> = OnceLock::new();
+static APPLYING: OnceLock<Arc<TokioMutex<()>>> = OnceLock::new();
 static RESTART_PLAN: OnceLock<Mutex<Option<RestartPlan>>> = OnceLock::new();
 static RESTART_NOTIFY: OnceLock<Notify> = OnceLock::new();
 static RESTART_FLAG: AtomicBool = AtomicBool::new(false);
@@ -94,8 +70,8 @@ fn cache() -> &'static Mutex<Option<CachedCheck>> {
     CACHE.get_or_init(|| Mutex::new(None))
 }
 
-fn applying() -> &'static TokioMutex<()> {
-    APPLYING.get_or_init(|| TokioMutex::new(()))
+fn applying() -> &'static Arc<TokioMutex<()>> {
+    APPLYING.get_or_init(|| Arc::new(TokioMutex::new(())))
 }
 
 fn restart_plan() -> &'static Mutex<Option<RestartPlan>> {
@@ -106,107 +82,316 @@ fn restart_notify() -> &'static Notify {
     RESTART_NOTIFY.get_or_init(Notify::new)
 }
 
-/// Normalize tags like `v1.2.3`, `V1.2.3-beta.1` → comparable core + pre parts.
-fn normalize_version(raw: &str) -> String {
-    raw.trim().trim_start_matches(['v', 'V']).trim().to_string()
+pub fn build_label() -> &'static str {
+    env!("GOPHER_BUILD_ID")
 }
 
-fn parse_semver_parts(raw: &str) -> Option<(Vec<u64>, Option<String>)> {
-    let normalized = normalize_version(raw);
-    if normalized.is_empty() {
-        return None;
+fn valid_commit(commit: &str) -> bool {
+    commit.len() == 40 && commit.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn current_commit() -> Option<&'static str> {
+    let commit = env!("GOPHER_BUILD_COMMIT");
+    valid_commit(commit).then_some(commit)
+}
+
+fn needs_update(current: Option<&str>, dirty: bool, latest: &str) -> bool {
+    dirty || !current.is_some_and(|commit| commit.eq_ignore_ascii_case(latest))
+}
+
+fn parse_master_commit(payload: &serde_json::Value) -> Result<String, String> {
+    payload
+        .get("sha")
+        .and_then(|value| value.as_str())
+        .filter(|commit| valid_commit(commit))
+        .map(str::to_ascii_lowercase)
+        .ok_or_else(|| "GitHub did not return a valid master commit.".to_string())
+}
+
+fn base_status() -> UpdateStatus {
+    UpdateStatus {
+        current: build_label().to_string(),
+        current_commit: current_commit().map(str::to_string),
+        latest: None,
+        branch: BRANCH,
+        commit_url: format!("{REPOSITORY}/commits/{BRANCH}"),
+        update_available: false,
+        can_install: false,
+        install_blocked: None,
+        checked: true,
+        error: None,
     }
-    let (without_build, build) = normalized
-        .split_once('+')
-        .map_or((normalized.as_str(), None), |(version, build)| {
-            (version, Some(build))
-        });
-    if build.is_some_and(|build| !valid_dot_identifiers(build, false)) {
-        return None;
-    }
-    let (core, pre) = match without_build.split_once('-') {
-        Some((core, rest)) => (core.to_string(), Some(rest.to_string())),
-        None => (without_build.to_string(), None),
-    };
-    if pre
-        .as_deref()
-        .is_some_and(|pre| !valid_dot_identifiers(pre, true))
+}
+
+fn quiet_command(program: impl AsRef<std::ffi::OsStr>) -> Command {
+    let mut command = Command::new(program);
+    command.stdin(Stdio::null());
+    #[cfg(windows)]
     {
-        return None;
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
-    let mut parts = Vec::new();
-    for piece in core.split('.') {
-        if piece.len() > 1 && piece.starts_with('0') {
-            return None;
-        }
-        let n = piece.parse::<u64>().ok()?;
-        parts.push(n);
-    }
-    if parts.is_empty() {
-        return None;
-    }
-    while parts.len() < 3 {
-        parts.push(0);
-    }
-    Some((parts, pre))
+    command
 }
 
-fn valid_dot_identifiers(raw: &str, reject_numeric_leading_zero: bool) -> bool {
-    raw.split('.').all(|part| {
-        !part.is_empty()
-            && part
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
-            && !(reject_numeric_leading_zero
-                && part.len() > 1
-                && part.starts_with('0')
-                && part.bytes().all(|byte| byte.is_ascii_digit()))
+fn working_tool(path: &Path) -> bool {
+    quiet_command(path)
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+fn cargo_path() -> Result<PathBuf, String> {
+    let name = if cfg!(windows) { "cargo.exe" } else { "cargo" };
+    let mut candidates: Vec<PathBuf> = env::var_os("PATH")
+        .map(|path| env::split_paths(&path).map(|dir| dir.join(name)).collect())
+        .unwrap_or_default();
+    if let Some(home) = env::var_os("CARGO_HOME") {
+        candidates.push(PathBuf::from(home).join("bin").join(name));
+    }
+    let user = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+    if let Some(home) = env::var_os(user) {
+        candidates.push(PathBuf::from(home).join(".cargo").join("bin").join(name));
+    }
+    let cargo = candidates.into_iter().find(|candidate| candidate.is_file() && working_tool(candidate))
+        .ok_or_else(|| "Install Rust with Cargo from https://rustup.rs, then retry. Gopher builds updates on your computer.".to_string())?;
+    let rustc_name = if cfg!(windows) { "rustc.exe" } else { "rustc" };
+    let mut compilers = vec![cargo.with_file_name(rustc_name)];
+    if let Some(path) = env::var_os("PATH") {
+        compilers.extend(env::split_paths(&path).map(|dir| dir.join(rustc_name)));
+    }
+    if !compilers
+        .iter()
+        .any(|compiler| compiler.is_file() && working_tool(compiler))
+    {
+        return Err("The Rust compiler is missing. Install a Rust toolchain from https://rustup.rs, then retry.".to_string());
+    }
+    Ok(cargo)
+}
+
+fn build_environment(command: &mut Command, cargo: &Path) -> Result<(), String> {
+    // A desktop process may still have the PATH from before Rust was installed.
+    let mut paths = vec![
+        cargo
+            .parent()
+            .ok_or("Could not locate the Rust toolchain.")?
+            .to_path_buf(),
+    ];
+    if let Some(path) = env::var_os("PATH") {
+        paths.extend(env::split_paths(&path));
+    }
+    command.env(
+        "PATH",
+        env::join_paths(paths).map_err(|error| error.to_string())?,
+    );
+    Ok(())
+}
+
+fn install_block_reason() -> Option<String> {
+    if let Err(error) = cargo_path() {
+        return Some(error);
+    }
+    install_destination().err()
+}
+
+fn status_for_commit(commit: String) -> UpdateStatus {
+    let mut status = base_status();
+    status.update_available = needs_update(
+        current_commit(),
+        env!("GOPHER_BUILD_DIRTY") == "true",
+        &commit,
+    );
+    status.commit_url = format!("{REPOSITORY}/commit/{commit}");
+    status.latest = Some(commit);
+    if status.update_available {
+        status.install_blocked = install_block_reason();
+        status.can_install = status.install_blocked.is_none();
+    }
+    status
+}
+
+async fn fetch_master_commit() -> Result<String, String> {
+    let response = http::public_client()
+        .get("https://api.github.com/repos/jacobzymet/gopher/commits/master")
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header("User-Agent", concat!("gopher/", env!("GOPHER_BUILD_ID")))
+        .timeout(REQUEST_TIMEOUT)
+        .send()
+        .await
+        .map_err(|error| format!("Could not check master on GitHub: {error}"))?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("Could not check master on GitHub (HTTP {status})."));
+    }
+    let bytes = http::response_bytes_limited(response, MAX_GITHUB_RESPONSE_BYTES)
+        .await
+        .map_err(|error| format!("Invalid GitHub response: {error}"))?;
+    let payload = serde_json::from_slice(&bytes)
+        .map_err(|error| format!("Invalid GitHub response: {error}"))?;
+    parse_master_commit(&payload)
+}
+
+async fn load_master_commit(force: bool) -> Result<String, String> {
+    if !force
+        && let Ok(guard) = cache().lock()
+        && let Some(cached) = guard.as_ref()
+        && cached.at.elapsed() < CACHE_TTL
+    {
+        return Ok(cached.commit.clone());
+    }
+    let commit = fetch_master_commit().await?;
+    if let Ok(mut guard) = cache().lock() {
+        *guard = Some(CachedCheck {
+            at: Instant::now(),
+            commit: commit.clone(),
+        });
+    }
+    Ok(commit)
+}
+
+/// Cache only the remote commit; reevaluate local prerequisites on every check.
+pub async fn check(force: bool) -> UpdateStatus {
+    let result = match load_master_commit(force).await {
+        Ok(commit) => tokio::task::spawn_blocking(move || status_for_commit(commit))
+            .await
+            .map_err(|error| format!("Could not check build prerequisites: {error}")),
+        Err(error) => Err(error),
+    };
+    result.unwrap_or_else(|error| UpdateStatus {
+        error: Some(error),
+        ..base_status()
     })
 }
 
-fn compare_prerelease(left: &str, right: &str) -> Ordering {
-    let left: Vec<&str> = left.split('.').collect();
-    let right: Vec<&str> = right.split('.').collect();
-    for (a, b) in left.iter().zip(&right) {
-        let a_numeric = a.bytes().all(|byte| byte.is_ascii_digit());
-        let b_numeric = b.bytes().all(|byte| byte.is_ascii_digit());
-        let ordering = match (a_numeric, b_numeric) {
-            (true, true) => a.len().cmp(&b.len()).then_with(|| a.cmp(b)),
-            (true, false) => Ordering::Less,
-            (false, true) => Ordering::Greater,
-            (false, false) => a.cmp(b),
-        };
-        if ordering != Ordering::Equal {
-            return ordering;
+fn build_command(
+    cargo: &Path,
+    commit: &str,
+    staging: &Path,
+    target: &Path,
+) -> Result<Command, String> {
+    if !valid_commit(commit) {
+        return Err("Refusing to build an invalid commit.".to_string());
+    }
+    let mut command = quiet_command(cargo);
+    command
+        .args([
+            "install",
+            "--git",
+            "https://github.com/jacobzymet/gopher",
+            "--rev",
+            commit,
+            "--locked",
+            "--force",
+            "--bin",
+            "gopher",
+            "--target",
+            env!("GOPHER_BUILD_TARGET"),
+        ])
+        .arg("--root")
+        .arg(staging)
+        .arg("--target-dir")
+        .arg(target)
+        .current_dir(staging)
+        .env("GOPHER_BUILD_COMMIT", commit);
+    build_environment(&mut command, cargo)?;
+    Ok(command)
+}
+
+fn log_tail(log: &Path) -> String {
+    let Ok(mut file) = fs::File::open(log) else {
+        return String::new();
+    };
+    let _ = file.seek(SeekFrom::End(-12_000));
+    let mut bytes = Vec::new();
+    let _ = file.take(12_000).read_to_end(&mut bytes);
+    String::from_utf8_lossy(&bytes).trim().to_string()
+}
+
+fn build_and_replace_with(
+    cargo: &Path,
+    commit: &str,
+    dest: &Path,
+    target: &Path,
+) -> Result<(), String> {
+    let staging = tempfile::tempdir()
+        .map_err(|error| format!("Could not create build staging folder: {error}"))?;
+    let log = staging.path().join("build.log");
+    let stdout = fs::File::create(&log).map_err(|error| error.to_string())?;
+    let stderr = stdout.try_clone().map_err(|error| error.to_string())?;
+    let status = build_command(cargo, commit, staging.path(), target)?
+        .stdout(stdout)
+        .stderr(stderr)
+        .status()
+        .map_err(|error| format!("Could not start Cargo: {error}"))?;
+    if !status.success() {
+        return Err(format!(
+            "The local build failed. Check Rust and your platform's build dependencies, then retry.\n{}",
+            log_tail(&log)
+        ));
+    }
+    let binary = staging.path().join("bin").join(if cfg!(windows) {
+        "gopher.exe"
+    } else {
+        "gopher"
+    });
+    let output = quiet_command(&binary)
+        .arg("--version")
+        .output()
+        .map_err(|error| format!("Could not verify the locally built app: {error}"))?;
+    let version = String::from_utf8_lossy(&output.stdout);
+    if !output.status.success()
+        || !version
+            .lines()
+            .any(|line| line == format!("Commit: {commit}"))
+    {
+        return Err(
+            "The locally built app does not identify the requested master commit.".to_string(),
+        );
+    }
+    let bytes = fs::read(&binary)
+        .map_err(|error| format!("Could not read the locally built app: {error}"))?;
+    replace_executable(dest, &bytes)
+}
+
+/// Compile a pinned master commit before replacing the installed executable.
+pub async fn apply() -> Result<ApplyResult, String> {
+    let guard = applying()
+        .clone()
+        .try_lock_owned()
+        .map_err(|_| "An update is already building.".to_string())?;
+    let commit = load_master_commit(true).await?;
+    let built_commit = tokio::task::spawn_blocking(move || {
+        // Keep the lock even if the HTTP request disconnects during compilation.
+        let _guard = guard;
+        if !needs_update(
+            current_commit(),
+            env!("GOPHER_BUILD_DIRTY") == "true",
+            &commit,
+        ) {
+            return Err("Gopher is already on the current master commit.".to_string());
         }
-    }
-    left.len().cmp(&right.len())
-}
-
-/// True when `latest` is a newer release than `current`.
-pub fn is_newer(latest: &str, current: &str) -> bool {
-    let Some((mut latest_parts, latest_pre)) = parse_semver_parts(latest) else {
-        return false;
-    };
-    let Some((mut current_parts, current_pre)) = parse_semver_parts(current) else {
-        return false;
-    };
-    let max_len = latest_parts.len().max(current_parts.len());
-    latest_parts.resize(max_len, 0);
-    current_parts.resize(max_len, 0);
-    if latest_parts != current_parts {
-        return latest_parts > current_parts;
-    }
-    // Same numeric core: a release without prerelease beats one with.
-    match (latest_pre, current_pre) {
-        (None, Some(_)) => true,
-        (Some(a), Some(b)) => compare_prerelease(&a, &b).is_gt(),
-        _ => false,
-    }
-}
-
-fn current_version() -> String {
-    env!("CARGO_PKG_VERSION").to_string()
+        let cargo = cargo_path()?;
+        let dest = install_destination()?;
+        let project = directories::ProjectDirs::from("", "", "gopher")
+            .ok_or("Could not locate the build cache folder.")?;
+        let target = project
+            .cache_dir()
+            .join("update-build")
+            .join(env!("GOPHER_BUILD_TARGET"));
+        build_and_replace_with(&cargo, &commit, &dest, &target)?;
+        arm_restart(dest);
+        Ok::<_, String>(commit)
+    })
+    .await
+    .map_err(|error| format!("Local update build failed: {error}"))??;
+    Ok(ApplyResult {
+        ok: true,
+        restarting: true,
+        commit: built_commit,
+    })
 }
 
 pub fn bind_retry_budget(retry: bool) -> (u32, Duration) {
@@ -237,63 +422,14 @@ pub fn cleanup_previous_install() {
     let _ = fs::remove_file(dir.join(".gopher-update-write-test"));
 }
 
-fn status_up_to_date() -> UpdateStatus {
-    UpdateStatus {
-        current: current_version(),
-        latest: None,
-        update_available: false,
-        can_install: false,
-        install_blocked: None,
-        release_name: None,
-        release_url: None,
-        development_ahead: false,
-        checked: true,
-        error: None,
-    }
-}
-
-fn github_api_headers(req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-    req.header("Accept", "application/vnd.github+json")
-        .header("X-GitHub-Api-Version", "2022-11-28")
-        .header("User-Agent", concat!("gopher/", env!("CARGO_PKG_VERSION")))
-}
-
-fn download_client() -> Result<reqwest::Client, String> {
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = rustls::crypto::ring::default_provider().install_default();
-    }
-    reqwest::Client::builder()
-        .connect_timeout(DOWNLOAD_CONNECT_TIMEOUT)
-        .timeout(DOWNLOAD_TIMEOUT)
-        .user_agent(concat!("gopher/", env!("CARGO_PKG_VERSION")))
-        .redirect(reqwest::redirect::Policy::limited(16))
-        // Keep release archives byte-for-byte. Auto-decompress would corrupt
-        // `.zip` / `.tar.gz` when GitHub sends Content-Encoding: gzip.
-        .no_gzip()
-        .no_brotli()
-        .no_deflate()
-        .build()
-        .map_err(|error| format!("could not build download client: {error}"))
-}
-
-pub(crate) fn release_archive_target() -> Option<(&'static str, &'static str)> {
-    match (env::consts::OS, env::consts::ARCH) {
-        ("linux", "x86_64") => Some(("x86_64-linux-gnu", "tar.gz")),
-        ("linux", "aarch64") => Some(("aarch64-linux-gnu", "tar.gz")),
-        ("macos", "aarch64") => Some(("aarch64-apple-darwin", "tar.gz")),
-        ("macos", "x86_64") => Some(("x86_64-apple-darwin", "tar.gz")),
-        ("windows", "x86_64") => Some(("x86_64-pc-windows-msvc", "zip")),
-        ("windows", "aarch64") => Some(("x86_64-pc-windows-msvc", "zip")),
-        _ => None,
-    }
-}
-
 pub(crate) fn looks_like_cargo_build(path: &Path) -> bool {
     let parts: Vec<_> = path.iter().collect();
     parts
         .windows(2)
         .any(|pair| pair[0] == "target" && (pair[1] == "debug" || pair[1] == "release"))
+        || parts
+            .windows(3)
+            .any(|parts| parts[0] == "target" && (parts[2] == "debug" || parts[2] == "release"))
 }
 
 fn default_user_binary() -> Option<PathBuf> {
@@ -350,436 +486,6 @@ pub(crate) fn install_destination() -> Result<PathBuf, String> {
         return Ok(dest);
     }
     Err("Gopher cannot write to its install folder. Reinstall with the install script.".to_string())
-}
-
-fn install_block_reason() -> Option<String> {
-    if release_archive_target().is_none() {
-        return Some("No GitHub release is published for this platform.".to_string());
-    }
-    install_destination().err()
-}
-
-fn trusted_github_download_url(url: &str) -> bool {
-    let Ok(parsed) = reqwest::Url::parse(url) else {
-        return false;
-    };
-    if parsed.scheme() != "https" || parsed.username() != "" || parsed.password().is_some() {
-        return false;
-    }
-    parsed.host_str() == Some("github.com")
-        && parsed
-            .path()
-            .starts_with(&format!("/{GITHUB_OWNER}/{GITHUB_REPO}/"))
-}
-
-pub(crate) fn parse_github_digest(raw: &str) -> Option<String> {
-    let hex = raw.trim().strip_prefix("sha256:")?;
-    if hex.len() == 64 && hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        Some(hex.to_ascii_lowercase())
-    } else {
-        None
-    }
-}
-
-pub(crate) fn pick_release_asset(
-    payload: &serde_json::Value,
-    target: &str,
-) -> (Option<ReleaseAsset>, Option<String>) {
-    let Some(assets) = payload.get("assets").and_then(|value| value.as_array()) else {
-        return (None, None);
-    };
-    let tar_suffix = format!("-{target}.tar.gz");
-    let zip_suffix = format!("-{target}.zip");
-    let mut selected = None;
-    let mut sums = None;
-    for asset in assets {
-        let Some(name) = asset.get("name").and_then(|value| value.as_str()) else {
-            continue;
-        };
-        let Some(url) = asset
-            .get("browser_download_url")
-            .and_then(|value| value.as_str())
-        else {
-            continue;
-        };
-        if !trusted_github_download_url(url) {
-            continue;
-        }
-        if name == "SHA256SUMS" {
-            sums = Some(url.to_string());
-            continue;
-        }
-        let matches_target = name.ends_with(&tar_suffix) || name.ends_with(&zip_suffix);
-        if !matches_target {
-            continue;
-        }
-        let picked = ReleaseAsset {
-            name: name.to_string(),
-            url: url.to_string(),
-            sha256: asset
-                .get("digest")
-                .and_then(|value| value.as_str())
-                .and_then(parse_github_digest),
-        };
-        if name.starts_with("gopher-") {
-            selected = Some(picked);
-        }
-    }
-    (selected, sums)
-}
-
-fn decorate_status(mut status: UpdateStatus, has_asset: bool) -> UpdateStatus {
-    if !status.update_available {
-        status.can_install = false;
-        status.install_blocked = None;
-        return status;
-    }
-    if !has_asset {
-        status.can_install = false;
-        status.install_blocked = Some(format!(
-            "No GitHub archive matches this platform ({}).",
-            release_archive_target()
-                .map(|(target, _)| target)
-                .unwrap_or("unknown")
-        ));
-        return status;
-    }
-    match install_block_reason() {
-        Some(reason) => {
-            status.can_install = false;
-            status.install_blocked = Some(reason);
-        }
-        None => {
-            status.can_install = true;
-            status.install_blocked = None;
-        }
-    }
-    status
-}
-
-async fn fetch_latest_offer() -> Result<ReleaseOffer, String> {
-    let url = format!("https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest");
-    let client = http::public_client();
-    let response = github_api_headers(client.get(&url))
-        .timeout(REQUEST_TIMEOUT)
-        .send()
-        .await
-        .map_err(|error| format!("could not reach GitHub: {error}"))?;
-
-    let status = response.status();
-    if status.as_u16() == 404 {
-        return Ok(ReleaseOffer {
-            status: status_up_to_date(),
-            asset_name: None,
-            asset_url: None,
-            asset_sha256: None,
-            sums_url: None,
-        });
-    }
-    if !status.is_success() {
-        let body = http::response_bytes_limited(response, MAX_GITHUB_RESPONSE_BYTES)
-            .await
-            .unwrap_or_default();
-        let body = String::from_utf8_lossy(&body);
-        let detail = body.trim();
-        if detail.is_empty() {
-            return Err(format!("GitHub returned HTTP {status}"));
-        }
-        return Err(format!("GitHub returned HTTP {status}: {detail}"));
-    }
-
-    let bytes = http::response_bytes_limited(response, MAX_GITHUB_RESPONSE_BYTES)
-        .await
-        .map_err(|error| format!("invalid GitHub response: {error}"))?;
-    let payload: serde_json::Value = serde_json::from_slice(&bytes)
-        .map_err(|error| format!("invalid GitHub response: {error}"))?;
-
-    if payload
-        .get("draft")
-        .and_then(|value| value.as_bool())
-        .unwrap_or(false)
-        || payload
-            .get("prerelease")
-            .and_then(|value| value.as_bool())
-            .unwrap_or(false)
-    {
-        return Ok(ReleaseOffer {
-            status: status_up_to_date(),
-            asset_name: None,
-            asset_url: None,
-            asset_sha256: None,
-            sums_url: None,
-        });
-    }
-
-    let tag = payload
-        .get("tag_name")
-        .and_then(|value| value.as_str())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| "latest release is missing a tag".to_string())?;
-    let release_name = payload
-        .get("name")
-        .and_then(|value| value.as_str())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string);
-    let release_url = payload
-        .get("html_url")
-        .and_then(|value| value.as_str())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-        .unwrap_or_else(|| {
-            format!("https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest")
-        });
-
-    let current = current_version();
-    let latest = normalize_version(tag);
-    let update_available = is_newer(&latest, &current);
-    let development_ahead = is_newer(&current, &latest);
-    let (asset, sums_url) = release_archive_target()
-        .map(|(target, _)| pick_release_asset(&payload, target))
-        .unwrap_or((None, None));
-    let (asset_name, asset_url, asset_sha256) = match asset {
-        Some(asset) => (Some(asset.name), Some(asset.url), asset.sha256),
-        None => (None, None, None),
-    };
-    let status = decorate_status(
-        UpdateStatus {
-            current,
-            latest: Some(latest),
-            update_available,
-            can_install: false,
-            install_blocked: None,
-            release_name,
-            release_url: Some(release_url),
-            development_ahead,
-            checked: true,
-            error: None,
-        },
-        asset_url.is_some(),
-    );
-
-    Ok(ReleaseOffer {
-        status,
-        asset_name,
-        asset_url,
-        asset_sha256,
-        sums_url,
-    })
-}
-
-async fn load_offer(force: bool) -> Result<ReleaseOffer, String> {
-    if !force
-        && let Ok(guard) = cache().lock()
-        && let Some(cached) = guard.as_ref()
-        && cached.at.elapsed() < CACHE_TTL
-    {
-        return Ok(cached.offer.clone());
-    }
-
-    let offer = fetch_latest_offer().await?;
-    if let Ok(mut guard) = cache().lock() {
-        *guard = Some(CachedCheck {
-            at: Instant::now(),
-            offer: offer.clone(),
-        });
-    }
-    Ok(offer)
-}
-
-/// Return a cached or freshly fetched update status.
-pub async fn check(force: bool) -> UpdateStatus {
-    match load_offer(force).await {
-        Ok(offer) => offer.status,
-        Err(error) => UpdateStatus {
-            current: current_version(),
-            latest: None,
-            update_available: false,
-            can_install: false,
-            install_blocked: None,
-            release_name: None,
-            release_url: Some(format!(
-                "https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}/releases"
-            )),
-            development_ahead: false,
-            checked: true,
-            error: Some(error),
-        },
-    }
-}
-
-pub(crate) fn checksum_for_asset(sums: &str, asset_name: &str) -> Option<String> {
-    for line in sums.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        let mut parts = line.split_whitespace();
-        let hash = parts.next()?;
-        let name = parts.next()?.trim_start_matches('*');
-        let name = name.rsplit(['/', '\\']).next().unwrap_or(name);
-        if hash.len() == 64
-            && hash.bytes().all(|byte| byte.is_ascii_hexdigit())
-            && name == asset_name
-        {
-            return Some(hash.to_ascii_lowercase());
-        }
-    }
-    None
-}
-
-pub(crate) fn expected_archive_sha256(
-    sums_text: Option<&str>,
-    asset_name: &str,
-    github_digest: Option<&str>,
-) -> Result<String, String> {
-    let from_sums = sums_text.and_then(|text| checksum_for_asset(text, asset_name));
-    if sums_text.is_some() && from_sums.is_none() {
-        return Err(format!("release checksum file does not list {asset_name}"));
-    }
-    match (from_sums, github_digest.map(str::to_string)) {
-        (Some(sums), Some(digest)) if sums != digest => {
-            Err("release checksum file does not match GitHub's asset digest".to_string())
-        }
-        (Some(sums), _) => Ok(sums),
-        (None, Some(digest)) => Ok(digest),
-        (None, None) => {
-            Err("latest release does not include a checksum for this archive".to_string())
-        }
-    }
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    digest.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
-fn looks_like_native_binary(bytes: &[u8]) -> bool {
-    if bytes.len() < 4 {
-        return false;
-    }
-    #[cfg(windows)]
-    {
-        bytes.starts_with(b"MZ")
-    }
-    #[cfg(target_os = "linux")]
-    {
-        bytes.starts_with(&[0x7f, b'E', b'L', b'F'])
-    }
-    #[cfg(target_os = "macos")]
-    {
-        matches!(
-            &bytes[0..4],
-            b"\xcf\xfa\xed\xfe"
-                | b"\xce\xfa\xed\xfe"
-                | b"\xfe\xed\xfa\xcf"
-                | b"\xfe\xed\xfa\xce"
-                | b"\xca\xfe\xba\xbe"
-        )
-    }
-    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
-    {
-        true
-    }
-}
-
-fn entry_file_name(path: &str) -> Option<&str> {
-    Path::new(path).file_name()?.to_str()
-}
-
-fn is_app_binary_name(name: &str) -> bool {
-    matches!(name, "gopher" | "gopher.exe")
-}
-
-fn read_limited(reader: &mut impl Read, max: usize) -> Result<Vec<u8>, String> {
-    let mut out = Vec::new();
-    let mut buf = [0_u8; 8192];
-    loop {
-        let read = reader
-            .read(&mut buf)
-            .map_err(|error| format!("could not read archive entry: {error}"))?;
-        if read == 0 {
-            break;
-        }
-        if out.len().saturating_add(read) > max {
-            return Err("release binary is larger than expected".to_string());
-        }
-        out.extend_from_slice(&buf[..read]);
-    }
-    Ok(out)
-}
-
-pub(crate) fn extract_app_binary(archive: &[u8], asset_name: &str) -> Result<Vec<u8>, String> {
-    if asset_name.ends_with(".zip") {
-        extract_from_zip(archive)
-    } else if asset_name.ends_with(".tar.gz") || asset_name.ends_with(".tgz") {
-        extract_from_tar_gz(archive)
-    } else {
-        Err("unsupported release archive".to_string())
-    }
-}
-
-fn extract_from_zip(bytes: &[u8]) -> Result<Vec<u8>, String> {
-    let mut zip = zip::ZipArchive::new(Cursor::new(bytes))
-        .map_err(|error| format!("could not read zip archive: {error}"))?;
-    let mut binary_index = None;
-    for index in 0..zip.len() {
-        let file = zip
-            .by_index(index)
-            .map_err(|error| format!("could not read zip entry: {error}"))?;
-        if file.is_dir() {
-            continue;
-        }
-        let Some(name) = entry_file_name(file.name()) else {
-            continue;
-        };
-        if is_app_binary_name(name) {
-            binary_index = Some(index);
-            break;
-        }
-    }
-    let index =
-        binary_index.ok_or_else(|| "archive did not contain a gopher executable".to_string())?;
-    let mut file = zip
-        .by_index(index)
-        .map_err(|error| format!("could not read zip entry: {error}"))?;
-    let binary = read_limited(&mut file, MAX_BINARY_BYTES)?;
-    if !looks_like_native_binary(&binary) {
-        return Err("archive executable is not a native Gopher build".to_string());
-    }
-    Ok(binary)
-}
-
-fn extract_from_tar_gz(bytes: &[u8]) -> Result<Vec<u8>, String> {
-    let decoder = flate2::read::GzDecoder::new(Cursor::new(bytes));
-    let mut archive = tar::Archive::new(decoder);
-    let mut binary = None;
-    for entry in archive
-        .entries()
-        .map_err(|error| format!("could not read tar archive: {error}"))?
-    {
-        let mut entry = entry.map_err(|error| format!("could not read tar entry: {error}"))?;
-        if !entry.header().entry_type().is_file() {
-            continue;
-        }
-        let path = entry
-            .path()
-            .map_err(|error| format!("tar entry path: {error}"))?;
-        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-            continue;
-        };
-        if is_app_binary_name(name) {
-            binary = Some(read_limited(&mut entry, MAX_BINARY_BYTES)?);
-            break;
-        }
-    }
-    let binary = binary.ok_or_else(|| "archive did not contain a gopher executable".to_string())?;
-    if !looks_like_native_binary(&binary) {
-        return Err("archive executable is not a native Gopher build".to_string());
-    }
-    Ok(binary)
 }
 
 pub(crate) fn replace_executable(dest: &Path, new_bytes: &[u8]) -> Result<(), String> {
@@ -919,79 +625,6 @@ pub fn spawn_restart_if_pending() {
     }
 }
 
-async fn download_bytes(url: &str, max_bytes: usize) -> Result<Vec<u8>, String> {
-    if !trusted_github_download_url(url) {
-        return Err("refusing to download update from an untrusted URL".to_string());
-    }
-    let client = download_client()?;
-    let response = client
-        .get(url)
-        .header("Accept", "application/octet-stream")
-        .header("Accept-Encoding", "identity")
-        .send()
-        .await
-        .map_err(|error| format!("could not download update: {error}"))?;
-    if !response.status().is_success() {
-        return Err(format!(
-            "could not download update (HTTP {})",
-            response.status()
-        ));
-    }
-    http::response_bytes_limited(response, max_bytes)
-        .await
-        .map_err(|error| format!("could not download update: {error}"))
-}
-
-/// Download the latest matching release, replace this executable, and arm a restart.
-pub async fn apply() -> Result<ApplyResult, String> {
-    let Ok(_guard) = applying().try_lock() else {
-        return Err("An update is already installing.".to_string());
-    };
-    let offer = load_offer(true).await?;
-    if !offer.status.update_available {
-        return Err("Gopher is already up to date.".to_string());
-    }
-    if !offer.status.can_install {
-        return Err(offer.status.install_blocked.unwrap_or_else(|| {
-            "This copy of Gopher cannot install the update automatically.".to_string()
-        }));
-    }
-    let asset_name = offer
-        .asset_name
-        .ok_or_else(|| "latest release is missing a downloadable archive".to_string())?;
-    let asset_url = offer
-        .asset_url
-        .ok_or_else(|| "latest release is missing a downloadable archive".to_string())?;
-    let archive = download_bytes(&asset_url, MAX_ARCHIVE_BYTES).await?;
-    let sums_text = if let Some(sums_url) = offer.sums_url {
-        let sums = download_bytes(&sums_url, 64 * 1024).await?;
-        Some(
-            String::from_utf8(sums)
-                .map_err(|_| "release checksum file is not valid text".to_string())?,
-        )
-    } else {
-        None
-    };
-    let expected = expected_archive_sha256(
-        sums_text.as_deref(),
-        &asset_name,
-        offer.asset_sha256.as_deref(),
-    )?;
-    if sha256_hex(&archive) != expected {
-        return Err("release archive checksum mismatch".to_string());
-    }
-    let binary = extract_app_binary(&archive, &asset_name)?;
-    let dest = install_destination()?;
-    replace_executable(&dest, &binary)?;
-    arm_restart(dest);
-    let version = offer.status.latest.unwrap_or_else(current_version);
-    Ok(ApplyResult {
-        ok: true,
-        restarting: true,
-        version,
-    })
-}
-
 pub fn schedule_restart_after_response() {
     tokio::spawn(async {
         tokio::time::sleep(APPLY_RESPONSE_DELAY).await;
@@ -1002,270 +635,101 @@ pub fn schedule_restart_after_response() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
+
+    const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
 
     #[test]
-    fn newer_patch_and_minor() {
-        assert!(is_newer("0.1.1", "0.1.0"));
-        assert!(is_newer("0.2.0", "0.1.9"));
-        assert!(is_newer("v1.0.0", "0.9.9"));
-        assert!(!is_newer("0.1.0", "0.1.0"));
-        assert!(!is_newer("0.1.0", "0.1.1"));
-    }
-
-    #[test]
-    fn prerelease_ordering() {
-        assert!(is_newer("1.0.0", "1.0.0-beta"));
-        assert!(is_newer("1.0.0-rc.2", "1.0.0-rc.1"));
-        assert!(is_newer("1.0.0-rc.10", "1.0.0-rc.2"));
-        assert!(is_newer("1.0.0-beta.1", "1.0.0-beta"));
-        assert!(is_newer("1.0.0-beta", "1.0.0-2"));
-        assert!(!is_newer("1.0.0-beta", "1.0.0"));
-        assert!(!is_newer("1.0.0-rc.2", "1.0.0-rc.10"));
-        assert!(!is_newer("1.0.0-alpha..1", "1.0.0-alpha"));
-        assert!(!is_newer("2.0.0-alpha..1", "1.0.0"));
-        assert!(!is_newer("1.0.0-alpha.01", "1.0.0-alpha.1"));
-        assert!(is_newer("1.0.0-999999999999999999999999999999", "1.0.0-10"));
-    }
-
-    #[test]
-    fn build_metadata_does_not_affect_precedence() {
-        assert!(!is_newer("1.0.0+new-build", "1.0.0+old-build"));
-        assert!(is_newer("1.0.1+build.7", "1.0.0+build.9"));
-        assert!(!is_newer("2.0.0+", "1.0.0"));
-    }
-
-    #[test]
-    fn cargo_build_paths() {
-        assert!(looks_like_cargo_build(
-            &PathBuf::from("home")
-                .join("me")
-                .join("gopher2")
-                .join("target")
-                .join("debug")
-                .join("gopher")
+    fn compares_source_identity_without_ordering_hashes() {
+        assert!(!needs_update(Some(COMMIT), false, COMMIT));
+        assert!(!needs_update(Some(&COMMIT.to_uppercase()), false, COMMIT));
+        assert!(needs_update(
+            Some("ffffffffffffffffffffffffffffffffffffffff"),
+            false,
+            COMMIT
         ));
-        assert!(looks_like_cargo_build(
-            &PathBuf::from("src")
-                .join("gopher2")
-                .join("target")
-                .join("release")
-                .join("gopher.exe")
-        ));
-        assert!(!looks_like_cargo_build(
-            &PathBuf::from("Users")
-                .join("me")
-                .join("AppData")
-                .join("Local")
-                .join("gopher")
-                .join("bin")
-                .join("gopher.exe")
-        ));
-        assert!(!looks_like_cargo_build(
-            &PathBuf::from("home")
-                .join("me")
-                .join(".local")
-                .join("bin")
-                .join("gopher")
-        ));
+        assert!(needs_update(None, false, COMMIT));
+        assert!(needs_update(Some(COMMIT), true, COMMIT));
     }
 
     #[test]
-    fn checksum_parser_accepts_gnu_and_star_names() {
-        let sums = "\
-abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd  gopher-0.4.0-x86_64-linux-gnu.tar.gz
-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb *gopher-0.3.0-x86_64-pc-windows-msvc.zip
-";
+    fn master_response_requires_a_full_commit() {
         assert_eq!(
-            checksum_for_asset(sums, "gopher-0.4.0-x86_64-linux-gnu.tar.gz").as_deref(),
-            Some("abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd")
+            parse_master_commit(&serde_json::json!({"sha": COMMIT})).unwrap(),
+            COMMIT
         );
-        assert_eq!(
-            checksum_for_asset(sums, "gopher-0.3.0-x86_64-pc-windows-msvc.zip").as_deref(),
-            Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
-        );
-        assert!(checksum_for_asset(sums, "missing.tar.gz").is_none());
-    }
-
-    #[test]
-    fn github_digest_parser() {
-        assert_eq!(
-            parse_github_digest(
-                "sha256:3dae93fc74a6146ea06fe2fea2bb4cd56ed07a4c8a82a0374b0b8c7e9cb305eb"
-            )
-            .as_deref(),
-            Some("3dae93fc74a6146ea06fe2fea2bb4cd56ed07a4c8a82a0374b0b8c7e9cb305eb")
-        );
-        assert!(parse_github_digest("md5:abc").is_none());
-        assert!(parse_github_digest("sha256:not-a-hash").is_none());
-    }
-
-    #[test]
-    fn checksum_prefers_sums_and_requires_a_hash() {
-        let sums = "\
-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  gopher-0.4.0-x86_64-linux-gnu.tar.gz
-";
-        assert_eq!(
-            expected_archive_sha256(
-                Some(sums),
-                "gopher-0.4.0-x86_64-linux-gnu.tar.gz",
-                Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-            )
-            .unwrap(),
-            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        );
-        assert_eq!(
-            expected_archive_sha256(
-                None,
-                "gopher-0.3.0-x86_64-pc-windows-msvc.zip",
-                Some("3dae93fc74a6146ea06fe2fea2bb4cd56ed07a4c8a82a0374b0b8c7e9cb305eb")
-            )
-            .unwrap(),
-            "3dae93fc74a6146ea06fe2fea2bb4cd56ed07a4c8a82a0374b0b8c7e9cb305eb"
-        );
-        let unused_digest = "aa".repeat(32);
-        assert!(
-            expected_archive_sha256(Some(sums), "missing.tar.gz", Some(unused_digest.as_str()))
-                .is_err()
-        );
-        assert!(expected_archive_sha256(None, "gopher.tar.gz", None).is_err());
-        assert!(
-            expected_archive_sha256(
-                Some(sums),
-                "gopher-0.4.0-x86_64-linux-gnu.tar.gz",
-                Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
-            )
-            .unwrap_err()
-            .contains("does not match")
-        );
-    }
-
-    #[test]
-    fn picks_gopher_asset() {
-        let payload = serde_json::json!({
-            "assets": [
-                {
-                    "name": "gopher-0.4.0-x86_64-linux-gnu.tar.gz",
-                    "browser_download_url": "https://github.com/jacobzymet/gopher/releases/download/v0.4.0/gopher-0.4.0-x86_64-linux-gnu.tar.gz",
-                    "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-                },
-                {
-                    "name": "SHA256SUMS",
-                    "browser_download_url": "https://github.com/jacobzymet/gopher/releases/download/v0.4.0/SHA256SUMS"
-                }
-            ]
-        });
-        let (asset, sums) = pick_release_asset(&payload, "x86_64-linux-gnu");
-        let asset = asset.unwrap();
-        assert_eq!(asset.name, "gopher-0.4.0-x86_64-linux-gnu.tar.gz");
-        assert_eq!(
-            asset.sha256.as_deref(),
-            Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-        );
-        assert!(sums.unwrap().ends_with("/SHA256SUMS"));
-    }
-    #[test]
-    fn rejects_untrusted_asset_host() {
-        let payload = serde_json::json!({
-            "assets": [{
-                "name": "gopher-0.4.0-x86_64-linux-gnu.tar.gz",
-                "browser_download_url": "https://evil.example/gopher-0.4.0-x86_64-linux-gnu.tar.gz"
-            }]
-        });
-        let (asset, _) = pick_release_asset(&payload, "x86_64-linux-gnu");
-        assert!(asset.is_none());
-    }
-
-    #[test]
-    fn extracts_gopher_binary_from_zip() {
-        let (binary_name, binary) = if cfg!(windows) {
-            ("gopher.exe", &b"MZ gopher"[..])
-        } else if cfg!(target_os = "macos") {
-            ("gopher", &b"\xcf\xfa\xed\xfe gopher"[..])
-        } else {
-            ("gopher", &b"\x7fELF gopher"[..])
-        };
-        let mut cursor = Cursor::new(Vec::new());
-        {
-            let mut zip = zip::ZipWriter::new(&mut cursor);
-            let options = zip::write::SimpleFileOptions::default()
-                .compression_method(zip::CompressionMethod::Stored);
-            zip.start_file("gopher-0.4.0/README.md", options).unwrap();
-            zip.write_all(b"docs").unwrap();
-            zip.start_file(format!("gopher-0.4.0/{binary_name}"), options)
-                .unwrap();
-            zip.write_all(binary).unwrap();
-            zip.finish().unwrap();
+        for bad in [
+            serde_json::json!({}),
+            serde_json::json!({"sha": "master"}),
+            serde_json::json!({"sha": "v1.0.0"}),
+            serde_json::json!({"sha": "a".repeat(39)}),
+        ] {
+            assert!(parse_master_commit(&bad).is_err());
         }
-        let bytes = cursor.into_inner();
-        let extracted =
-            extract_app_binary(&bytes, "gopher-0.4.0-x86_64-pc-windows-msvc.zip").unwrap();
-        assert_eq!(extracted, binary);
     }
+
     #[test]
-    fn cargo_test_binary_looks_like_a_cargo_build() {
-        let exe = env::current_exe().unwrap();
+    fn command_builds_a_pinned_source_revision_in_staging() {
+        let command = build_command(
+            Path::new("cargo"),
+            COMMIT,
+            Path::new("staging"),
+            Path::new("cache"),
+        )
+        .unwrap();
+        let args: Vec<_> = command
+            .get_args()
+            .map(|arg| arg.to_string_lossy())
+            .collect();
+        assert!(args.windows(2).any(|pair| pair == ["--rev", COMMIT]));
+        assert!(args.windows(2).any(|pair| pair == ["--git", REPOSITORY]));
+        assert!(args.iter().any(|arg| arg == "--locked"));
+        assert!(args.windows(2).any(|pair| pair == ["--root", "staging"]));
         assert!(
-            looks_like_cargo_build(&exe),
-            "test exe should be under target/debug: {}",
-            exe.display()
+            build_command(
+                Path::new("cargo"),
+                "master",
+                Path::new("staging"),
+                Path::new("cache")
+            )
+            .is_err()
         );
     }
 
     #[test]
-    fn extracts_gopher_binary_from_tar_gz() {
-        let (binary_name, binary) = if cfg!(windows) {
-            ("gopher.exe", &b"MZ gopher"[..])
-        } else if cfg!(target_os = "macos") {
-            ("gopher", &b"\xcf\xfa\xed\xfe gopher"[..])
-        } else {
-            ("gopher", &b"\x7fELF gopher"[..])
-        };
-        let mut encoded = Cursor::new(Vec::new());
-        {
-            let encoder =
-                flate2::write::GzEncoder::new(&mut encoded, flate2::Compression::default());
-            let mut tar = tar::Builder::new(encoder);
-            for (name, data) in [("README.md", b"docs".as_slice()), (binary_name, binary)] {
-                let mut header = tar::Header::new_gnu();
-                header.set_size(data.len() as u64);
-                header.set_mode(0o755);
-                header.set_cksum();
-                tar.append_data(
-                    &mut header,
-                    format!("gopher-0.4.0-x86_64-linux-gnu/{name}"),
-                    data,
-                )
-                .unwrap();
-            }
-            tar.finish().unwrap();
-        }
-        let bytes = encoded.into_inner();
-        let extracted = extract_app_binary(&bytes, "gopher-0.4.0-x86_64-linux-gnu.tar.gz").unwrap();
-        assert_eq!(extracted, binary);
-    }
-    #[test]
-    fn replace_executable_creates_missing_destination() {
+    fn failed_compilation_leaves_existing_app_untouched() {
+        // The test binary exits nonzero on an unknown argument, acting as a failed Cargo invocation.
         let dir = tempfile::tempdir().unwrap();
-        let dest = dir.path().join(if cfg!(windows) {
-            "gopher.exe"
-        } else {
-            "gopher"
-        });
-        replace_executable(&dest, b"MZ new").unwrap();
-        assert_eq!(fs::read(&dest).unwrap(), b"MZ new");
+        let dest = dir.path().join("installed-app");
+        fs::write(&dest, b"existing app").unwrap();
+        let result = build_and_replace_with(
+            &env::current_exe().unwrap(),
+            COMMIT,
+            &dest,
+            &dir.path().join("cache"),
+        );
+        assert!(result.unwrap_err().contains("local build failed"));
+        assert_eq!(fs::read(dest).unwrap(), b"existing app");
     }
 
     #[test]
-    fn replace_executable_overwrites_file() {
+    fn source_builds_are_detected() {
+        assert!(looks_like_cargo_build(&env::current_exe().unwrap()));
+        assert!(looks_like_cargo_build(Path::new(
+            "repo/target/release/gopher"
+        )));
+        assert!(looks_like_cargo_build(Path::new(
+            "repo/target/x86_64-pc-windows-msvc/release/gopher.exe"
+        )));
+        assert!(!looks_like_cargo_build(Path::new("bin/gopher")));
+    }
+
+    #[test]
+    fn replacement_creates_and_updates_the_destination() {
         let dir = tempfile::tempdir().unwrap();
-        let exe = dir.path().join(if cfg!(windows) {
-            "gopher.exe"
-        } else {
-            "gopher"
-        });
-        fs::write(&exe, b"old").unwrap();
-        replace_executable(&exe, b"MZ new").unwrap();
-        assert_eq!(fs::read(&exe).unwrap(), b"MZ new");
+        let dest = dir.path().join("gopher");
+        replace_executable(&dest, b"first build").unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), b"first build");
+        replace_executable(&dest, b"second build").unwrap();
+        assert_eq!(fs::read(&dest).unwrap(), b"second build");
     }
 }

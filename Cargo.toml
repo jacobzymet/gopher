@@ -1,6 +1,6 @@
 [package]
 name = "gopher"
-version = "0.6.0"
+publish = false
 edition = "2024"
 description = "Gopher — a local, lightweight, open source LLM harness for humanity"
 license = "MIT"
@@ -27,14 +27,12 @@ scraper = "0.27"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.151"
 sha2 = "0.10"
-tar = "0.4"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "time", "sync", "process", "io-util"] }
 tempfile = "3.23"
 toml = "0.9"
 tao = "0.37"
 wry = "0.57"
 zeroize = { version = "1.9.0", features = ["derive"] }
-zip = { version = "2", default-features = false, features = ["deflate"] }
 dom_smoothie = "0.18.0"
 
 [target.'cfg(unix)'.dependencies]

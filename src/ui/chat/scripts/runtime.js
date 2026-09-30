@@ -4735,13 +4735,13 @@ const btnAppUpdateNotes = document.getElementById('btnAppUpdateNotes');
 let updateInstallInFlight = false;
 let lastAppUpdateStatus = null;
 
-function dismissedUpdateVersion() {
+function dismissedUpdateCommit() {
   return String(settings.updateDismissed || '');
 }
 
-function dismissUpdateNotice(version) {
+function dismissUpdateNotice(commit) {
   if (updateInstallInFlight) return;
-  const tag = String(version || '').trim();
+  const tag = String(commit || '').trim();
   if (tag && settings.updateDismissed !== tag) {
     saveSettings({ ...settings, updateDismissed: tag });
   }
@@ -4760,9 +4760,9 @@ function hideUpdateToast() {
   }, prefersReducedMotion() ? 0 : 220);
 }
 
-function versionLabel(value) {
-  const text = String(value || '').replace(/^v/i, '');
-  return text ? ('v' + text) : 'a newer release';
+function commitLabel(value) {
+  const text = String(value || '');
+  return /^[0-9a-f]{40}$/i.test(text) ? ('master@' + text.slice(0, 12)) : (text || 'this source build');
 }
 
 function setUpdateInstallButtons(disabled, label) {
@@ -4777,36 +4777,36 @@ function setUpdateInstallButtons(disabled, label) {
 }
 
 function renderAppUpdatePane(status) {
-  const currentRaw = String(status?.current || latestState?.version || '').replace(/^v/i, '');
-  const currentLabel = currentRaw ? ('v' + currentRaw) : 'this build';
+  const currentRaw = String(status?.current || latestState?.version || '');
+  const currentLabel = commitLabel(currentRaw);
   if (appUpdateCurrent) {
     appUpdateCurrent.textContent = currentRaw ? ('Gopher ' + currentLabel) : 'Gopher';
   }
   if (btnAppUpdateNotes) {
-    btnAppUpdateNotes.href = status?.release_url || 'https://github.com/jacobzymet/gopher/releases';
+    btnAppUpdateNotes.href = status?.commit_url || 'https://github.com/jacobzymet/gopher/commits/master';
   }
   const canInstall = Boolean(status?.can_install && status?.update_available);
   if (btnAppUpdateInstall) {
     btnAppUpdateInstall.hidden = !canInstall;
     if (!updateInstallInFlight) {
       btnAppUpdateInstall.disabled = false;
-      btnAppUpdateInstall.textContent = 'Install and restart';
+      btnAppUpdateInstall.textContent = 'Build and restart';
     }
   }
   if (!appUpdateStatus) return;
   if (updateInstallInFlight) return;
   if (!status) {
-    appUpdateStatus.textContent = 'Could not reach GitHub Releases.';
+    appUpdateStatus.textContent = 'Could not check master on GitHub.';
     return;
   }
   if (status.error) {
     appUpdateStatus.textContent = String(status.error);
     return;
   }
-  const latestLabel = versionLabel(status.latest);
+  const latestLabel = commitLabel(status.latest);
   if (status.update_available) {
     if (canInstall) {
-      appUpdateStatus.textContent = 'You’re on ' + currentLabel + '. Install ' + latestLabel + ' from GitHub and Gopher will restart.';
+      appUpdateStatus.textContent = 'You’re on ' + currentLabel + '. Build ' + latestLabel + ' locally with Rust and restart Gopher.';
     } else if (status.install_blocked) {
       appUpdateStatus.textContent = 'You’re on ' + currentLabel + '. ' + latestLabel + ' is available. ' + String(status.install_blocked);
     } else {
@@ -4814,33 +4814,27 @@ function renderAppUpdatePane(status) {
     }
     return;
   }
-  if (status.development_ahead && status.latest) {
-    appUpdateStatus.textContent = 'This build is newer than the latest GitHub Release (' + latestLabel + ').';
-    return;
-  }
   if (status.latest) {
-    appUpdateStatus.textContent = 'You’re on the latest GitHub Release (' + latestLabel + ').';
+    appUpdateStatus.textContent = 'You’re on the current master commit (' + latestLabel + ').';
     return;
   }
-  appUpdateStatus.textContent = 'No GitHub Release was found.';
+  appUpdateStatus.textContent = 'The master commit could not be determined.';
 }
 
 function showUpdateToast(status) {
   if (!updateToast || !status || !status.update_available || !status.latest) return;
   if (updateInstallInFlight) return;
-  if (dismissedUpdateVersion() === String(status.latest)) return;
-  const latestLabel = versionLabel(status.latest);
-  const currentLabel = versionLabel(status.current);
+  if (dismissedUpdateCommit() === String(status.latest)) return;
+  const latestLabel = commitLabel(status.latest);
+  const currentLabel = commitLabel(status.current);
   const canInstall = Boolean(status.can_install);
   if (updateToastTitle) {
-    updateToastTitle.textContent = status.release_name
-      ? String(status.release_name)
-      : ('Gopher ' + latestLabel);
+    updateToastTitle.textContent = 'Gopher ' + latestLabel;
   }
   if (updateToastBody) {
     if (canInstall) {
       updateToastBody.textContent =
-        'You’re on ' + currentLabel + '. Install ' + latestLabel + ' and Gopher will restart.';
+        'You’re on ' + currentLabel + '. Build ' + latestLabel + ' locally with Rust and restart Gopher.';
     } else if (status.install_blocked) {
       updateToastBody.textContent =
         'You’re on ' + currentLabel + '. ' + latestLabel + ' is available. ' + String(status.install_blocked);
@@ -4849,16 +4843,16 @@ function showUpdateToast(status) {
         'You’re on ' + currentLabel + '. ' + latestLabel + ' is available on GitHub.';
     }
   }
-  if (btnUpdateView && status.release_url) {
-    btnUpdateView.href = status.release_url;
-    btnUpdateView.textContent = canInstall ? 'Release notes' : 'View release';
+  if (btnUpdateView && status.commit_url) {
+    btnUpdateView.href = status.commit_url;
+    btnUpdateView.textContent = 'View commit';
     btnUpdateView.className = canInstall ? 'btn btn-ghost' : 'btn btn-primary';
     btnUpdateView.hidden = false;
   }
   if (btnUpdateInstall) {
     btnUpdateInstall.hidden = !canInstall;
     btnUpdateInstall.disabled = false;
-    btnUpdateInstall.textContent = 'Install and restart';
+    btnUpdateInstall.textContent = 'Build and restart';
   }
   if (btnUpdateLater) btnUpdateLater.disabled = false;
   if (btnUpdateDismiss) btnUpdateDismiss.disabled = false;
@@ -4882,6 +4876,10 @@ async function checkForAppUpdate({ force = false } = {}) {
     lastAppUpdateStatus = status;
     renderAppUpdatePane(status);
     if (status && status.update_available) showUpdateToast(status);
+    else if (updateToast) {
+      updateToast.hidden = true;
+      updateToast.classList.remove('is-visible');
+    }
     return status;
   } catch {
     renderAppUpdatePane(null);
@@ -4906,15 +4904,15 @@ async function installAppUpdate() {
     updateToast.classList.add('is-busy');
     updateToast.setAttribute('aria-busy', 'true');
   }
-  const installingLabel = 'Downloading and installing ' + versionLabel(updateToast?.dataset?.latest || lastAppUpdateStatus?.latest) + '. Gopher will restart when it is done.';
+  const installingLabel = 'Building ' + commitLabel(lastAppUpdateStatus?.latest || updateToast?.dataset?.latest) + ' locally. This may take several minutes. Gopher will restart after a successful build.';
   if (updateToastBody) updateToastBody.textContent = installingLabel;
   if (appUpdateStatus) appUpdateStatus.textContent = installingLabel;
-  setUpdateInstallButtons(true, 'Installing…');
+  setUpdateInstallButtons(true, 'Building…');
   try {
     const response = await fetch('/api/updates/apply', { method: 'POST' });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(body.error || 'Could not install the update');
+      throw new Error(body.error || 'Could not build the update');
     }
     if (updateToastBody) updateToastBody.textContent = 'Restarting Gopher…';
     if (appUpdateStatus) appUpdateStatus.textContent = 'Restarting Gopher…';
@@ -4925,10 +4923,10 @@ async function installAppUpdate() {
       updateToast.classList.remove('is-busy');
       updateToast.removeAttribute('aria-busy');
     }
-    const message = error?.message || 'Could not install the update.';
+    const message = error?.message || 'Could not build the update.';
     if (updateToastBody) updateToastBody.textContent = message;
     if (appUpdateStatus) appUpdateStatus.textContent = message;
-    setUpdateInstallButtons(false, 'Install and restart');
+    setUpdateInstallButtons(false, 'Build and restart');
   }
 }
 
@@ -4946,7 +4944,7 @@ btnAppUpdateInstall?.addEventListener('click', () => {
 });
 btnAppUpdateCheck?.addEventListener('click', () => {
   if (updateInstallInFlight) return;
-  if (appUpdateStatus) appUpdateStatus.textContent = 'Checking GitHub Releases…';
+  if (appUpdateStatus) appUpdateStatus.textContent = 'Checking master on GitHub…';
   checkForAppUpdate({ force: true });
 });
 

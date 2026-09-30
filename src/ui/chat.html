@@ -439,11 +439,11 @@
     <button type="button" class="btn btn-ghost btn-icon update-toast-close" id="btnUpdateDismiss" aria-label="Dismiss update notice" title="Dismiss">×</button>
     <p class="update-toast-kicker">Update available</p>
     <p class="update-toast-title" id="updateToastTitle">Gopher</p>
-    <p class="update-toast-body" id="updateToastBody">A newer release is on GitHub.</p>
+    <p class="update-toast-body" id="updateToastBody">A different master commit is available on GitHub.</p>
     <div class="update-toast-actions">
       <button type="button" class="btn btn-ghost" id="btnUpdateLater">Later</button>
-      <a class="btn btn-ghost" id="btnUpdateView" href="https://github.com/jacobzymet/gopher/releases" target="_blank" rel="noopener noreferrer">Release notes</a>
-      <button type="button" class="btn btn-primary" id="btnUpdateInstall" hidden>Install and restart</button>
+      <a class="btn btn-ghost" id="btnUpdateView" href="https://github.com/jacobzymet/gopher/commits/master" target="_blank" rel="noopener noreferrer">View commit</a>
+      <button type="button" class="btn btn-primary" id="btnUpdateInstall" hidden>Build and restart</button>
     </div>
   </div>
 
@@ -1173,16 +1173,16 @@
           </section>
           <section class="settings-pane" data-settings-pane="app">
             <h2 class="settings-pane-title">App</h2>
-            <p class="settings-pane-lede">Gopher installs updates from the latest GitHub Release archive, not from the development branch.</p>
+            <p class="settings-pane-lede">Gopher follows master. Updates build locally and require Rust and your platform’s build dependencies.</p>
             <div class="settings-section">
-              <h3 class="settings-section-title">Version</h3>
+              <h3 class="settings-section-title">Build</h3>
               <div class="settings-data-card">
                 <strong id="appUpdateCurrent">Gopher</strong>
-                <p id="appUpdateStatus">Checking GitHub Releases…</p>
+                <p id="appUpdateStatus">Checking master on GitHub…</p>
                 <div class="settings-update-actions">
                   <button type="button" class="btn btn-outline" id="btnAppUpdateCheck">Check for updates</button>
-                  <button type="button" class="btn btn-primary" id="btnAppUpdateInstall" hidden>Install and restart</button>
-                  <a class="btn btn-ghost" id="btnAppUpdateNotes" href="https://github.com/jacobzymet/gopher/releases" target="_blank" rel="noopener noreferrer">Release notes</a>
+                  <button type="button" class="btn btn-primary" id="btnAppUpdateInstall" hidden>Build and restart</button>
+                  <a class="btn btn-ghost" id="btnAppUpdateNotes" href="https://github.com/jacobzymet/gopher/commits/master" target="_blank" rel="noopener noreferrer">View commit</a>
                 </div>
               </div>
             </div>
