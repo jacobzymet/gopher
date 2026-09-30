@@ -2181,6 +2181,14 @@ function thinkingEffortForModel(model) {
 }
 
 function renderThinkingEffortOptions(values) {
+  // Presentation order only: the catalog still determines which values exist.
+  // Provider-specific tiers retain their catalog order after the familiar levels.
+  const displayOrder = ['auto', 'off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
+  const rank = (value) => {
+    const index = displayOrder.indexOf(value.toLowerCase());
+    return index < 0 ? displayOrder.length : index;
+  };
+  values = [...values].sort((left, right) => rank(left) - rank(right));
   const signature = JSON.stringify(values);
   const menu = document.getElementById('thinkMenu');
   const setting = document.getElementById('settingThinkingEffort');

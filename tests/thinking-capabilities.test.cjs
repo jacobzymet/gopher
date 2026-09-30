@@ -46,12 +46,12 @@ function harness(wanted = 'auto') {
 
 test('composer and settings offer all advertised levels, including future provider values', () => {
   const { context, elements } = harness();
-  const model = { thinking_control: 'reasoning', thinking_efforts: ['minimal', 'xhigh', 'provider-future-tier'], thinking_can_disable: true };
+  const model = { thinking_control: 'reasoning', thinking_efforts: ['max', 'xhigh', 'high', 'medium', 'low', 'minimal', 'provider-future-tier'], thinking_can_disable: true };
   context.syncComposerThinkVisibility(model);
   assert.deepEqual(elements.thinkMenu.children.filter((item) => item.dataset.effort).map((item) => item.dataset.effort),
-    ['auto', 'off', 'minimal', 'xhigh', 'provider-future-tier']);
+    ['auto', 'off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'provider-future-tier']);
   assert.deepEqual(elements.settingThinkingEffort.children.map((item) => item.value),
-    ['auto', 'off', 'minimal', 'xhigh', 'provider-future-tier']);
+    ['auto', 'off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'provider-future-tier']);
   context.setThinkingEffort('provider-future-tier');
   assert.equal(context.settings.thinkingEffort, 'provider-future-tier');
   assert.equal(elements.btnThinkEffort.textContent, 'provider-future-tier');
