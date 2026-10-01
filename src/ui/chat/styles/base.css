@@ -1144,24 +1144,25 @@ html:not(.ui-ready) .chat-sidebar {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.convo-item.can-marquee-title:hover .convo-title:not(.is-typing-title) > .convo-title-text,
-.convo-item.can-marquee-title:focus-within .convo-title:not(.is-typing-title) > .convo-title-text {
+.convo-item:hover .convo-title:not(.is-typing-title) > .convo-title-text,
+.convo-item:focus-within .convo-title:not(.is-typing-title) > .convo-title-text {
   width: max-content;
+  min-width: 100%;
   max-width: none;
-  /* Include breathing room in the travel distance so the last glyph clears the clip edge. */
   padding-inline-end: 0.5rem;
   overflow: visible;
   text-overflow: clip;
-  animation: convo-title-marquee var(--marquee-duration, 4.8s) ease-in-out infinite alternate;
+  animation: convo-title-marquee 4.8s ease-in-out infinite alternate;
   animation-delay: 0.28s;
 }
 @keyframes convo-title-marquee {
-  0% { transform: translateX(0); }
-  86%, 100% { transform: translateX(var(--marquee-distance, 0px)); }
+  0% { margin-left: 0; transform: translateX(0); }
+  /* Margin uses the live clip width; translation uses the padded text width. */
+  86%, 100% { margin-left: 100%; transform: translateX(-100%); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .convo-item.can-marquee-title:hover .convo-title:not(.is-typing-title) > .convo-title-text,
-  .convo-item.can-marquee-title:focus-within .convo-title:not(.is-typing-title) > .convo-title-text {
+  .convo-item:hover .convo-title:not(.is-typing-title) > .convo-title-text,
+  .convo-item:focus-within .convo-title:not(.is-typing-title) > .convo-title-text {
     width: auto;
     max-width: 100%;
     padding-inline-end: 0;
