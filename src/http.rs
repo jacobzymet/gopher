@@ -2,9 +2,10 @@
 
 use std::{
     cell::Cell,
+    collections::VecDeque,
     io::Read,
     net::{IpAddr, Ipv4Addr, SocketAddr},
-    sync::OnceLock,
+    sync::{Mutex, OnceLock},
     time::Duration,
 };
 
@@ -313,6 +314,49 @@ pub fn ip_is_non_public(ip: IpAddr) -> bool {
 }
 
 const MAX_SAFE_REDIRECTS: usize = 10;
+const MAX_GUARDED_CLIENTS: usize = 64;
+
+#[derive(PartialEq, Eq)]
+struct GuardedClientKey {
+    host: String,
+    addresses: Vec<SocketAddr>,
+}
+
+#[derive(Default)]
+struct GuardedClientPool {
+    clients: VecDeque<(GuardedClientKey, Client)>,
+}
+
+impl GuardedClientPool {
+    fn client(&mut self, host: &str, mut addresses: Vec<SocketAddr>) -> Result<Client, String> {
+        addresses.sort_unstable();
+        addresses.dedup();
+        let key = GuardedClientKey {
+            host: host.into(),
+            addresses,
+        };
+        if let Some(index) = self.clients.iter().position(|(cached, _)| cached == &key) {
+            let entry = self.clients.remove(index).expect("cached client");
+            let client = entry.1.clone();
+            self.clients.push_back(entry);
+            return Ok(client);
+        }
+        let client = Client::builder()
+            .timeout(Duration::from_secs(60))
+            .user_agent(BROWSER_UA)
+            .redirect(reqwest::redirect::Policy::none())
+            .resolve_to_addrs(host, &key.addresses)
+            .no_proxy()
+            .http1_only()
+            .build()
+            .map_err(|error| format!("could not build guarded HTTP client: {error}"))?;
+        self.clients.push_back((key, client.clone()));
+        if self.clients.len() > MAX_GUARDED_CLIENTS {
+            self.clients.pop_front();
+        }
+        Ok(client)
+    }
+}
 
 /// GET a public HTTP(S) page while preventing SSRF and DNS rebinding. Each
 /// redirect is resolved and validated independently, and the connection is
@@ -347,14 +391,13 @@ pub async fn safe_public_get(url: &str, loose_accept: bool) -> Result<reqwest::R
             );
         }
 
-        let client = Client::builder()
-            .timeout(Duration::from_secs(60))
-            .user_agent(BROWSER_UA)
-            .redirect(reqwest::redirect::Policy::none())
-            .resolve_to_addrs(&host, &addresses)
-            .http1_only()
-            .build()
-            .map_err(|error| format!("could not build guarded HTTP client: {error}"))?;
+        // Revalidate every hop before using a pool pinned to exactly these DNS answers.
+        static POOL: OnceLock<Mutex<GuardedClientPool>> = OnceLock::new();
+        let client = POOL
+            .get_or_init(|| Mutex::new(GuardedClientPool::default()))
+            .lock()
+            .map_err(|_| "guarded HTTP pool lock poisoned".to_string())?
+            .client(&host, addresses)?;
         let mut request = apply_browser_navigation_headers(client.get(current.clone()));
         if loose_accept {
             request = request.header("Accept", "*/*");
@@ -382,6 +425,98 @@ pub async fn safe_public_get(url: &str, loose_accept: bool) -> Result<reqwest::R
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn guarded_pool_reuses_connections_and_separates_dns_answers() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let connections = Arc::new(AtomicUsize::new(0));
+        let accepted = connections.clone();
+        let server = tokio::spawn(async move {
+            loop {
+                let (socket, _) = listener.accept().await.unwrap();
+                accepted.fetch_add(1, Ordering::Relaxed);
+                tokio::spawn(async move {
+                    let (read, mut write) = socket.into_split();
+                    let mut read = BufReader::new(read);
+                    loop {
+                        let mut line = String::new();
+                        if read.read_line(&mut line).await.unwrap_or(0) == 0 {
+                            break;
+                        }
+                        while line != "\r\n" {
+                            line.clear();
+                            if read.read_line(&mut line).await.unwrap_or(0) == 0 {
+                                return;
+                            }
+                        }
+                        if write
+                            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                });
+            }
+        });
+        let mut pool = GuardedClientPool::default();
+        for _ in 0..2 {
+            // Only the pool test bypasses DNS validation to reach this local fixture.
+            let client = pool.client("guarded.test", vec![address]).unwrap();
+            let text = client
+                .get(format!("http://guarded.test:{}/page", address.port()))
+                .send()
+                .await
+                .unwrap()
+                .text()
+                .await
+                .unwrap();
+            assert_eq!(text, "ok");
+        }
+        assert_eq!(connections.load(Ordering::Relaxed), 1);
+        assert_eq!(pool.clients.len(), 1);
+        pool.client("guarded.test", vec!["93.184.216.34:80".parse().unwrap()])
+            .unwrap();
+        assert_eq!(pool.clients.len(), 2);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn guarded_pool_is_bounded_and_dns_order_does_not_split_it() {
+        let mut pool = GuardedClientPool::default();
+        let first = "93.184.216.34:443".parse().unwrap();
+        let second = "93.184.216.35:443".parse().unwrap();
+        pool.client("example.com", vec![first, second]).unwrap();
+        pool.client("example.com", vec![second, first, first])
+            .unwrap();
+        assert_eq!(pool.clients.len(), 1);
+        for index in 0..MAX_GUARDED_CLIENTS {
+            pool.client(&format!("host-{index}.test"), vec![first])
+                .unwrap();
+        }
+        assert_eq!(pool.clients.len(), MAX_GUARDED_CLIENTS);
+    }
+
+    #[tokio::test]
+    async fn pooled_fetch_still_blocks_private_hosts_and_credentials() {
+        for url in [
+            "http://localhost/a",
+            "http://127.0.0.1/a",
+            "http://10.0.0.1/a",
+            "http://[::1]/a",
+            "https://user:password@example.com/a",
+        ] {
+            assert!(safe_public_get(url, false).await.is_err(), "{url}");
+        }
+    }
 
     #[test]
     fn rejects_non_public_addresses() {

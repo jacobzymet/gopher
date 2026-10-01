@@ -14,6 +14,7 @@ pub mod search;
 pub mod skills;
 pub mod terminal;
 mod text;
+mod web_context;
 
 use std::{
     collections::{HashMap, HashSet},
@@ -542,6 +543,8 @@ pub struct AgentSkills {
     #[serde(skip)]
     history: Option<Arc<context::History>>,
     #[serde(skip)]
+    web_context: Option<Arc<web_context::WebContext>>,
+    #[serde(skip)]
     tool_output_bytes: usize,
 }
 
@@ -573,6 +576,7 @@ impl Default for AgentSkills {
             browser: false,
             session_id: String::new(),
             history: None,
+            web_context: None,
             tool_output_bytes: output::TOOL_OUTPUT_BYTES,
         }
     }
@@ -831,6 +835,8 @@ async fn run_agent_loop(
     request.model = Some(upstream.wire_model.clone());
     request.apply_deep_research();
     request.normalize_force_tools();
+    request.skills.web_context = (request.skills.web_search || request.skills.fetch_url)
+        .then(|| Arc::new(web_context::WebContext::default()));
     let history = Arc::new(context::History::new().map_err(StreamFail::Other)?);
     request.skills.history = Some(history.clone());
     let context_window = request
@@ -3627,7 +3633,7 @@ async fn fetch_single_url(
         .map(|n| clamp_page_fetch_chars(n).min(configured_limit))
         .unwrap_or(configured_limit);
 
-    let full_text = fetch_raw_page_text(url).await?;
+    let full_text = cached_page_text(url, skills).await?;
     if full_text.trim().is_empty() {
         return Err(format!("Fetched {url} but extracted no readable text."));
     }
@@ -3725,7 +3731,8 @@ async fn append_scraped_pages(out: &mut String, hits: &[SearchHit], skills: &Age
         let url = hit.url.clone();
         let title = hit.title.clone();
         async move {
-            let outcome = timeout(PAGE_FETCH_TIMEOUT, fetch_page_text(&url, max_chars)).await;
+            let outcome =
+                timeout(PAGE_FETCH_TIMEOUT, fetch_page_text(&url, max_chars, skills)).await;
             (index, title, url, outcome)
         }
     });
@@ -3895,8 +3902,19 @@ async fn fetch_raw_page_text(url: &str) -> Result<String, String> {
     decode_fetched_body(&bytes, &content_type, url)
 }
 
-async fn fetch_page_text(url: &str, max_chars: usize) -> Result<String, String> {
-    let full = fetch_raw_page_text(url).await?;
+async fn cached_page_text(url: &str, skills: &AgentSkills) -> Result<Arc<str>, String> {
+    if let Some(context) = &skills.web_context {
+        context
+            .pages
+            .get_or_fetch(url, || fetch_raw_page_text(url))
+            .await
+    } else {
+        fetch_raw_page_text(url).await.map(Arc::from)
+    }
+}
+
+async fn fetch_page_text(url: &str, max_chars: usize, skills: &AgentSkills) -> Result<String, String> {
+    let full = cached_page_text(url, skills).await?;
     Ok(truncate_chars(&full, max_chars))
 }
 

@@ -1,11 +1,16 @@
 //! Native web search: Parallel, TinyFish, optional SearXNG, then DuckDuckGo HTML + Lite.
 
 use std::collections::HashMap;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
 use scraper::{Html, Selector};
 use serde_json::{Value, json};
+use tokio::sync::Mutex;
 use tokio::time::timeout;
 
 use super::text::collapse_ws;
@@ -230,7 +235,7 @@ async fn parallel_hits(
 ) -> Result<Vec<SearchHit>, String> {
     match parallel_api_key(skills) {
         Some(api_key) => parallel_rest_hits(query, skills, limit, &api_key).await,
-        None => parallel_mcp_hits(query, limit).await,
+        None => parallel_mcp_hits(query, skills, limit).await,
     }
 }
 
@@ -267,80 +272,166 @@ async fn parallel_rest_hits(
 }
 
 /// Free Parallel Search MCP (`https://search.parallel.ai/mcp`) — no API key required.
-async fn parallel_mcp_hits(query: &str, limit: usize) -> Result<Vec<SearchHit>, String> {
-    let client = http::public_client();
-    let session_id = parallel_mcp_initialize(&client).await?;
-
-    let _ = client
-        .post(PARALLEL_MCP_URL)
-        .header("Content-Type", "application/json")
-        .header("Accept", "application/json, text/event-stream")
-        .header("Mcp-Session-Id", &session_id)
-        .json(&json!({
-            "jsonrpc": "2.0",
-            "method": "notifications/initialized"
-        }))
-        .send()
-        .await;
-
-    let call_body = json!({
-        "jsonrpc": "2.0",
-        "id": 2,
-        "method": "tools/call",
-        "params": {
-            "name": "web_search",
-            "arguments": {
-                "objective": query,
-                "search_queries": [query]
-            }
-        }
-    });
-    let request = client
-        .post(PARALLEL_MCP_URL)
-        .header("Content-Type", "application/json")
-        .header("Accept", "application/json, text/event-stream")
-        .header("Mcp-Session-Id", &session_id)
-        .json(&call_body);
-    let response = timeout(PARALLEL_TIMEOUT, request.send())
-        .await
-        .map_err(|_| "Parallel MCP search timed out".to_string())?
-        .map_err(|error| format!("Parallel MCP search failed: {error}"))?;
-    let status = response.status().as_u16();
-    let body = http::response_bytes_limited(response, MAX_SEARCH_RESPONSE_BYTES).await;
-
-    let _ = client
-        .delete(PARALLEL_MCP_URL)
-        .header("Mcp-Session-Id", &session_id)
-        .send()
-        .await;
-
-    let body = body
-        .map_err(|error| format!("Parallel MCP response was too large or unreadable: {error}"))?;
-    let text = String::from_utf8_lossy(&body);
-    if status != 200 {
-        return Err(format!(
-            "Parallel MCP HTTP {status}: {}",
-            truncate_chars(&collapse_ws(&text), 160)
-        ));
+async fn parallel_mcp_hits(
+    query: &str,
+    skills: &AgentSkills,
+    limit: usize,
+) -> Result<Vec<SearchHit>, String> {
+    match &skills.web_context {
+        Some(context) => context.parallel.search(query, limit).await,
+        None => ParallelMcpSession::default().search(query, limit).await,
     }
-
-    let envelope: Value = serde_json::from_str(mcp_json_payload(&text)?)
-        .map_err(|error| format!("Invalid Parallel MCP JSON: {error}"))?;
-    if let Some(message) = envelope
-        .pointer("/error/message")
-        .and_then(|v| v.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        return Err(format!("Parallel MCP: {}", truncate_chars(message, 160)));
-    }
-    let search_body = parallel_mcp_search_body(&envelope)?;
-    Ok(parse_parallel_json(&search_body, limit))
 }
 
-async fn parallel_mcp_initialize(client: &reqwest::Client) -> Result<String, String> {
+#[derive(Debug)]
+pub(super) struct ParallelMcpSession {
+    client: reqwest::Client,
+    endpoint: String,
+    session: Mutex<Option<Arc<McpSession>>>,
+    next_id: AtomicU64,
+}
+
+impl Default for ParallelMcpSession {
+    fn default() -> Self {
+        Self::new(http::public_client(), PARALLEL_MCP_URL.into())
+    }
+}
+
+#[derive(Debug)]
+struct McpSession {
+    client: reqwest::Client,
+    endpoint: String,
+    id: String,
+}
+
+impl Drop for McpSession {
+    fn drop(&mut self) {
+        // Turn cleanup must not hold up a completed search or the final answer.
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            let (client, endpoint, id) =
+                (self.client.clone(), self.endpoint.clone(), self.id.clone());
+            runtime.spawn(async move {
+                let _ = client
+                    .delete(endpoint)
+                    .header("Mcp-Session-Id", id)
+                    .timeout(Duration::from_secs(3))
+                    .send()
+                    .await;
+            });
+        }
+    }
+}
+
+impl ParallelMcpSession {
+    fn new(client: reqwest::Client, endpoint: String) -> Self {
+        Self {
+            client,
+            endpoint,
+            session: Mutex::new(None),
+            next_id: AtomicU64::new(2),
+        }
+    }
+
+    async fn initialized_session(&self) -> Result<Arc<McpSession>, String> {
+        let mut cached = self.session.lock().await;
+        if let Some(session) = &*cached {
+            return Ok(session.clone());
+        }
+        let id = parallel_mcp_initialize(&self.client, &self.endpoint).await?;
+        let session = Arc::new(McpSession {
+            client: self.client.clone(),
+            endpoint: self.endpoint.clone(),
+            id,
+        });
+        let response = self
+            .client
+            .post(&self.endpoint)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json, text/event-stream")
+            .header("Mcp-Session-Id", &session.id)
+            .json(&json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }))
+            .timeout(PARALLEL_TIMEOUT)
+            .send()
+            .await
+            .map_err(|error| format!("Parallel MCP initialization notification failed: {error}"))?;
+        if !response.status().is_success() {
+            return Err(format!(
+                "Parallel MCP initialization notification HTTP {}",
+                response.status()
+            ));
+        }
+        http::response_bytes_limited(response, MAX_SEARCH_RESPONSE_BYTES).await?;
+        *cached = Some(session.clone());
+        Ok(session)
+    }
+
+    async fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchHit>, String> {
+        for attempt in 0..2 {
+            let session = self.initialized_session().await?;
+            let body = json!({
+                "jsonrpc": "2.0", "id": self.next_id.fetch_add(1, Ordering::Relaxed),
+                "method": "tools/call",
+                "params": { "name": "web_search", "arguments": { "objective": query, "search_queries": [query] } }
+            });
+            let response = self
+                .client
+                .post(&self.endpoint)
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json, text/event-stream")
+                .header("Mcp-Session-Id", &session.id)
+                .json(&body)
+                .timeout(PARALLEL_TIMEOUT)
+                .send()
+                .await
+                .map_err(|error| format!("Parallel MCP search failed: {error}"))?;
+            let status = response.status().as_u16();
+            if status == 404 && attempt == 0 {
+                let mut cached = self.session.lock().await;
+                if cached
+                    .as_ref()
+                    .is_some_and(|current| Arc::ptr_eq(current, &session))
+                {
+                    *cached = None;
+                }
+                continue;
+            }
+            let bytes = http::response_bytes_limited(response, MAX_SEARCH_RESPONSE_BYTES)
+                .await
+                .map_err(|error| {
+                    format!("Parallel MCP response was too large or unreadable: {error}")
+                })?;
+            let text = String::from_utf8_lossy(&bytes);
+            if status != 200 {
+                return Err(format!(
+                    "Parallel MCP HTTP {status}: {}",
+                    truncate_chars(&collapse_ws(&text), 160)
+                ));
+            }
+            let envelope: Value = serde_json::from_str(mcp_json_payload(&text)?)
+                .map_err(|error| format!("Invalid Parallel MCP JSON: {error}"))?;
+            if let Some(message) = envelope
+                .pointer("/error/message")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|message| !message.is_empty())
+            {
+                return Err(format!("Parallel MCP: {}", truncate_chars(message, 160)));
+            }
+            return Ok(parse_parallel_json(
+                &parallel_mcp_search_body(&envelope)?,
+                limit,
+            ));
+        }
+        Err("Parallel MCP session expired".into())
+    }
+}
+
+async fn parallel_mcp_initialize(
+    client: &reqwest::Client,
+    endpoint: &str,
+) -> Result<String, String> {
     let request = client
-        .post(PARALLEL_MCP_URL)
+        .post(endpoint)
         .header("Content-Type", "application/json")
         .header("Accept", "application/json, text/event-stream")
         .json(&json!({
@@ -1893,6 +1984,117 @@ fn from_hex(b: u8) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn parallel_mcp_reuses_a_session_without_serializing_queries_and_cleans_up_afterward() {
+        let (session, counts, mut deleted, server) = mock_parallel_mcp(false).await;
+        let (a, b) = tokio::join!(
+            session.search("first query", 6),
+            session.search("second query", 6)
+        );
+        assert_eq!(a.unwrap().len(), 1);
+        assert_eq!(b.unwrap().len(), 1);
+        session.search("third query", 6).await.unwrap();
+        assert_eq!(counts.initializations.load(Ordering::Relaxed), 1);
+        assert_eq!(counts.notifications.load(Ordering::Relaxed), 1);
+        assert_eq!(counts.max_running.load(Ordering::Relaxed), 2);
+        assert_eq!(counts.ids.lock().unwrap().len(), 3);
+        assert!(
+            deleted.try_recv().is_err(),
+            "search results must not wait for session deletion"
+        );
+        drop(session);
+        assert_eq!(
+            timeout(Duration::from_secs(2), deleted.recv())
+                .await
+                .unwrap()
+                .unwrap(),
+            "session-1"
+        );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn parallel_mcp_reinitializes_expired_sessions_once() {
+        let (session, counts, _deleted, server) = mock_parallel_mcp(true).await;
+        assert_eq!(session.search("query", 6).await.unwrap().len(), 1);
+        session.search("next query", 6).await.unwrap();
+        assert_eq!(counts.initializations.load(Ordering::Relaxed), 2);
+        assert_eq!(counts.notifications.load(Ordering::Relaxed), 2);
+        server.abort();
+    }
+
+    #[derive(Default)]
+    struct McpCounts {
+        initializations: std::sync::atomic::AtomicUsize,
+        notifications: std::sync::atomic::AtomicUsize,
+        running: std::sync::atomic::AtomicUsize,
+        max_running: std::sync::atomic::AtomicUsize,
+        ids: std::sync::Mutex<std::collections::HashSet<u64>>,
+        expire: std::sync::atomic::AtomicBool,
+    }
+
+    async fn mock_parallel_mcp(
+        expire: bool,
+    ) -> (
+        ParallelMcpSession,
+        Arc<McpCounts>,
+        tokio::sync::mpsc::UnboundedReceiver<String>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        use axum::{
+            Json, Router,
+            extract::State,
+            http::{HeaderMap, StatusCode},
+            response::IntoResponse,
+            routing::post,
+        };
+        let counts = Arc::new(McpCounts::default());
+        counts.expire.store(expire, Ordering::Relaxed);
+        let (deleted_tx, deleted_rx) = tokio::sync::mpsc::unbounded_channel();
+        let router = Router::new().route("/mcp", post(|State(counts): State<Arc<McpCounts>>, headers: HeaderMap, Json(body): Json<Value>| async move {
+            match body["method"].as_str().unwrap() {
+                "initialize" => {
+                    let id = counts.initializations.fetch_add(1, Ordering::Relaxed) + 1;
+                    ([("mcp-session-id", format!("session-{id}"))], Json(json!({ "jsonrpc": "2.0", "id": 1, "result": {} }))).into_response()
+                }
+                "notifications/initialized" => {
+                    counts.notifications.fetch_add(1, Ordering::Relaxed);
+                    StatusCode::ACCEPTED.into_response()
+                }
+                "tools/call" => {
+                    assert!(counts.ids.lock().unwrap().insert(body["id"].as_u64().unwrap()));
+                    if headers["mcp-session-id"] == "session-1" && counts.expire.swap(false, Ordering::Relaxed) {
+                        return StatusCode::NOT_FOUND.into_response();
+                    }
+                    let running = counts.running.fetch_add(1, Ordering::Relaxed) + 1;
+                    counts.max_running.fetch_max(running, Ordering::Relaxed);
+                    tokio::time::sleep(Duration::from_millis(30)).await;
+                    counts.running.fetch_sub(1, Ordering::Relaxed);
+                    Json(json!({ "jsonrpc": "2.0", "id": body["id"], "result": { "content": [{ "type": "text", "text": json!({ "results": [{ "title": "Result", "url": "https://example.com/article", "excerpts": ["Readable text"] }] }).to_string() }] } })).into_response()
+                }
+                _ => StatusCode::BAD_REQUEST.into_response(),
+            }
+        }).delete(move |headers: HeaderMap| {
+            let deleted = deleted_tx.clone();
+            async move {
+                let _ = deleted.send(headers["mcp-session-id"].to_str().unwrap().to_string());
+                StatusCode::NO_CONTENT
+            }
+        })).with_state(counts.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/mcp", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        (
+            ParallelMcpSession::new(client, endpoint),
+            counts,
+            deleted_rx,
+            server,
+        )
+    }
 
     fn hit(title: &str, url: &str, snippet: &str) -> SearchHit {
         SearchHit {
