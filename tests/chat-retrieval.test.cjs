@@ -22,7 +22,7 @@ function settingsContext() {
   });
   vm.runInContext(state.slice(state.indexOf('const WEB_SEARCH_DEPTHS'), state.indexOf('const DEFAULT_SETTINGS')), context);
   vm.runInContext(state.match(/^const DEFAULT_SETTINGS = \{[\s\S]*?^\};/m)[0], context);
-  for (const name of ['normalizeThinkingEffort', 'normalizeSearxngUrl', 'normalizeSettings', 'preferencesPayload', 'buildSystemPrompt']) load(context, state, name);
+  for (const name of ['normalizeThinkingEffort', 'normalizeSearxngUrl', 'normalizeSettings', 'preferencesPayload', 'buildTimePrompt', 'buildSystemPrompt']) load(context, state, name);
   load(context, input, 'resolveTurnSkills');
   load(context, input, 'resolveForcedTools');
   return context;
@@ -68,6 +68,35 @@ test('project prompts preserve saved memory without silently injecting sibling m
     assert.match(prompt, /Saved decision/);
     assert.doesNotMatch(prompt, /Secret sibling text/);
   }
+});
+
+test('clock changes preserve the stable prompt, project precedence, and all supplied context', () => {
+  const context = settingsContext();
+  context.settings = context.normalizeSettings({
+    name: 'Ada', about: 'Engineer', instructions: 'Global instruction', memory: 'Global fact',
+  });
+  context.window = {
+    GOPHER_PROMPTS: {
+      'chat.userName': 'Name: {{name}}', 'chat.userAbout': 'About: {{about}}',
+      'chat.globalInstructions': '{{instructions}}', 'chat.projectInstructions': '{{instructions}}',
+      'chat.globalMemory': '{{memory}}', 'chat.projectMemory': '{{scope_note}} {{memory}}',
+      'chat.today': 'Now: {{today}}',
+    },
+    fillPrompt: (template, values) => template ? template.replace(/\{\{(\w+)\}\}/g, (_, key) => values[key] || '') : '',
+  };
+  context.getProject = () => ({ name: 'Project', instructions: 'Project instruction', memory: 'Project fact' });
+  context.botSystemPromptParts = () => ['Bot identity', 'Bot memory', 'Group directive'];
+  const opts = { convo: {}, includeTime: false };
+  context.formatPromptToday = () => '2026-10-01 12:00';
+  const first = context.buildSystemPrompt('p', opts);
+  context.formatPromptToday = () => '2026-10-01 12:01';
+  assert.equal(context.buildSystemPrompt('p', opts), first);
+  for (const text of ['Ada', 'Engineer', 'Project instruction', 'Global fact', 'Project fact', 'Bot identity', 'Bot memory', 'Group directive']) {
+    assert.ok(first.includes(text), text);
+  }
+  assert.doesNotMatch(first, /Global instruction|2026-10-01/);
+  assert.equal(context.buildTimePrompt(), 'Now: 2026-10-01 12:01');
+  assert.equal(context.buildSystemPrompt('p', { convo: {} }), first + '\n\nNow: 2026-10-01 12:01');
 });
 
 test('temporary Ghost chats neither consume nor update any saved memory', () => {

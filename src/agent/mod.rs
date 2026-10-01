@@ -1581,13 +1581,7 @@ fn agent_system_block(
     }
     if skills.terminal_ready() {
         let timeout = terminal::clamp_timeout_secs(skills.terminal_timeout_secs).to_string();
-        lines.push(fill(
-            agent::TERMINAL,
-            &[
-                ("timeout", &timeout),
-                ("shell_context", &terminal::agent_shell_context()),
-            ],
-        ));
+        lines.push(fill(agent::TERMINAL, &[("timeout", &timeout)]));
     } else if skills.terminal {
         lines.push(trim_prompt(agent::TERMINAL_NO_WORKSPACE).to_string());
     }
@@ -1735,10 +1729,12 @@ async fn stream_once(
         ApiStyle::Responses => format!("{api_base}/responses"),
     };
     let body = match style {
-        ApiStyle::Openai => payload,
-        ApiStyle::Anthropic => {
-            anthropic::openai_to_anthropic_messages(&payload).map_err(StreamFail::Other)?
+        ApiStyle::Openai => {
+            chat::merge_leading_system_messages(&mut payload);
+            payload
         }
+        ApiStyle::Anthropic => anthropic::openai_to_anthropic_messages_for_provider(&payload, api_base)
+            .map_err(StreamFail::Other)?,
         ApiStyle::Responses => crate::responses::openai_chat_to_responses(
             &payload,
             upstream.kind == crate::providers::ProviderKind::OpenaiCodex,
@@ -4618,6 +4614,44 @@ mod tests {
                 .iter()
                 .all(|group| group.len() <= MAX_CONCURRENT_TOOL_CALLS)
         );
+    }
+
+    #[test]
+    #[ignore = "diagnostic report; run with --ignored --nocapture"]
+    fn prompt_budget_report() {
+        for (name, filesystem, terminal, browser, research) in [
+            ("core", false, false, false, false),
+            ("coding", true, true, false, false),
+            ("browser", false, false, true, false),
+            ("research", false, false, false, true),
+        ] {
+            let skills = AgentSkills {
+                filesystem,
+                terminal,
+                browser,
+                web_search: research,
+                fetch_url: research,
+                workspace_root: "C:/workspace".into(),
+                history: Some(Arc::new(context::History::new().unwrap())),
+                ..AgentSkills::default()
+            };
+            let mut messages = Vec::new();
+            inject_agent_system_prompt(
+                &mut messages,
+                &skills,
+                &[],
+                research,
+                DeepResearchOutput::Brief,
+                &[],
+            );
+            let definitions = openai_tools_payload(&skills, &[], research);
+            let system = context::estimate_tokens(&json!(messages));
+            let schemas = context::estimate_tokens(&json!(definitions));
+            eprintln!(
+                "{name}: system~{system}, tool_schemas~{schemas}, total~{} tokens (budget estimates; excludes user context/history)",
+                system + schemas
+            );
+        }
     }
 
     #[test]

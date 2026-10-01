@@ -2444,6 +2444,12 @@ function formatPromptToday(now = new Date()) {
   return `${year}-${month}-${day} ${hour}:${minute} (${weekday}, UTC${sign}${tzHours}:${tzMinutes})`;
 }
 
+function buildTimePrompt() {
+  const P = window.GOPHER_PROMPTS || {};
+  const fill = window.fillPrompt || ((t) => t);
+  return fill(P['chat.today'] || 'Now: {{today}}', { today: formatPromptToday() });
+}
+
 function buildSystemPrompt(projectIdOverride, opts = {}) {
   const convo = opts.convo || null;
   const temporary = convo ? !!convo.incognito
@@ -2506,9 +2512,8 @@ function buildSystemPrompt(projectIdOverride, opts = {}) {
   }
 
   const base = P['chat.base'] || 'You are a helpful assistant.';
-  const today = fill(P['chat.today'] || 'Now: {{today}}', { today: formatPromptToday() });
-  if (parts.length === 0) return base + '\n\n' + today;
-  return base + '\n\n' + today + '\n\n' + parts.join('\n\n');
+  if (opts.includeTime !== false) parts.push(buildTimePrompt());
+  return [base, ...parts].filter(Boolean).join('\n\n');
 }
 
 function messagePlainExcerpt(message, maxChars) {

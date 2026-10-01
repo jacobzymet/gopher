@@ -93,6 +93,33 @@ where
     })
 }
 
+pub(crate) fn merge_leading_system_messages(payload: &mut serde_json::Value) {
+    let Some(messages) = payload
+        .get_mut("messages")
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return;
+    };
+    while messages.len() > 1 && messages[0]["role"] == "system" && messages[1]["role"] == "system" {
+        // Preserve metadata on named or otherwise extended messages.
+        if messages[..2]
+            .iter()
+            .any(|message| message.as_object().is_none_or(|object| object.len() != 2))
+        {
+            break;
+        }
+        let (Some(first), Some(second)) = (
+            messages[0]["content"].as_str(),
+            messages[1]["content"].as_str(),
+        ) else {
+            break;
+        };
+        let content = format!("{first}\n\n{second}");
+        messages[0]["content"] = serde_json::Value::String(content);
+        messages.remove(1);
+    }
+}
+
 pub fn stream_remote_completion(
     upstream: crate::subscription::PreparedUpstream,
     mut payload: serde_json::Value,
@@ -111,6 +138,7 @@ pub fn stream_remote_completion(
         let api_base = upstream.api_base.trim_end_matches('/').to_string();
         match style {
             ApiStyle::Openai => {
+                merge_leading_system_messages(&mut payload);
                 if let Some(object) = payload.as_object_mut() {
                     object.insert(
                         "stream_options".into(),
@@ -122,8 +150,8 @@ pub fn stream_remote_completion(
             }
             ApiStyle::Anthropic => {
                 let url = format!("{api_base}/messages");
-                let anth =
-                    anthropic::openai_to_anthropic_messages(&payload).map_err(StreamFail::Other)?;
+                let anth = anthropic::openai_to_anthropic_messages_for_provider(&payload, &api_base)
+                    .map_err(StreamFail::Other)?;
                 proxy_anthropic_sse(&url, &upstream, &anth, &tx).await
             }
             ApiStyle::Responses => {
@@ -471,7 +499,7 @@ async fn post_title_completion(
         ApiStyle::Openai => (format!("{api_base}/chat/completions"), payload.clone()),
         ApiStyle::Anthropic => (
             format!("{api_base}/messages"),
-            anthropic::openai_to_anthropic_messages(payload)?,
+            anthropic::openai_to_anthropic_messages_for_provider(payload, api_base)?,
         ),
         ApiStyle::Responses => {
             let mut body = crate::responses::openai_chat_to_responses(payload, codex);
@@ -945,8 +973,53 @@ mod title_tests {
 
 #[cfg(test)]
 mod stream_tests {
-    use super::{STREAM_STALL_MESSAGE, StreamFail, next_stream_chunk, stream_from_worker};
+    use super::{
+        STREAM_STALL_MESSAGE, StreamFail, merge_leading_system_messages, next_stream_chunk,
+        stream_from_worker,
+    };
     use futures_util::StreamExt;
+
+    #[test]
+    fn compatible_hosts_receive_one_leading_system_message_without_losing_context() {
+        let original = serde_json::json!({"messages": [
+            {"role": "system", "content": "Custom instructions\n\nAgent rules"},
+            {"role": "system", "content": "Now: 2026-10-01 12:01"},
+            {"role": "user", "content": "Question"},
+            {"role": "assistant", "content": "Answer"},
+            {"role": "system", "content": "Later directive"}
+        ]});
+        let mut payload = original.clone();
+        merge_leading_system_messages(&mut payload);
+        assert_eq!(
+            payload["messages"][0],
+            serde_json::json!({
+                "role": "system", "content": "Custom instructions\n\nAgent rules\n\nNow: 2026-10-01 12:01"
+            })
+        );
+        assert_eq!(
+            payload["messages"].as_array().unwrap()[1..],
+            original["messages"].as_array().unwrap()[2..]
+        );
+        let once = payload.clone();
+        merge_leading_system_messages(&mut payload);
+        assert_eq!(payload, once);
+    }
+
+    #[test]
+    fn merging_system_messages_preserves_distinct_roles_and_structured_content() {
+        for message in [
+            serde_json::json!({"role": "developer", "content": "Override"}),
+            serde_json::json!({"role": "system", "name": "reviewer", "content": "Named instructions"}),
+            serde_json::json!({"role": "system", "content": [{"type": "text", "text": "Structured"}]}),
+        ] {
+            let mut payload = serde_json::json!({"messages": [
+                {"role": "system", "content": "Rules"}, message, {"role": "user", "content": "Hi"}
+            ]});
+            let original = payload.clone();
+            merge_leading_system_messages(&mut payload);
+            assert_eq!(payload, original);
+        }
+    }
 
     #[tokio::test]
     async fn silent_upstream_chunk_errors_instead_of_hanging() {

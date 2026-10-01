@@ -5176,6 +5176,8 @@ function bindConvoTitleMarquee() {
     const text = title?.querySelector(':scope > .convo-title-text');
     if (!text) return;
     resize.observe(title);
+    // Font loading and weight changes can widen the text without resizing its clip.
+    resize.observe(text);
     if (title.classList.contains('is-typing-title')) return;
     const padding = parseFloat(getComputedStyle(text).paddingInlineEnd) || 0;
     const overflow = text.scrollWidth - padding - title.getBoundingClientRect().width;
@@ -5203,6 +5205,8 @@ function bindConvoTitleMarquee() {
     if (!item || isActive(item)) return;
     const title = item.querySelector(':scope > .convo-title');
     if (title) resize.unobserve(title);
+    const text = title?.querySelector(':scope > .convo-title-text');
+    if (text) resize.unobserve(text);
   };
   let refreshFrame = null;
   const refreshActive = () => {

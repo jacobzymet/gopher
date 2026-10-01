@@ -157,9 +157,10 @@ function conflictHarness() {
   });
   load(state, 'controls.js', ['markOutboundStarting', 'clearOutboundStarting', 'outboundStartIsCurrent']);
   load(state, 'runtime.js', ['runAssistantTurn', 'dropLiveSubscriber']);
-  const run = () => state.runAssistantTurn(convo, {
+  const run = (overrides = {}) => state.runAssistantTurn(convo, {
     useAgent: false, skills: {}, text: 'queued prompt', dispatchedMessage: user,
     queueItem: { id: 'queued-1' }, previousTitle: 'title',
+    ...overrides,
   });
   return {
     state, queue, events, convo, run, fetchQueue, requests,
@@ -170,6 +171,24 @@ function conflictHarness() {
     },
   };
 }
+
+test('outbound prompts retain stage instructions and place the fresh clock after stable context', async () => {
+  const h = conflictHarness();
+  h.state.buildSystemPrompt = (_, opts) => {
+    assert.equal(opts.includeTime, false);
+    return 'Stable instructions and memory';
+  };
+  h.state.buildTimePrompt = () => 'Now: 2026-10-01 12:01';
+  const pending = h.run({ loopTurnDirective: 'Verify independently' });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(h.requests[0].messages, [
+    { role: 'system', content: 'Stable instructions and memory\n\nVerify independently' },
+    { role: 'system', content: 'Now: 2026-10-01 12:01' },
+    { role: 'user', content: 'queued prompt' },
+  ]);
+  h.respond(200);
+  await pending;
+});
 
 test('temporary turns exclude retrieval and persistent conversation identifiers', async () => {
   const h = conflictHarness();

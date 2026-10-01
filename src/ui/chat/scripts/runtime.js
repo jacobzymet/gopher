@@ -1987,10 +1987,15 @@ async function runAssistantTurn(convo, {
     excludeConvoId: convo.id,
     convo,
     speakerBot,
+    includeTime: false,
   });
   const systemParts = [systemPrompt, String(loopTurnDirective || '').trim()].filter(Boolean);
   if (systemParts.length) {
-    apiMessages.unshift({ role: 'system', content: systemParts.join('\n\n') });
+    // Keep the changing clock after the stable prompt and backend agent rules.
+    apiMessages.unshift(
+      { role: 'system', content: systemParts.join('\n\n') },
+      { role: 'system', content: buildTimePrompt() },
+    );
   }
 
   const speakerEffort = typeof thinkingEffortForModel === 'function'

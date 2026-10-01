@@ -37,6 +37,7 @@ function fixture({ width = 240, textWidth = 300, fontSize = 16 } = {}) {
   const text = {
     get scrollWidth() { return Math.max(textWidth + padding(), title.width); },
     getBoundingClientRect: () => ({ width: textWidth + padding() }),
+    closest: () => item,
     style: {
       setProperty: (name, value) => styles.set(name, value),
       removeProperty: (name) => styles.delete(name),
@@ -76,7 +77,7 @@ function fixture({ width = 240, textWidth = 300, fontSize = 16 } = {}) {
   vm.runInContext('let convoTitleMarqueeBound = false;\n' + bind, context);
   context.bindConvoTitleMarquee();
   return {
-    item, title, classes, styles, observed, activations,
+    item, title, text, classes, styles, observed, activations,
     enter: () => events.pointerover({ target: item, relatedTarget: null }),
     leave: () => events.pointerout({ target: item, relatedTarget: null }),
     focus: () => events.focusin({ target: item }),
@@ -89,6 +90,10 @@ function fixture({ width = 240, textWidth = 300, fontSize = 16 } = {}) {
     updateText: (width) => {
       textWidth = width;
       mutate([{ type: 'characterData', target: text }]);
+    },
+    resizeText: (width) => {
+      textWidth = width;
+      notify([{ target: text }]);
     },
     resize: (nextWidth) => {
       title.width = nextWidth;
@@ -128,11 +133,21 @@ test('title observation survives keyboard focus and stops when the row is inacti
   state.focus();
   state.leave();
   assert.equal(state.observed.has(state.title), true);
+  assert.equal(state.observed.has(state.text), true);
   state.resize(218);
   assert.equal(state.styles.get('--marquee-distance'), '-90px');
   state.item.focused = false;
   state.blur();
   assert.equal(state.observed.size, 0);
+});
+
+test('the endpoint tracks text resizing without a title mutation or clip resize', () => {
+  const state = fixture();
+  state.enter();
+  assert.equal(state.observed.has(state.text), true);
+  state.resizeText(440);
+  assert.equal(state.styles.get('--marquee-distance'), '-208px');
+  assert.equal(state.title.width, 240);
 });
 
 test('the first hover configures the distance before starting the animation', () => {
@@ -241,6 +256,33 @@ test('a title that finishes typing under the pointer starts moving without anoth
     assert.equal(await page.locator('.convo-title-text').evaluate((text) => text.getAnimations().length), 0);
     await page.locator('.convo-title').evaluate((title) => title.classList.remove('is-typing-title'));
     await assertMoving(page);
+  });
+});
+
+test('the endpoint follows changed font metrics even when the clipping area stays the same size', browserOptions, async () => {
+  await withSidebar(async (page) => {
+    await page.locator('.convo-title').hover();
+    await assertMoving(page);
+    const before = await page.locator('.convo-title').boundingBox();
+    await page.locator('.convo-title-text').evaluate((text) => {
+      text.style.letterSpacing = '2px';
+    });
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const endpoint = await page.evaluate(() => {
+      const title = document.querySelector('.convo-title');
+      const text = title.firstElementChild;
+      const animation = text.getAnimations()[0];
+      animation.pause();
+      animation.currentTime = animation.effect.getTiming().delay + animation.effect.getTiming().duration;
+      const range = document.createRange();
+      range.selectNodeContents(text);
+      return {
+        width: title.getBoundingClientRect().width,
+        inset: title.getBoundingClientRect().right - range.getBoundingClientRect().right,
+      };
+    });
+    assert.equal(endpoint.width, before.width);
+    assert.ok(endpoint.inset >= 7, 'the full title must remain visible after a font change: ' + JSON.stringify(endpoint));
   });
 });
 

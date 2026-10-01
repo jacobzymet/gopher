@@ -7,6 +7,13 @@ const DEFAULT_MAX_TOKENS: u64 = 8192;
 const MAX_TRANSLATED_TEXT_BYTES: usize = 16 * 1024 * 1024;
 
 pub fn openai_to_anthropic_messages(payload: &Value) -> Result<Value, String> {
+    openai_to_anthropic_messages_for_provider(payload, "")
+}
+
+pub fn openai_to_anthropic_messages_for_provider(
+    payload: &Value,
+    api_base: &str,
+) -> Result<Value, String> {
     let model = payload
         .get("model")
         .and_then(|v| v.as_str())
@@ -83,11 +90,34 @@ pub fn openai_to_anthropic_messages(payload: &Value) -> Result<Value, String> {
         "stream": payload.get("stream").and_then(|v| v.as_bool()).unwrap_or(true),
         "messages": messages,
     });
+    // Compatible endpoints keep their existing wire format and optional fields.
+    let cache_prompt = payload.get("stream").and_then(Value::as_bool) != Some(false)
+        && model.starts_with("claude-")
+        && reqwest::Url::parse(api_base).is_ok_and(|url| {
+            url.scheme() == "https" && url.host_str() == Some("api.anthropic.com")
+        });
     if let Some(object) = out.as_object_mut() {
-        if !system_parts.is_empty() {
-            object.insert("system".into(), Value::String(system_parts.join("\n\n")));
+        if cache_prompt {
+            object.insert("cache_control".into(), json!({ "type": "ephemeral" }));
         }
-        if let Some(tools) = openai_tools_to_anthropic(payload.get("tools")) {
+        if !system_parts.is_empty() {
+            let system = if cache_prompt {
+                let mut blocks: Vec<Value> = system_parts
+                    .iter()
+                    .map(|text| json!({ "type": "text", "text": text }))
+                    .collect();
+                // The UI supplies the clock separately after its stable instructions.
+                blocks[0]["cache_control"] = json!({ "type": "ephemeral" });
+                Value::Array(blocks)
+            } else {
+                Value::String(system_parts.join("\n\n"))
+            };
+            object.insert("system".into(), system);
+        }
+        if let Some(mut tools) = openai_tools_to_anthropic(payload.get("tools")) {
+            if cache_prompt && let Some(last) = tools.last_mut() {
+                last["cache_control"] = json!({ "type": "ephemeral" });
+            }
             object.insert("tools".into(), Value::Array(tools));
         }
         if let Some(choice) = openai_tool_choice_to_anthropic(payload.get("tool_choice")) {
@@ -459,6 +489,7 @@ pub struct AnthropicSseTranslator {
     tool_index: Option<u32>,
     tool_id: String,
     tool_name: String,
+    usage: serde_json::Map<String, Value>,
 }
 
 impl AnthropicSseTranslator {
@@ -490,6 +521,12 @@ impl AnthropicSseTranslator {
             .unwrap_or(self.event_name.as_str());
 
         match kind {
+            "message_start" => {
+                if let Some(usage) = payload.pointer("/message/usage").and_then(Value::as_object) {
+                    self.usage.extend(usage.clone());
+                }
+                Ok(Vec::new())
+            }
             "content_block_start" => {
                 let block = payload.get("content_block").cloned().unwrap_or(Value::Null);
                 if block.get("type").and_then(|v| v.as_str()) == Some("tool_use") {
@@ -561,14 +598,10 @@ impl AnthropicSseTranslator {
                 Ok(Vec::new())
             }
             "message_delta" => {
-                let mut frames = Vec::new();
-                if let Some(usage) = payload.get("usage") {
-                    frames.push(openai_usage_frame(
-                        usage.get("input_tokens").and_then(|v| v.as_u64()),
-                        usage.get("output_tokens").and_then(|v| v.as_u64()),
-                    ));
+                if let Some(usage) = payload.get("usage").and_then(Value::as_object) {
+                    self.usage.extend(usage.clone());
                 }
-                Ok(frames)
+                Ok(Vec::new())
             }
             "error" => {
                 let message = payload
@@ -580,7 +613,12 @@ impl AnthropicSseTranslator {
             }
             "message_stop" => {
                 self.finished = true;
-                Ok(Vec::new())
+                // Usage deltas are cumulative; emit once for consumers that sum frames.
+                if self.usage.is_empty() {
+                    Ok(Vec::new())
+                } else {
+                    Ok(vec![openai_usage_frame(&self.usage)])
+                }
             }
             _ => Ok(Vec::new()),
         }
@@ -641,8 +679,19 @@ fn openai_content_delta(text: &str) -> Vec<u8> {
     format!("data: {payload}\n\n").into_bytes()
 }
 
-fn openai_usage_frame(prompt_tokens: Option<u64>, completion_tokens: Option<u64>) -> Vec<u8> {
+fn openai_usage_frame(source: &serde_json::Map<String, Value>) -> Vec<u8> {
     let mut usage = serde_json::Map::new();
+    let cache_read = source
+        .get("cache_read_input_tokens")
+        .and_then(Value::as_u64);
+    let cache_write = source
+        .get("cache_creation_input_tokens")
+        .and_then(Value::as_u64);
+    let prompt_tokens = source.get("input_tokens").and_then(Value::as_u64).map(|n| {
+        n.saturating_add(cache_read.unwrap_or(0))
+            .saturating_add(cache_write.unwrap_or(0))
+    });
+    let completion_tokens = source.get("output_tokens").and_then(Value::as_u64);
     if let Some(n) = prompt_tokens {
         usage.insert("prompt_tokens".into(), json!(n));
     }
@@ -650,7 +699,16 @@ fn openai_usage_frame(prompt_tokens: Option<u64>, completion_tokens: Option<u64>
         usage.insert("completion_tokens".into(), json!(n));
     }
     if let (Some(p), Some(c)) = (prompt_tokens, completion_tokens) {
-        usage.insert("total_tokens".into(), json!(p + c));
+        usage.insert("total_tokens".into(), json!(p.saturating_add(c)));
+    }
+    if let Some(n) = cache_read {
+        usage.insert(
+            "prompt_tokens_details".into(),
+            json!({ "cached_tokens": n }),
+        );
+    }
+    if let Some(n) = cache_write {
+        usage.insert("cache_creation_input_tokens".into(), json!(n));
     }
     let payload = json!({
         "choices": [],
@@ -699,6 +757,134 @@ fn openai_tool_call_args_delta(index: u32, arguments: &str) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn caching_preserves_prompt_content_and_separates_the_clock() {
+        let mut body = json!({
+            "model": "claude-sonnet-4-5", "stream": true,
+            "messages": [
+                {"role": "system", "content": "Custom instructions\n\nAgent rules"},
+                {"role": "system", "content": "Now: 2026-10-01 12:00"},
+                {"role": "user", "content": "Search"},
+                {"role": "assistant", "tool_calls": [{
+                    "id": "call_1", "function": {"name": "search", "arguments": "{\"query\":\"Rust\"}"}
+                }]},
+                {"role": "tool", "tool_call_id": "call_1", "content": "Found source"}
+            ],
+            "tools": [{"type": "function", "function": {
+                "name": "search", "description": "Search", "parameters": {
+                    "type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]
+                }
+            }}],
+            "tool_choice": "auto"
+        });
+        let original = openai_to_anthropic_messages(&body).unwrap();
+        let cached =
+            openai_to_anthropic_messages_for_provider(&body, "https://api.anthropic.com/v1")
+                .unwrap();
+        assert_eq!(cached["messages"], original["messages"]);
+        assert_eq!(cached["tool_choice"], original["tool_choice"]);
+        assert_eq!(cached["cache_control"], json!({"type": "ephemeral"}));
+        assert_eq!(cached["system"][0]["text"], body["messages"][0]["content"]);
+        assert_eq!(cached["system"][1]["text"], body["messages"][1]["content"]);
+        assert_eq!(
+            cached["system"][0]["cache_control"],
+            cached["cache_control"]
+        );
+        assert!(cached["system"][1].get("cache_control").is_none());
+        let mut tools = cached["tools"].clone();
+        assert_eq!(tools[0]["cache_control"], cached["cache_control"]);
+        tools[0].as_object_mut().unwrap().remove("cache_control");
+        assert_eq!(tools, original["tools"]);
+        body["messages"][1]["content"] = json!("Now: 2026-10-01 12:01");
+        let next = openai_to_anthropic_messages_for_provider(&body, "https://api.anthropic.com/v1")
+            .unwrap();
+        assert_eq!(next["system"][0], cached["system"][0]);
+        assert_eq!(next["tools"], cached["tools"]);
+        assert_ne!(next["system"][1], cached["system"][1]);
+    }
+
+    #[test]
+    fn caching_is_not_added_to_compatible_hosts_or_title_requests() {
+        let body = json!({"model": "claude-sonnet-4-5", "messages": [
+            {"role": "system", "content": "Rules"}, {"role": "user", "content": "Hi"}
+        ]});
+        for base in [
+            "https://compatible.example/v1",
+            "http://localhost:8080/v1",
+            "https://api.anthropic.com.example/v1",
+            "invalid",
+        ] {
+            let out = openai_to_anthropic_messages_for_provider(&body, base).unwrap();
+            assert!(out.get("cache_control").is_none());
+            assert_eq!(out["system"], "Rules");
+        }
+        let mut title = body;
+        title["stream"] = json!(false);
+        assert!(
+            openai_to_anthropic_messages_for_provider(&title, "https://api.anthropic.com/v1")
+                .unwrap()
+                .get("cache_control")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn streamed_usage_includes_cached_tokens_and_keeps_missing_counts_unknown() {
+        for (input, cache_read, cache_write, expected) in [
+            (Some(12), Some(2000), Some(100), Some(2112)),
+            (Some(72), None, None, Some(72)),
+            (None, Some(2000), None, None),
+        ] {
+            let mut translator = AnthropicSseTranslator::default();
+            let mut start = json!({});
+            for (key, value) in [
+                ("input_tokens", input),
+                ("cache_read_input_tokens", cache_read),
+                ("cache_creation_input_tokens", cache_write),
+            ] {
+                if let Some(value) = value {
+                    start[key] = json!(value);
+                }
+            }
+            let frames = translator
+                .push_line(&format!(
+                    "data: {}",
+                    json!({"type": "message_start", "message": {"usage": start}})
+                ))
+                .unwrap();
+            assert!(frames.is_empty(), "Input usage must not be counted twice");
+            for output in [14, 24] {
+                let frames = translator
+                    .push_line(&format!(
+                        "data: {}",
+                        json!({
+                            "type": "message_delta", "usage": {"output_tokens": output}
+                        })
+                    ))
+                    .unwrap();
+                assert!(
+                    frames.is_empty(),
+                    "Cumulative usage must be emitted only once"
+                );
+            }
+            let frames = translator
+                .push_line("data: {\"type\":\"message_stop\"}")
+                .unwrap();
+            let frame = std::str::from_utf8(&frames[0]).unwrap();
+            let frame: Value =
+                serde_json::from_str(frame.trim().strip_prefix("data: ").unwrap()).unwrap();
+            let usage = &frame["usage"];
+            assert_eq!(usage["prompt_tokens"].as_u64(), expected);
+            assert_eq!(usage["completion_tokens"], 24);
+            assert_eq!(usage["total_tokens"].as_u64(), expected.map(|n| n + 24));
+            assert_eq!(
+                usage["prompt_tokens_details"]["cached_tokens"].as_u64(),
+                cache_read
+            );
+            assert_eq!(usage["cache_creation_input_tokens"].as_u64(), cache_write);
+        }
+    }
 
     #[test]
     fn converts_system_and_user_messages() {
