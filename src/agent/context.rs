@@ -24,7 +24,7 @@ struct Record {
 
 #[derive(Debug)]
 struct Data {
-    file: File,
+    file: Option<File>,
     records: Vec<Record>,
     bytes: u64,
 }
@@ -83,9 +83,7 @@ impl History {
             .map_err(|err| format!("Could not initialize tool-history encryption: {err}"))?;
         Ok(Self {
             data: Mutex::new(Data {
-                file: tempfile::tempfile().map_err(|err| {
-                    format!("Could not create private tool-history archive: {err}")
-                })?,
+                file: None,
                 records: Vec::new(),
                 bytes: 0,
             }),
@@ -111,12 +109,20 @@ impl History {
             .encrypt(Nonce::from_slice(&nonce), bytes.as_slice())
             .map_err(|_| "Could not encrypt tool-history record")?;
         let offset = data.bytes;
-        data.file
-            .seek(SeekFrom::Start(offset))
+        // Most turns never evict history; avoid disk work until an archive is needed.
+        if data.file.is_none() {
+            data.file =
+                Some(tempfile::tempfile().map_err(|err| {
+                    format!("Could not create private tool-history archive: {err}")
+                })?);
+        }
+        let file = data
+            .file
+            .as_mut()
+            .ok_or("Tool-history archive unavailable")?;
+        file.seek(SeekFrom::Start(offset))
             .map_err(|err| err.to_string())?;
-        data.file
-            .write_all(&encrypted)
-            .map_err(|err| err.to_string())?;
+        file.write_all(&encrypted).map_err(|err| err.to_string())?;
         data.bytes += encrypted.len() as u64;
         data.records.push(Record {
             offset,
@@ -281,12 +287,14 @@ impl History {
         let position = record.offset;
         let total = record.len;
         let nonce = record.nonce;
-        data.file
-            .seek(SeekFrom::Start(position))
+        let file = data
+            .file
+            .as_mut()
+            .ok_or("Tool-history archive unavailable")?;
+        file.seek(SeekFrom::Start(position))
             .map_err(|err| err.to_string())?;
         let mut encrypted = vec![0; total + 16];
-        data.file
-            .read_exact(&mut encrypted)
+        file.read_exact(&mut encrypted)
             .map_err(|err| err.to_string())?;
         let cipher =
             Aes256Gcm::new_from_slice(&self.key[..]).map_err(|_| "Invalid tool-history key")?;
@@ -591,13 +599,14 @@ mod tests {
             .unwrap();
         {
             let mut data = history.data.lock().unwrap();
-            data.file.seek(SeekFrom::Start(0)).unwrap();
+            let file = data.file.as_mut().unwrap();
+            file.seek(SeekFrom::Start(0)).unwrap();
             let mut raw = Vec::new();
-            data.file.read_to_end(&mut raw).unwrap();
+            file.read_to_end(&mut raw).unwrap();
             assert!(!String::from_utf8_lossy(&raw).contains("private history marker"));
             raw[0] ^= 1;
-            data.file.seek(SeekFrom::Start(0)).unwrap();
-            data.file.write_all(&raw).unwrap();
+            file.seek(SeekFrom::Start(0)).unwrap();
+            file.write_all(&raw).unwrap();
         }
         assert!(
             history
@@ -605,6 +614,28 @@ mod tests {
                 .unwrap_err()
                 .contains("authentication failed")
         );
+    }
+
+    #[test]
+    fn archive_file_is_created_only_when_history_is_evicted() {
+        let history = History::new().unwrap();
+        let mut messages = vec![json!({"role":"user", "content":"hello"})];
+        assert!(!history.fit(&mut messages, 1024).unwrap());
+        assert!(history.data.lock().unwrap().file.is_none());
+        assert!(history.read(&json!({})).unwrap().contains("0 records"));
+        assert!(history.read(&json!({"id":"history_1"})).is_err());
+        assert!(history.data.lock().unwrap().file.is_none());
+
+        messages.insert(0, json!({"role":"assistant", "content":"old".repeat(2048)}));
+        assert!(history.fit(&mut messages, 1024).unwrap());
+        assert!(history.data.lock().unwrap().file.is_some());
+        assert!(
+            history
+                .read(&json!({"id":"history_1"}))
+                .unwrap()
+                .contains("oldold")
+        );
+        assert_eq!(messages.last().unwrap()["content"], "hello");
     }
 
     #[test]

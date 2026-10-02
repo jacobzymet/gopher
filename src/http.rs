@@ -90,7 +90,7 @@ pub fn url_is_private_or_local(url: &str) -> bool {
         || host.parse::<IpAddr>().is_ok_and(ip_is_non_public)
 }
 
-fn build_llm_client(timeout: Duration, insecure: bool) -> Client {
+fn build_llm_client(timeout: Duration, insecure: bool, no_redirect: bool) -> Client {
     let mut builder = Client::builder()
         .connect_timeout(Duration::from_secs(30))
         .timeout(timeout)
@@ -98,7 +98,51 @@ fn build_llm_client(timeout: Duration, insecure: bool) -> Client {
     if insecure {
         builder = builder.danger_accept_invalid_certs(true);
     }
+    if no_redirect {
+        builder = builder.redirect(reqwest::redirect::Policy::none());
+    }
     builder.build().expect("reqwest client")
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct LlmClientKey {
+    timeout: Duration,
+    insecure: bool,
+    no_redirect: bool,
+}
+
+#[derive(Default)]
+struct LlmClientPool {
+    clients: VecDeque<(LlmClientKey, Client)>,
+}
+
+impl LlmClientPool {
+    fn client(&mut self, key: LlmClientKey) -> Client {
+        if let Some(index) = self.clients.iter().position(|(cached, _)| *cached == key) {
+            let entry = self.clients.remove(index).expect("cached LLM client");
+            let client = entry.1.clone();
+            self.clients.push_back(entry);
+            return client;
+        }
+        let client = build_llm_client(key.timeout, key.insecure, key.no_redirect);
+        self.clients.push_back((key, client.clone()));
+        if self.clients.len() > 8 {
+            self.clients.pop_front();
+        }
+        client
+    }
+}
+
+fn pooled_llm_client(timeout: Duration, insecure: bool, no_redirect: bool) -> Client {
+    static POOL: OnceLock<Mutex<LlmClientPool>> = OnceLock::new();
+    POOL.get_or_init(|| Mutex::new(LlmClientPool::default()))
+        .lock()
+        .expect("LLM client pool lock")
+        .client(LlmClientKey {
+            timeout,
+            insecure,
+            no_redirect,
+        })
 }
 
 const LLM_PROBE_TIMEOUT: Duration = Duration::from_secs(2);
@@ -120,22 +164,16 @@ fn build_blocking_client(
     builder.build().expect("reqwest blocking client")
 }
 
-/// Async client for one LLM request. Generation streams are deliberately
-/// isolated so aborting one request cannot poison a process-lifetime pool.
+/// Reuse LLM connections only within the same timeout, TLS, and redirect policy.
+/// Dropping a response cancels that request; other requests retain the client.
 pub fn llm_client(timeout: Duration, allow_insecure_tls: bool) -> Client {
-    build_llm_client(timeout, allow_insecure_tls)
+    pooled_llm_client(timeout, allow_insecure_tls, false)
 }
 
 /// HTTPS client that refuses redirects. Used for the pinned Codex hosts
 /// so a 3xx cannot carry a credential to another origin.
 pub fn pinned_llm_client(timeout: Duration) -> Client {
-    Client::builder()
-        .connect_timeout(Duration::from_secs(30))
-        .timeout(timeout)
-        .redirect(reqwest::redirect::Policy::none())
-        .user_agent(APP_UA)
-        .build()
-        .expect("pinned reqwest client")
+    pooled_llm_client(timeout, false, true)
 }
 
 pub fn pinned_blocking_client(timeout: Duration) -> reqwest::blocking::Client {
@@ -426,8 +464,200 @@ pub async fn safe_public_get(url: &str, loose_accept: bool) -> Result<reqwest::R
 mod tests {
     use super::*;
 
+    fn init_tls() {
+        #[cfg(not(target_os = "macos"))]
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    }
+
+    #[tokio::test]
+    async fn llm_connections_are_reused_and_cancellation_does_not_poison_other_requests() {
+        init_tls();
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let connections = Arc::new(AtomicUsize::new(0));
+        let accepted = connections.clone();
+        let (closed_tx, mut closed_rx) = tokio::sync::mpsc::unbounded_channel();
+        let server = tokio::spawn(async move {
+            loop {
+                let (socket, _) = listener.accept().await.unwrap();
+                accepted.fetch_add(1, Ordering::Relaxed);
+                let closed = closed_tx.clone();
+                tokio::spawn(async move {
+                    let (read, mut write) = socket.into_split();
+                    let mut read = BufReader::new(read);
+                    loop {
+                        let mut line = String::new();
+                        if read.read_line(&mut line).await.unwrap_or(0) == 0 {
+                            break;
+                        }
+                        let stalled = line.contains("/stall ");
+                        let mut authorization = String::new();
+                        while line != "\r\n" {
+                            line.clear();
+                            if read.read_line(&mut line).await.unwrap_or(0) == 0 {
+                                return;
+                            }
+                            if let Some(value) = line.strip_prefix("authorization: ") {
+                                authorization = value.trim().to_string();
+                            }
+                        }
+                        if stalled {
+                            write
+                                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nx")
+                                .await
+                                .unwrap();
+                            line.clear();
+                            // Dropping the incomplete response must close only this connection.
+                            if read.read_line(&mut line).await.unwrap_or(0) == 0 {
+                                let _ = closed.send(());
+                            }
+                            break;
+                        }
+                        let reply = format!(
+                            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{authorization}",
+                            authorization.len()
+                        );
+                        if write.write_all(reply.as_bytes()).await.is_err() {
+                            break;
+                        }
+                    }
+                });
+            }
+        });
+        let timeout = Duration::from_secs(2);
+        let mut stalled = llm_client(timeout, false)
+            .get(format!("{base}/stall"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(&stalled.chunk().await.unwrap().unwrap()[..], b"x");
+        for token in ["Bearer first", "Bearer second"] {
+            let reply = llm_client(timeout, false)
+                .get(format!("{base}/ok"))
+                .header("Authorization", token)
+                .send()
+                .await
+                .unwrap()
+                .text()
+                .await
+                .unwrap();
+            assert_eq!(reply, token, "credentials must remain per request");
+        }
+        assert_eq!(connections.load(Ordering::Relaxed), 2);
+        drop(stalled);
+        tokio::time::timeout(timeout, closed_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let reply = llm_client(timeout, false)
+            .get(format!("{base}/ok"))
+            .header("Authorization", "Bearer third")
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        assert_eq!(reply, "Bearer third");
+        assert_eq!(connections.load(Ordering::Relaxed), 2);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn llm_pool_separates_security_policies_and_timeouts_and_is_bounded() {
+        init_tls();
+        let mut pool = LlmClientPool::default();
+        let key = LlmClientKey {
+            timeout: Duration::from_secs(2),
+            insecure: false,
+            no_redirect: false,
+        };
+        pool.client(key);
+        pool.client(key);
+        assert_eq!(pool.clients.len(), 1);
+        pool.client(LlmClientKey {
+            insecure: true,
+            ..key
+        });
+        pool.client(LlmClientKey {
+            no_redirect: true,
+            ..key
+        });
+        pool.client(LlmClientKey {
+            timeout: Duration::from_secs(3),
+            ..key
+        });
+        assert_eq!(pool.clients.len(), 4);
+        for seconds in 4..20 {
+            pool.client(LlmClientKey {
+                timeout: Duration::from_secs(seconds),
+                ..key
+            });
+        }
+        assert_eq!(pool.clients.len(), 8);
+    }
+
+    #[tokio::test]
+    async fn pooled_pinned_llm_client_still_refuses_redirects() {
+        init_tls();
+        use axum::{Router, response::Redirect, routing::get};
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+        let destinations = Arc::new(AtomicUsize::new(0));
+        let counted = destinations.clone();
+        let router = Router::new()
+            .route(
+                "/redirect",
+                get(|| async { Redirect::temporary("/destination") }),
+            )
+            .route(
+                "/destination",
+                get(move || {
+                    let counted = counted.clone();
+                    async move {
+                        counted.fetch_add(1, Ordering::Relaxed);
+                        "ok"
+                    }
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/redirect", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
+        let timeout = Duration::from_secs(2);
+        for _ in 0..2 {
+            let response = pinned_llm_client(timeout).get(&url).send().await.unwrap();
+            assert!(response.status().is_redirection());
+            response.bytes().await.unwrap();
+        }
+        assert_eq!(destinations.load(Ordering::Relaxed), 0);
+        assert_eq!(
+            llm_client(timeout, false)
+                .get(&url)
+                .send()
+                .await
+                .unwrap()
+                .text()
+                .await
+                .unwrap(),
+            "ok"
+        );
+        assert_eq!(destinations.load(Ordering::Relaxed), 1);
+        server.abort();
+    }
+
     #[tokio::test]
     async fn guarded_pool_reuses_connections_and_separates_dns_answers() {
+        init_tls();
         use std::sync::{
             Arc,
             atomic::{AtomicUsize, Ordering},
@@ -491,6 +721,7 @@ mod tests {
 
     #[tokio::test]
     async fn guarded_pool_is_bounded_and_dns_order_does_not_split_it() {
+        init_tls();
         let mut pool = GuardedClientPool::default();
         let first = "93.184.216.34:443".parse().unwrap();
         let second = "93.184.216.35:443".parse().unwrap();

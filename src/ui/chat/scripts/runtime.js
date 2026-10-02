@@ -2028,7 +2028,6 @@ async function runAssistantTurn(convo, {
     if (turnSkills.chat_retrieval && typeof saveStore === 'function') {
       saveStore({ immediate: true });
       if (typeof storeWriteChain !== 'undefined') await storeWriteChain;
-      if (typeof settingsWriteChain !== 'undefined') await settingsWriteChain;
     }
     for (let attempt = 0; attempt < 2; attempt += 1) {
       if (stream.controller.signal.aborted || stream.cancelled) break;

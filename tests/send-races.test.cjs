@@ -218,6 +218,43 @@ test('normal turns enable retrieval by default and respect the current off setti
   }
 });
 
+test('retrieval waits for its store snapshot but not unrelated preferences', async () => {
+  const h = conflictHarness();
+  let finishStore;
+  h.state.settings.chatRetrieval = true;
+  h.state.settingsWriteChain = new Promise(() => {});
+  h.state.saveStore = () => {
+    h.events.push('save-store');
+    h.state.storeWriteChain = new Promise((resolve) => { finishStore = resolve; });
+  };
+  const pending = h.run();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(h.events, ['save-store']);
+  assert.equal(h.requests.length, 0);
+  finishStore();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(h.requests.length, 1);
+  h.respond(200);
+  await pending;
+});
+
+test('cancelling during retrieval persistence never sends a model request', async () => {
+  const h = conflictHarness();
+  let finishStore;
+  h.state.settings.chatRetrieval = true;
+  h.state.saveStore = () => {
+    h.state.storeWriteChain = new Promise((resolve) => { finishStore = resolve; });
+  };
+  const pending = h.run();
+  await new Promise((resolve) => setImmediate(resolve));
+  const stream = h.state.activeStreams.get(h.convo.id);
+  stream.cancelled = true;
+  stream.controller.abort();
+  finishStore();
+  await pending;
+  assert.equal(h.requests.length, 0);
+});
+
 test('conflict cancels the occupant and retries instead of attaching to it', async () => {
   const h = conflictHarness();
   const pending = h.run();
