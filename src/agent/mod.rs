@@ -1739,8 +1739,10 @@ async fn stream_once(
             chat::merge_leading_system_messages(&mut payload);
             payload
         }
-        ApiStyle::Anthropic => anthropic::openai_to_anthropic_messages_for_provider(&payload, api_base)
-            .map_err(StreamFail::Other)?,
+        ApiStyle::Anthropic => {
+            anthropic::openai_to_anthropic_messages_for_provider(&payload, api_base)
+                .map_err(StreamFail::Other)?
+        }
         ApiStyle::Responses => crate::responses::openai_chat_to_responses(
             &payload,
             upstream.kind == crate::providers::ProviderKind::OpenaiCodex,
@@ -3913,7 +3915,11 @@ async fn cached_page_text(url: &str, skills: &AgentSkills) -> Result<Arc<str>, S
     }
 }
 
-async fn fetch_page_text(url: &str, max_chars: usize, skills: &AgentSkills) -> Result<String, String> {
+async fn fetch_page_text(
+    url: &str,
+    max_chars: usize,
+    skills: &AgentSkills,
+) -> Result<String, String> {
     let full = cached_page_text(url, skills).await?;
     Ok(truncate_chars(&full, max_chars))
 }

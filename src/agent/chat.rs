@@ -129,10 +129,7 @@ pub fn stream_remote_completion(
             object.insert("stream".into(), serde_json::json!(true));
             object.remove("agent");
             object.remove("skills");
-            object.insert(
-                "model".into(),
-                serde_json::json!(upstream.wire_model),
-            );
+            object.insert("model".into(), serde_json::json!(upstream.wire_model));
         }
         let style = upstream.style;
         let api_base = upstream.api_base.trim_end_matches('/').to_string();
@@ -150,8 +147,9 @@ pub fn stream_remote_completion(
             }
             ApiStyle::Anthropic => {
                 let url = format!("{api_base}/messages");
-                let anth = anthropic::openai_to_anthropic_messages_for_provider(&payload, &api_base)
-                    .map_err(StreamFail::Other)?;
+                let anth =
+                    anthropic::openai_to_anthropic_messages_for_provider(&payload, &api_base)
+                        .map_err(StreamFail::Other)?;
                 proxy_anthropic_sse(&url, &upstream, &anth, &tx).await
             }
             ApiStyle::Responses => {
@@ -164,6 +162,8 @@ pub fn stream_remote_completion(
     })
 }
 
+// Keep transport policy explicit for callers that override Responses defaults.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn open_llm_sse(
     url: &str,
     style: ApiStyle,
@@ -561,14 +561,20 @@ async fn post_title_completion(
         }
         let text = response_text_limited(response).await;
         let secrets = std::iter::once(upstream.token.as_str())
-            .chain(upstream.extra_headers.iter().map(|(_, value)| value.as_str()))
+            .chain(
+                upstream
+                    .extra_headers
+                    .iter()
+                    .map(|(_, value)| value.as_str()),
+            )
             .collect::<Vec<_>>();
         let text = crate::subscription::redact(&text, &secrets);
         return Err(format!("title request failed ({status}): {text}"));
     }
     let text = response_text_limited(response).await;
     if codex {
-        return collect_responses_sse_text(&text).map(|text| serde_json::json!({ "output_text": text }));
+        return collect_responses_sse_text(&text)
+            .map(|text| serde_json::json!({ "output_text": text }));
     }
     serde_json::from_str(&text).map_err(|error| error.to_string())
 }
