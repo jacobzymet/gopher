@@ -22,7 +22,10 @@ pub fn openai_chat_to_responses(payload: &Value, codex: bool) -> Value {
     let mut input = Vec::new();
     if let Some(messages) = payload.get("messages").and_then(|value| value.as_array()) {
         for message in messages {
-            let role = message.get("role").and_then(|value| value.as_str()).unwrap_or("");
+            let role = message
+                .get("role")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
             match role {
                 "system" | "developer" => {
                     let text = content_text(message.get("content"));
@@ -45,7 +48,9 @@ pub fn openai_chat_to_responses(payload: &Value, codex: bool) -> Value {
                     }));
                 }
                 "assistant" => {
-                    if let Some(calls) = message.get("tool_calls").and_then(|value| value.as_array()) {
+                    if let Some(calls) =
+                        message.get("tool_calls").and_then(|value| value.as_array())
+                    {
                         for call in calls {
                             let function = call.get("function").cloned().unwrap_or(Value::Null);
                             input.push(json!({
@@ -88,7 +93,9 @@ pub fn openai_chat_to_responses(payload: &Value, codex: bool) -> Value {
         object.insert("parallel_tool_calls".into(), json!(true));
     }
     if !codex
-        && let Some(max) = payload.get("max_tokens").or_else(|| payload.get("max_output_tokens"))
+        && let Some(max) = payload
+            .get("max_tokens")
+            .or_else(|| payload.get("max_output_tokens"))
         && let Some(object) = body.as_object_mut()
     {
         object.insert("max_output_tokens".into(), max.clone());
@@ -129,9 +136,15 @@ fn user_input(content: Option<&Value>) -> Value {
         Some(Value::Array(parts)) => {
             let mut converted = Vec::new();
             for part in parts {
-                let kind = part.get("type").and_then(|value| value.as_str()).unwrap_or("");
+                let kind = part
+                    .get("type")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("");
                 if kind == "image_url" {
-                    if let Some(url) = part.pointer("/image_url/url").and_then(|value| value.as_str()) {
+                    if let Some(url) = part
+                        .pointer("/image_url/url")
+                        .and_then(|value| value.as_str())
+                    {
                         converted.push(json!({ "type": "input_image", "image_url": url }));
                     }
                 } else if let Some(text) = part.get("text").and_then(|value| value.as_str()) {
@@ -257,8 +270,14 @@ impl ResponsesSseTranslator {
         if item.get("type").and_then(|value| value.as_str()) != Some("function_call") {
             return Vec::new();
         }
-        let name = item.get("name").and_then(|value| value.as_str()).unwrap_or("");
-        let item_id = item.get("id").and_then(|value| value.as_str()).unwrap_or("");
+        let name = item
+            .get("name")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
+        let item_id = item
+            .get("id")
+            .and_then(|value| value.as_str())
+            .unwrap_or("");
         let id = item
             .get("call_id")
             .and_then(|value| value.as_str())
@@ -282,7 +301,10 @@ impl ResponsesSseTranslator {
     }
 
     fn tool_arguments(&mut self, value: &Value) -> Vec<Value> {
-        let delta = value.get("delta").and_then(|item| item.as_str()).unwrap_or("");
+        let delta = value
+            .get("delta")
+            .and_then(|item| item.as_str())
+            .unwrap_or("");
         if delta.is_empty() {
             return Vec::new();
         }

@@ -620,6 +620,7 @@ mod tests {
         use axum::{Json, Router, extract::State, routing::post};
         use futures_util::StreamExt;
 
+        #[cfg(not(target_os = "macos"))]
         let _ = rustls::crypto::ring::default_provider().install_default();
 
         #[derive(Clone)]

@@ -97,6 +97,6 @@
         }
         if (($env:Path -split ';') -notcontains $normalized) { $env:Path = "$normalized;$env:Path" }
     }
-    Write-Host 'Launch with: gopher. Check master and build future updates in Settings → App.'
+    Write-Host 'Launch with: gopher. Check master and build future updates in Settings > App.'
     Write-Host 'The desktop window requires Microsoft Edge WebView2: https://developer.microsoft.com/microsoft-edge/webview2/'
 } @args

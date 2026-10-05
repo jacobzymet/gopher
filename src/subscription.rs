@@ -18,7 +18,9 @@ use zeroize::Zeroize;
 
 use crate::{
     http,
-    providers::{ApiStyle, Provider, ProviderHealth, ProviderHealthKind, ProviderKind, RemoteModelOption},
+    providers::{
+        ApiStyle, Provider, ProviderHealth, ProviderHealthKind, ProviderKind, RemoteModelOption,
+    },
     system,
 };
 
@@ -45,15 +47,13 @@ pub struct BuiltinSpec {
     pub api_style: ApiStyle,
 }
 
-pub const BUILTIN_SPECS: &[BuiltinSpec] = &[
-    BuiltinSpec {
-        kind: ProviderKind::OpenaiCodex,
-        id: ID_CODEX,
-        name: "ChatGPT",
-        base: CODEX_BASE,
-        api_style: ApiStyle::Responses,
-    },
-];
+pub const BUILTIN_SPECS: &[BuiltinSpec] = &[BuiltinSpec {
+    kind: ProviderKind::OpenaiCodex,
+    id: ID_CODEX,
+    name: "ChatGPT",
+    base: CODEX_BASE,
+    api_style: ApiStyle::Responses,
+}];
 
 pub fn builtin_spec(kind: ProviderKind) -> Option<&'static BuiltinSpec> {
     BUILTIN_SPECS.iter().find(|spec| spec.kind == kind)
@@ -241,7 +241,7 @@ fn jwt_auth_claims(token: &str) -> Option<Value> {
     claims
         .get("https://api.openai.com/auth")
         .cloned()
-        .or_else(|| Some(claims))
+        .or(Some(claims))
 }
 
 fn jwt_expiry(token: &str) -> Option<u64> {
@@ -369,7 +369,10 @@ pub fn refresh_codex_secret(stored: &str) -> Result<CodexRefresh, String> {
         .filter(|value| !value.is_empty())
         .unwrap_or(secret.refresh_token.as_str())
         .to_string();
-    let expires_in = body.get("expires_in").and_then(|value| value.as_u64()).unwrap_or(3600);
+    let expires_in = body
+        .get("expires_in")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(3600);
     secret.access_token = access;
     secret.refresh_token = refresh;
     secret.expires_at = now_secs().saturating_add(expires_in);
@@ -416,14 +419,20 @@ fn probe_codex(stored: &str) -> (ProviderHealth, Vec<RemoteModelOption>) {
         Ok(secret) if !secret.refresh_dead && !secret.access_token.trim().is_empty() => secret,
         _ => {
             return (
-                health_error(ProviderHealthKind::Auth, "Sign in to ChatGPT to list Codex models."),
+                health_error(
+                    ProviderHealthKind::Auth,
+                    "Sign in to ChatGPT to list Codex models.",
+                ),
                 Vec::new(),
             );
         }
     };
     let url = format!("{CODEX_BASE}/models?client_version=1.0.0");
     if require_request_url(ProviderKind::OpenaiCodex, &url).is_err() {
-        return (health_error(ProviderHealthKind::Error, "Codex catalog URL was rejected."), Vec::new());
+        return (
+            health_error(ProviderHealthKind::Error, "Codex catalog URL was rejected."),
+            Vec::new(),
+        );
     }
     let client = http::pinned_blocking_client(Duration::from_secs(10));
     let mut request = client.get(&url).header("Accept", "application/json");
@@ -447,7 +456,10 @@ fn probe_codex(stored: &str) -> (ProviderHealth, Vec<RemoteModelOption>) {
             let models = codex_catalog_models(&body);
             if models.is_empty() {
                 (
-                    health_error(ProviderHealthKind::Empty, "ChatGPT returned no Codex models."),
+                    health_error(
+                        ProviderHealthKind::Empty,
+                        "ChatGPT returned no Codex models.",
+                    ),
                     Vec::new(),
                 )
             } else {
@@ -472,7 +484,11 @@ fn codex_catalog_models(body: &Value) -> Vec<RemoteModelOption> {
     };
     let mut ranked = Vec::new();
     for item in entries {
-        let Some(slug) = item.get("slug").and_then(|value| value.as_str()).map(str::trim) else {
+        let Some(slug) = item
+            .get("slug")
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+        else {
             continue;
         };
         if slug.is_empty() {
@@ -482,7 +498,10 @@ fn codex_catalog_models(body: &Value) -> Vec<RemoteModelOption> {
             .get("visibility")
             .and_then(|value| value.as_str())
             .is_some_and(|visibility| {
-                matches!(visibility.trim().to_ascii_lowercase().as_str(), "hide" | "hidden")
+                matches!(
+                    visibility.trim().to_ascii_lowercase().as_str(),
+                    "hide" | "hidden"
+                )
             })
         {
             continue;
@@ -501,7 +520,10 @@ fn codex_catalog_models(body: &Value) -> Vec<RemoteModelOption> {
     ranked.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));
     let mut out = Vec::new();
     for (_, slug, efforts, wire) in ranked {
-        if out.iter().any(|existing: &RemoteModelOption| existing.model == slug) {
+        if out
+            .iter()
+            .any(|existing: &RemoteModelOption| existing.model == slug)
+        {
             continue;
         }
         out.push(codex_model_option(&slug, &efforts, wire));
@@ -590,11 +612,7 @@ fn codex_model_option(
 ) -> RemoteModelOption {
     let controllable = !efforts.is_empty();
     let can_disable = efforts.iter().any(|effort| effort == "none");
-    let (reasoning_summary, reasoning_context) = if controllable {
-        wire
-    } else {
-        (None, None)
-    };
+    let (reasoning_summary, reasoning_context) = if controllable { wire } else { (None, None) };
     RemoteModelOption {
         id: format!("remote|{CODEX_BASE}|{model}"),
         model: model.to_string(),
@@ -670,7 +688,11 @@ pub fn connect_option(provider: &Provider) -> Option<RemoteModelOption> {
     })
 }
 
-pub fn codex_secret_from_tokens(access_token: &str, refresh_token: &str, expires_in: Option<u64>) -> String {
+pub fn codex_secret_from_tokens(
+    access_token: &str,
+    refresh_token: &str,
+    expires_in: Option<u64>,
+) -> String {
     let expires_at = expires_in
         .map(|seconds| now_secs().saturating_add(seconds))
         .or_else(|| jwt_expiry(access_token))
@@ -686,9 +708,8 @@ pub fn codex_secret_from_tokens(access_token: &str, refresh_token: &str, expires
 
 pub fn import_codex_cli_secret() -> Result<String, String> {
     let path = codex_home().join("auth.json");
-    let text = std::fs::read_to_string(&path).map_err(|_| {
-        "No Codex CLI credentials were found in the Codex home folder.".to_string()
-    })?;
+    let text = std::fs::read_to_string(&path)
+        .map_err(|_| "No Codex CLI credentials were found in the Codex home folder.".to_string())?;
     let body: Value = serde_json::from_str(&text)
         .map_err(|_| "Codex CLI credentials could not be read.".to_string())?;
     let tokens = body.get("tokens").unwrap_or(&body);
@@ -728,8 +749,8 @@ pub fn codex_pkce_login() -> Result<PkceLogin, PkceError> {
     let verifier = random_token(64);
     let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
     let state = random_token(32);
-    let listener = TcpListener::bind(("127.0.0.1", CODEX_CALLBACK_PORT))
-        .map_err(|_| PkceError::PortBusy)?;
+    let listener =
+        TcpListener::bind(("127.0.0.1", CODEX_CALLBACK_PORT)).map_err(|_| PkceError::PortBusy)?;
     let redirect_uri = format!("http://localhost:{CODEX_CALLBACK_PORT}{CODEX_CALLBACK_PATH}");
     let auth_url = authorize_url(&redirect_uri, &challenge, &state);
     listener
@@ -787,12 +808,7 @@ fn is_callback_request(request: &str) -> bool {
     let line = request.lines().next().unwrap_or("");
     let mut parts = line.split_whitespace();
     let method = parts.next().unwrap_or("");
-    let path = parts
-        .next()
-        .unwrap_or("")
-        .split('?')
-        .next()
-        .unwrap_or("");
+    let path = parts.next().unwrap_or("").split('?').next().unwrap_or("");
     method.eq_ignore_ascii_case("GET") && path == CODEX_CALLBACK_PATH
 }
 
@@ -902,7 +918,11 @@ fn constant_eq(left: &[u8], right: &[u8]) -> bool {
     diff == 0
 }
 
-fn exchange_authorization_code(code: &str, verifier: &str, redirect_uri: &str) -> Result<String, String> {
+fn exchange_authorization_code(
+    code: &str,
+    verifier: &str,
+    redirect_uri: &str,
+) -> Result<String, String> {
     let client = http::pinned_blocking_client(Duration::from_secs(20));
     let response = client
         .post(CODEX_TOKEN_URL)
@@ -925,8 +945,14 @@ fn exchange_authorization_code(code: &str, verifier: &str, redirect_uri: &str) -
     let body: Value = response
         .json()
         .map_err(|_| "ChatGPT auth returned an unreadable response.".to_string())?;
-    let access = body.get("access_token").and_then(|value| value.as_str()).unwrap_or("");
-    let refresh = body.get("refresh_token").and_then(|value| value.as_str()).unwrap_or("");
+    let access = body
+        .get("access_token")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    let refresh = body
+        .get("refresh_token")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
     if access.is_empty() || refresh.is_empty() {
         return Err("ChatGPT did not return a session.".into());
     }
@@ -955,7 +981,12 @@ pub fn request_device_code() -> Result<DeviceCode, String> {
     let body: Value = response
         .json()
         .map_err(|_| "ChatGPT returned an unreadable device code.".to_string())?;
-    let user_code = body.get("user_code").and_then(|value| value.as_str()).unwrap_or("").trim().to_string();
+    let user_code = body
+        .get("user_code")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
     let device_auth_id = body
         .get("device_auth_id")
         .and_then(|value| value.as_str())
@@ -965,7 +996,11 @@ pub fn request_device_code() -> Result<DeviceCode, String> {
     if user_code.is_empty() || device_auth_id.is_empty() {
         return Err("ChatGPT returned an incomplete device code.".into());
     }
-    let interval = body.get("interval").and_then(|value| value.as_u64()).unwrap_or(5).max(3);
+    let interval = body
+        .get("interval")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(5)
+        .max(3);
     Ok(DeviceCode {
         user_code,
         verification_url: CODEX_DEVICE_URL.to_string(),
@@ -993,12 +1028,22 @@ pub fn poll_device_code(user_code: &str, device_auth_id: &str) -> Result<Option<
     let body: Value = response
         .json()
         .map_err(|_| "ChatGPT returned an unreadable device-code response.".to_string())?;
-    let code = body.get("authorization_code").and_then(|value| value.as_str()).unwrap_or("");
-    let verifier = body.get("code_verifier").and_then(|value| value.as_str()).unwrap_or("");
+    let code = body
+        .get("authorization_code")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    let verifier = body
+        .get("code_verifier")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
     if code.is_empty() || verifier.is_empty() {
         return Ok(None);
     }
-    let secret = exchange_authorization_code(code, verifier, "https://auth.openai.com/deviceauth/callback")?;
+    let secret = exchange_authorization_code(
+        code,
+        verifier,
+        "https://auth.openai.com/deviceauth/callback",
+    )?;
     Ok(Some(secret))
 }
 
@@ -1008,11 +1053,41 @@ mod tests {
 
     #[test]
     fn pinned_hosts_reject_other_destinations() {
-        assert!(require_request_url(ProviderKind::OpenaiCodex, "https://chatgpt.com/backend-api/codex/responses").is_ok());
-        assert!(require_request_url(ProviderKind::OpenaiCodex, "https://evil.example/backend-api/codex/responses").is_err());
-        assert!(require_request_url(ProviderKind::OpenaiCodex, "http://chatgpt.com/backend-api/codex/responses").is_err());
-        assert!(require_request_url(ProviderKind::OpenaiCodex, "https://chatgpt.com/backend-api/other").is_err());
-        assert!(require_request_url(ProviderKind::Custom, "https://chatgpt.com/backend-api/codex/responses").is_err());
+        assert!(
+            require_request_url(
+                ProviderKind::OpenaiCodex,
+                "https://chatgpt.com/backend-api/codex/responses"
+            )
+            .is_ok()
+        );
+        assert!(
+            require_request_url(
+                ProviderKind::OpenaiCodex,
+                "https://evil.example/backend-api/codex/responses"
+            )
+            .is_err()
+        );
+        assert!(
+            require_request_url(
+                ProviderKind::OpenaiCodex,
+                "http://chatgpt.com/backend-api/codex/responses"
+            )
+            .is_err()
+        );
+        assert!(
+            require_request_url(
+                ProviderKind::OpenaiCodex,
+                "https://chatgpt.com/backend-api/other"
+            )
+            .is_err()
+        );
+        assert!(
+            require_request_url(
+                ProviderKind::Custom,
+                "https://chatgpt.com/backend-api/codex/responses"
+            )
+            .is_err()
+        );
     }
 
     fn codex_provider(secret: &str) -> Provider {
@@ -1024,7 +1099,8 @@ mod tests {
 
     #[test]
     fn codex_requests_use_responses_and_hide_the_conversation_id() {
-        let secret = serde_json::json!({ "access_token": "access-token-value", "refresh_token": "r" });
+        let secret =
+            serde_json::json!({ "access_token": "access-token-value", "refresh_token": "r" });
         let provider = codex_provider(&secret.to_string());
         let prepared = prepare(&provider, " gpt-5.5 ", Some("conversation-42")).unwrap();
         assert_eq!(prepared.api_base, CODEX_BASE);
@@ -1032,7 +1108,12 @@ mod tests {
         assert_eq!(prepared.wire_model, "gpt-5.5");
         assert_eq!(prepared.token, "access-token-value");
         assert!(prepared.no_redirect);
-        assert!(prepared.extra_headers.iter().any(|(name, value)| name == "originator" && value == "gopher"));
+        assert!(
+            prepared
+                .extra_headers
+                .iter()
+                .any(|(name, value)| name == "originator" && value == "gopher")
+        );
         let session = prepared
             .extra_headers
             .iter()
@@ -1055,14 +1136,17 @@ mod tests {
     fn browser_noise_does_not_end_the_callback_wait() {
         assert!(!is_callback_request("GET /favicon.ico HTTP/1.1\r\n"));
         assert!(!is_callback_request(""));
-        assert!(!is_callback_request("GET /auth/callbackx?code=a HTTP/1.1\r\n"));
-        assert!(is_callback_request("GET /auth/callback?code=a&state=b HTTP/1.1\r\n"));
+        assert!(!is_callback_request(
+            "GET /auth/callbackx?code=a HTTP/1.1\r\n"
+        ));
+        assert!(is_callback_request(
+            "GET /auth/callback?code=a&state=b HTTP/1.1\r\n"
+        ));
     }
 
     #[test]
     fn callback_reports_openai_error_description() {
-        let request =
-            "GET /auth/callback?error=access_denied&error_description=User%20cancelled&state=s HTTP/1.1\r\n";
+        let request = "GET /auth/callback?error=access_denied&error_description=User%20cancelled&state=s HTTP/1.1\r\n";
         let error = callback_code(request, "s").unwrap_err();
         assert!(error.contains("User cancelled"));
     }
@@ -1081,7 +1165,10 @@ mod tests {
 
     #[test]
     fn redact_removes_secrets_from_errors() {
-        let text = redact("failed bearer sk-live-secret-value", &["sk-live-secret-value"]);
+        let text = redact(
+            "failed bearer sk-live-secret-value",
+            &["sk-live-secret-value"],
+        );
         assert!(!text.contains("sk-live"));
         assert!(text.contains("[redacted]"));
     }
