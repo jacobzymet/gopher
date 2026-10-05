@@ -46,6 +46,8 @@ The script prints equivalent Fedora and Arch requirements when dependencies are 
 
 ### Stay up to date
 
+**App updates track the latest commit on `master`, not new GitHub releases.**
+
 Run `gopher`. **Settings → App** compares this build’s commit with `master` on GitHub. **Build and restart** compiles the current master commit locally with Cargo, verifies the built app’s identity, installs it, and restarts. Build failures leave your installed app intact. Rust and native build tools must remain installed for updates. Compiled dependencies are cached for subsequent builds.
 
 Builds use commit IDs such as `master@0123456789ab`, also shown by `gopher --version`. Modified local checkouts are marked `+modified`; unknown source revisions can be rebuilt from master. Rerunning the platform installer also updates to master. There are no numbered release channels or binary downloads.
