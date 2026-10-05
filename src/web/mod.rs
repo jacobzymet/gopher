@@ -31,8 +31,8 @@ use crate::{
     attachments::{self, ExtractRequest},
     chat, encryption_transition,
     providers::{
-        ApiStyle, ProviderHealth, ProviderHealthKind, ProviderKind, ProviderPublic, RemoteModelOption,
-        apply_thinking_control, enrich_local_catalog, find_provider_for_base,
+        ApiStyle, ProviderHealth, ProviderHealthKind, ProviderKind, ProviderPublic,
+        RemoteModelOption, apply_thinking_control, enrich_local_catalog, find_provider_for_base,
         normalize_openai_base, probe_provider_endpoint, probe_provider_style,
     },
     store::{self, StorageMode},
@@ -41,8 +41,7 @@ use crate::{
 pub(crate) use embed::APP_ICON_PNG;
 use embed::{
     CHAT_CSS, CHAT_HTML, CHAT_JS, HIGHLIGHT_JS, KATEX_CSS, KATEX_JS, MARKED_JS, OPTIONAL_FONTS_JS,
-    ORB_JS, PURIFY_JS,
-    XTERM_CSS, XTERM_FIT_JS, XTERM_JS,
+    ORB_JS, PURIFY_JS, XTERM_CSS, XTERM_FIT_JS, XTERM_JS,
 };
 
 const CHAT_REQUEST_LIMIT: usize = 16 * 1024 * 1024;
@@ -352,8 +351,7 @@ fn warm_provider_targets(app: &SharedApp, targets: Vec<crate::app::WarmTarget>) 
                             probe_provider_endpoint(&base, &token, style)
                         })
                     };
-                    let cache_token =
-                        crate::providers::catalog_cache_material(kind, &id, &token);
+                    let cache_token = crate::providers::catalog_cache_material(kind, &id, &token);
                     if let Ok(guard) = app.lock() {
                         guard.store_remote_health(style, &base, &cache_token, health);
                         guard.store_remote_catalog(style, &base, &cache_token, catalog.clone());
@@ -422,7 +420,10 @@ pub async fn serve(app: SharedApp, listener: TcpListener) -> anyhow::Result<()> 
             post(codex_device_start).get(codex_device_status),
         )
         .route("/api/subscription/codex/import", post(codex_import))
-        .route("/api/subscription/disconnect", post(subscription_disconnect))
+        .route(
+            "/api/subscription/disconnect",
+            post(subscription_disconnect),
+        )
         .route("/api/focus", post(focus))
         .route("/api/open-url", post(open_url))
         .route("/api/data", get(data_info).post(set_storage_mode))
@@ -622,7 +623,9 @@ async fn katex_stylesheet() -> impl IntoResponse {
 
 async fn katex_font(Path(name): Path<String>) -> Response {
     let bytes: &'static [u8] = match name.as_str() {
-        "KaTeX_AMS-Regular.woff2" => include_bytes!("../ui/vendor/katex/fonts/KaTeX_AMS-Regular.woff2"),
+        "KaTeX_AMS-Regular.woff2" => {
+            include_bytes!("../ui/vendor/katex/fonts/KaTeX_AMS-Regular.woff2")
+        }
         "KaTeX_Caligraphic-Bold.woff2" => {
             include_bytes!("../ui/vendor/katex/fonts/KaTeX_Caligraphic-Bold.woff2")
         }
@@ -639,14 +642,18 @@ async fn katex_font(Path(name): Path<String>) -> Response {
         "KaTeX_Main-BoldItalic.woff2" => {
             include_bytes!("../ui/vendor/katex/fonts/KaTeX_Main-BoldItalic.woff2")
         }
-        "KaTeX_Main-Italic.woff2" => include_bytes!("../ui/vendor/katex/fonts/KaTeX_Main-Italic.woff2"),
+        "KaTeX_Main-Italic.woff2" => {
+            include_bytes!("../ui/vendor/katex/fonts/KaTeX_Main-Italic.woff2")
+        }
         "KaTeX_Main-Regular.woff2" => {
             include_bytes!("../ui/vendor/katex/fonts/KaTeX_Main-Regular.woff2")
         }
         "KaTeX_Math-BoldItalic.woff2" => {
             include_bytes!("../ui/vendor/katex/fonts/KaTeX_Math-BoldItalic.woff2")
         }
-        "KaTeX_Math-Italic.woff2" => include_bytes!("../ui/vendor/katex/fonts/KaTeX_Math-Italic.woff2"),
+        "KaTeX_Math-Italic.woff2" => {
+            include_bytes!("../ui/vendor/katex/fonts/KaTeX_Math-Italic.woff2")
+        }
         "KaTeX_SansSerif-Bold.woff2" => {
             include_bytes!("../ui/vendor/katex/fonts/KaTeX_SansSerif-Bold.woff2")
         }
@@ -676,11 +683,7 @@ async fn katex_font(Path(name): Path<String>) -> Response {
         }
         _ => return StatusCode::NOT_FOUND.into_response(),
     };
-    (
-        [(header::CONTENT_TYPE, "font/woff2")],
-        bytes,
-    )
-        .into_response()
+    ([(header::CONTENT_TYPE, "font/woff2")], bytes).into_response()
 }
 
 async fn ocr_asset(Path(asset): Path<String>) -> Response {
@@ -822,7 +825,13 @@ async fn prepare_upstream(
     provider_id: Option<&str>,
     model: &str,
     conversation_id: Option<&str>,
-) -> Result<(crate::subscription::PreparedUpstream, Option<RemoteModelOption>), ApiError> {
+) -> Result<
+    (
+        crate::subscription::PreparedUpstream,
+        Option<RemoteModelOption>,
+    ),
+    ApiError,
+> {
     let provider = {
         let guard = app.lock().map_err(|_| ApiError::lock())?;
         let providers = &guard.config.providers;
@@ -840,12 +849,9 @@ async fn prepare_upstream(
                 .cloned()
                 .ok_or_else(|| ApiError::bad_request("No provider is configured for that model."))?
         } else {
-            providers
-                .active()
-                .cloned()
-                .ok_or_else(|| {
-                    ApiError::bad_request("No provider configured. Add one in Settings > Providers.")
-                })?
+            providers.active().cloned().ok_or_else(|| {
+                ApiError::bad_request("No provider configured. Add one in Settings > Providers.")
+            })?
         }
     };
     let mut provider = provider;
@@ -853,12 +859,13 @@ async fn prepare_upstream(
         && !provider.token.trim().is_empty()
     {
         let stored = provider.token.clone();
-        let refreshed = tokio::task::spawn_blocking(move || {
-            crate::subscription::refresh_codex_secret(&stored)
-        })
-        .await
-        .map_err(|error| ApiError::bad_request(format!("ChatGPT sign-in refresh failed: {error}")))?
-        .map_err(ApiError::bad_request)?;
+        let refreshed =
+            tokio::task::spawn_blocking(move || crate::subscription::refresh_codex_secret(&stored))
+                .await
+                .map_err(|error| {
+                    ApiError::bad_request(format!("ChatGPT sign-in refresh failed: {error}"))
+                })?
+                .map_err(ApiError::bad_request)?;
         if refreshed.changed {
             let mut guard = app.lock().map_err(|_| ApiError::lock())?;
             guard
@@ -871,11 +878,14 @@ async fn prepare_upstream(
         .map_err(ApiError::bad_request)?;
     let thinking = {
         let guard = app.lock().map_err(|_| ApiError::lock())?;
-        guard.remote_model_catalog_cached().into_iter().find(|option| {
-            option.connect_kind.is_none()
-                && option.provider_id == provider.id
-                && option.model == prepared.wire_model
-        })
+        guard
+            .remote_model_catalog_cached()
+            .into_iter()
+            .find(|option| {
+                option.connect_kind.is_none()
+                    && option.provider_id == provider.id
+                    && option.model == prepared.wire_model
+            })
     };
     Ok((prepared, thinking))
 }
@@ -1385,7 +1395,9 @@ struct SubscriptionStatus {
 }
 
 fn device_status_snapshot() -> SubscriptionStatus {
-    let state = DEVICE_LOGIN.lock().unwrap_or_else(|error| error.into_inner());
+    let state = DEVICE_LOGIN
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
     let status = match state.phase {
         DevicePhase::Idle => "idle",
         DevicePhase::Pending => "pending",
@@ -1410,7 +1422,9 @@ fn providers_response(app: &App) -> ProvidersResponse {
 async fn codex_login(State(app): State<SharedApp>) -> Result<Json<ProvidersResponse>, ApiError> {
     {
         let guard = app.lock().map_err(|_| ApiError::lock())?;
-        guard.require_secret_write().map_err(ApiError::bad_request)?;
+        guard
+            .require_secret_write()
+            .map_err(ApiError::bad_request)?;
     }
     if CODEX_LOGIN_BUSY.swap(true, Ordering::AcqRel) {
         return Err(ApiError::bad_request(
@@ -1448,10 +1462,14 @@ async fn codex_device_start(
 ) -> Result<Json<SubscriptionStatus>, ApiError> {
     {
         let guard = app.lock().map_err(|_| ApiError::lock())?;
-        guard.require_secret_write().map_err(ApiError::bad_request)?;
+        guard
+            .require_secret_write()
+            .map_err(ApiError::bad_request)?;
     }
     {
-        let state = DEVICE_LOGIN.lock().unwrap_or_else(|error| error.into_inner());
+        let state = DEVICE_LOGIN
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         if state.phase == DevicePhase::Pending {
             return Ok(Json(device_status_snapshot()));
         }
@@ -1461,7 +1479,9 @@ async fn codex_device_start(
         .map_err(|error| ApiError::bad_request(format!("ChatGPT sign-in failed: {error}")))?
         .map_err(ApiError::bad_request)?;
     {
-        let mut state = DEVICE_LOGIN.lock().unwrap_or_else(|error| error.into_inner());
+        let mut state = DEVICE_LOGIN
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         state.phase = DevicePhase::Pending;
         state.user_code = code.user_code.clone();
         state.verification_url = code.verification_url.clone();
@@ -1483,7 +1503,9 @@ async fn codex_device_start(
                 .phase
                 == DevicePhase::Pending;
             if !still_pending || std::time::Instant::now() > deadline {
-                let mut state = DEVICE_LOGIN.lock().unwrap_or_else(|error| error.into_inner());
+                let mut state = DEVICE_LOGIN
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner());
                 if state.phase == DevicePhase::Pending {
                     state.phase = DevicePhase::Failed;
                     state.error = "ChatGPT device-code sign-in timed out.".into();
@@ -1506,7 +1528,9 @@ async fn codex_device_start(
                             .ok()
                     });
                     secret.zeroize();
-                    let mut state = DEVICE_LOGIN.lock().unwrap_or_else(|error| error.into_inner());
+                    let mut state = DEVICE_LOGIN
+                        .lock()
+                        .unwrap_or_else(|error| error.into_inner());
                     state.device_auth_id.zeroize();
                     state.device_auth_id.clear();
                     if saved.is_some() {
@@ -1516,14 +1540,15 @@ async fn codex_device_start(
                         schedule_provider_cache_warm(Arc::clone(&app));
                     } else {
                         state.phase = DevicePhase::Failed;
-                        state.error =
-                            "Unlock encrypted data before connecting ChatGPT.".into();
+                        state.error = "Unlock encrypted data before connecting ChatGPT.".into();
                     }
                     break;
                 }
                 Ok(Ok(None)) => continue,
                 Ok(Err(error)) => {
-                    let mut state = DEVICE_LOGIN.lock().unwrap_or_else(|error| error.into_inner());
+                    let mut state = DEVICE_LOGIN
+                        .lock()
+                        .unwrap_or_else(|error| error.into_inner());
                     state.phase = DevicePhase::Failed;
                     state.error = crate::subscription::redact(
                         &error,
@@ -1534,7 +1559,9 @@ async fn codex_device_start(
                     break;
                 }
                 Err(_) => {
-                    let mut state = DEVICE_LOGIN.lock().unwrap_or_else(|error| error.into_inner());
+                    let mut state = DEVICE_LOGIN
+                        .lock()
+                        .unwrap_or_else(|error| error.into_inner());
                     state.phase = DevicePhase::Failed;
                     state.error = "ChatGPT device-code sign-in failed.".into();
                     state.device_auth_id.zeroize();
@@ -1562,7 +1589,9 @@ async fn codex_import(
     }
     {
         let guard = app.lock().map_err(|_| ApiError::lock())?;
-        guard.require_secret_write().map_err(ApiError::bad_request)?;
+        guard
+            .require_secret_write()
+            .map_err(ApiError::bad_request)?;
     }
     let mut secret = tokio::task::spawn_blocking(crate::subscription::import_codex_cli_secret)
         .await
@@ -1625,11 +1654,20 @@ async fn test_provider(
             "ChatGPT sessions are not sent to a typed-in URL.",
         ));
     }
-    if let Some(id) = body.id.as_deref().map(str::trim).filter(|id| !id.is_empty()) {
+    if let Some(id) = body
+        .id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+    {
         let builtin = {
             let app = app.lock().map_err(|_| ApiError::lock())?;
-            app.config.providers.items.iter().find(|provider| provider.id == id).and_then(
-                |provider| {
+            app.config
+                .providers
+                .items
+                .iter()
+                .find(|provider| provider.id == id)
+                .and_then(|provider| {
                     provider.kind.is_builtin().then(|| {
                         (
                             provider.kind,
@@ -1639,8 +1677,7 @@ async fn test_provider(
                             provider.api_style,
                         )
                     })
-                },
-            )
+                })
         };
         if let Some((kind, id, token, base, style)) = builtin {
             let probe_token = token.clone();

@@ -7,8 +7,8 @@ use crate::{
     encryption_transition::{self, Operation, Snapshot},
     providers::{
         ApiStyle, CatalogCache, HealthCache, ProviderHealth, ProviderHealthKind, ProviderPublic,
-        ProviderUpsertOptions, ProvidersConfig, RemoteModelOption, enrich_local_catalog, mask_token,
-        probe_provider_endpoint,
+        ProviderUpsertOptions, ProvidersConfig, RemoteModelOption, enrich_local_catalog,
+        mask_token, probe_provider_endpoint,
     },
     store::{self, StorageMode, StoreError},
 };
@@ -267,7 +267,7 @@ impl App {
         if self.encryption_enabled() && !self.encryption_unlocked() {
             return Vec::new();
         }
-            self.config
+        self.config
             .providers
             .items
             .iter()
@@ -344,9 +344,9 @@ impl App {
             if base.is_empty() {
                 continue;
             }
-            let Some(catalog) = self
-                .remote_catalog
-                .peek(provider.api_style, base, &provider.catalog_cache_token())
+            let Some(catalog) =
+                self.remote_catalog
+                    .peek(provider.api_style, base, &provider.catalog_cache_token())
             else {
                 continue;
             };
@@ -1403,7 +1403,11 @@ mod tests {
         });
         let mut providers: ProvidersConfig = serde_json::from_value(saved).unwrap();
         providers.migrate();
-        let kinds: Vec<_> = providers.items.iter().map(|provider| provider.kind.as_str()).collect();
+        let kinds: Vec<_> = providers
+            .items
+            .iter()
+            .map(|provider| provider.kind.as_str())
+            .collect();
         assert_eq!(kinds, ["custom", "openai-codex"]);
         assert_eq!(providers.active_provider_id, "local");
         let serialized = serde_json::to_string(&providers).unwrap();
