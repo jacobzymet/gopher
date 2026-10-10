@@ -3806,7 +3806,10 @@ function renderSearchResults(query) {
   if (matchedProjects.length === 0 && matchedConvos.length === 0) {
     const empty = document.createElement('p');
     empty.className = 'search-dialog-empty';
-    empty.textContent = q ? 'No matches.' : 'No chats or projects yet.';
+    empty.textContent = q
+      ? 'No matches. Try a different name or phrase.'
+      : 'No chats or projects yet. Start a chat to find it here.';
+    empty.setAttribute('role', 'status');
     searchModalResults.appendChild(empty);
     return;
   }
@@ -3822,8 +3825,8 @@ function renderSearchResults(query) {
     btn.querySelector('.search-dialog-item-title').textContent = title;
     btn.querySelector('.search-dialog-item-meta').textContent = meta;
     btn.addEventListener('click', () => {
-      onPick();
       closeSearchModal();
+      onPick();
     });
     searchModalResults.appendChild(btn);
     searchResultItems.push(btn);

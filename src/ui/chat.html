@@ -1212,10 +1212,11 @@
     <div class="dialog search-dialog">
       <div class="search-dialog-head">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-        <input class="search-dialog-input" id="searchModalInput" type="search" placeholder="Search chats and projects…" autocomplete="off" spellcheck="false">
+        <input class="search-dialog-input" id="searchModalInput" type="search" aria-label="Search chats and projects" aria-describedby="searchModalHint" placeholder="Search chats and projects…" autocomplete="off" spellcheck="false">
         <span class="search-dialog-kbd" aria-hidden="true">Esc</span>
       </div>
       <div class="search-dialog-results" id="searchModalResults"></div>
+      <p class="search-dialog-hint" id="searchModalHint">↑ ↓ to navigate · Enter to open · Esc to close</p>
     </div>
   </div>
 
