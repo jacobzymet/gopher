@@ -451,8 +451,61 @@ function motionEnter(el, { y = 14, duration = 220, delay = 0 } = {}) {
   return anim;
 }
 
+const backdropFocusStack = [];
+
+function backdropFocusableElements(el) {
+  return Array.from(el.querySelectorAll(
+    'button, a[href], input, select, textarea, [contenteditable="true"], [tabindex]'
+  )).filter((node) => node.tabIndex >= 0 && !node.matches(':disabled')
+    && !node.closest('[inert]') && node.getClientRects().length > 0
+    && getComputedStyle(node).visibility !== 'hidden');
+}
+
+function handleBackdropKeydown(event) {
+  const modal = backdropFocusStack.at(-1)?.el;
+  if (!modal || event.defaultPrevented) return;
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k'
+      && modal.id !== 'searchModal') {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    return;
+  }
+  if (event.key === 'Escape') {
+    // Dismiss only the top dialog, including confirmations over Settings.
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    switch (modal.id) {
+      case 'confirmModal': settleConfirmDanger(false); break;
+      case 'unlockModal': if (!unlockModalBusy) hideUnlockSession(); break;
+      case 'searchModal': closeSearchModal(); break;
+      case 'settingsModal': closeSettings(); break;
+      case 'profileModal': closeProfileModal(); break;
+      case 'projectModal': closeProjectSettings(); break;
+      case 'groupModal': closeGroupDialog(); break;
+    }
+    return;
+  }
+  if (event.key !== 'Tab') return;
+  const items = backdropFocusableElements(modal);
+  const first = items[0] || modal;
+  const last = items.at(-1) || modal;
+  const active = document.activeElement;
+  if (!items.includes(active)
+      || (event.shiftKey ? active === first : active === last)) {
+    event.preventDefault();
+    (event.shiftKey ? last : first).focus();
+  }
+}
+
+document.addEventListener('keydown', handleBackdropKeydown);
+
 function openBackdrop(el) {
   if (!el) return;
+  if (!backdropFocusStack.some((entry) => entry.el === el)) {
+    backdropFocusStack.push({ el, previousFocus: document.activeElement });
+  }
+  el.setAttribute('tabindex', '-1');
+  el.inert = false;
   el.classList.remove('is-hidden');
   el.dataset.opening = 'true';
   // Establish the closed style before scheduling the visible state.
@@ -461,11 +514,31 @@ function openBackdrop(el) {
     if (el.dataset.opening !== 'true') return;
     delete el.dataset.opening;
     el.classList.add('is-open');
+    if (backdropFocusStack.at(-1)?.el === el && !el.contains(document.activeElement)) {
+      (backdropFocusableElements(el)[0] || el).focus();
+    }
   });
 }
 
 function closeBackdrop(el) {
   if (!el) return;
+  const index = backdropFocusStack.findIndex((entry) => entry.el === el);
+  if (index !== -1) {
+    const wasTop = index === backdropFocusStack.length - 1;
+    const [entry] = backdropFocusStack.splice(index, 1);
+    backdropFocusStack.forEach((nested) => {
+      if (el.contains(nested.previousFocus)) nested.previousFocus = entry.previousFocus;
+    });
+    if (wasTop && (el.contains(document.activeElement) || document.activeElement === document.body)) {
+      const parent = backdropFocusStack.at(-1)?.el;
+      const target = parent && !parent.contains(entry.previousFocus)
+        ? backdropFocusableElements(parent)[0] || parent : entry.previousFocus;
+      if (target?.isConnected && !target.closest('[inert], .is-hidden')) {
+        target.focus({ preventScroll: true });
+      }
+    }
+  }
+  el.inert = true;
   delete el.dataset.opening;
   el.classList.remove('is-open');
   if (prefersReducedMotion() || el.classList.contains('is-hidden')) {
@@ -476,7 +549,7 @@ function closeBackdrop(el) {
   const finish = () => {
     if (done) return;
     done = true;
-    el.classList.add('is-hidden');
+    if (el.inert) el.classList.add('is-hidden');
     el.removeEventListener('transitionend', onEnd);
   };
   const onEnd = (event) => {
@@ -512,7 +585,7 @@ function confirmDanger({ title, body, confirmLabel = 'Delete' } = {}) {
   return new Promise((resolve) => {
     confirmDangerResolver = resolve;
     openBackdrop(modal);
-    window.requestAnimationFrame(() => okBtn?.focus());
+    window.requestAnimationFrame(() => document.getElementById('btnConfirmModalCancel')?.focus());
   });
 }
 

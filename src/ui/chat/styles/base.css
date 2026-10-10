@@ -1249,6 +1249,20 @@ html:not(.ui-ready) .chat-sidebar {
 }
 .convo-more:hover,
 .project-settings-btn:hover { color: var(--color-accent); }
+@media (hover: none), (pointer: coarse) {
+  .convo-more {
+    width: 2.75rem;
+    min-width: 2.75rem;
+    height: 2.75rem;
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .convo-item:hover .convo-more,
+  .convo-item:focus-within .convo-more {
+    width: 2.75rem;
+    min-width: 2.75rem;
+  }
+}
 .convo-menu {
   position: fixed;
   z-index: 45;
