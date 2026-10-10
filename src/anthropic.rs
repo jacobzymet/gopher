@@ -39,8 +39,8 @@ pub fn openai_to_anthropic_messages_for_provider(
     let source = payload
         .get("messages")
         .and_then(|v| v.as_array())
-        .cloned()
-        .unwrap_or_default();
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
 
     for msg in source {
         let role = msg
@@ -50,18 +50,18 @@ pub fn openai_to_anthropic_messages_for_provider(
             .to_ascii_lowercase();
         match role.as_str() {
             "system" | "developer" => {
-                let content = message_content_to_text(&msg);
+                let content = message_content_to_text(msg);
                 if !content.trim().is_empty() {
                     system_parts.push(content);
                 }
             }
             "user" => {
-                if let Some(content) = openai_user_content_to_anthropic(&msg) {
+                if let Some(content) = openai_user_content_to_anthropic(msg) {
                     push_anthropic_user_content(&mut messages, content);
                 }
             }
-            "assistant" => push_anthropic_assistant(&mut messages, &msg),
-            "tool" => push_anthropic_tool_result(&mut messages, &msg),
+            "assistant" => push_anthropic_assistant(&mut messages, msg),
+            "tool" => push_anthropic_tool_result(&mut messages, msg),
             _ => {}
         }
     }
@@ -192,21 +192,9 @@ fn message_content_to_text(msg: &Value) -> String {
         Some(Value::String(s)) => s.clone(),
         Some(Value::Array(parts)) => parts
             .iter()
-            .filter_map(|part| {
-                if let Some(text) = part.get("text").and_then(|v| v.as_str()) {
-                    return Some(text.to_string());
-                }
-                if part.get("type").and_then(|v| v.as_str()) == Some("text") {
-                    return part
-                        .get("text")
-                        .and_then(|v| v.as_str())
-                        .map(str::to_string);
-                }
-                None
-            })
+            .filter_map(|part| part.get("text").and_then(Value::as_str))
             .collect::<Vec<_>>()
             .join("\n"),
-        Some(Value::Null) | None => String::new(),
         _ => String::new(),
     }
 }

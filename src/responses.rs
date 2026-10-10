@@ -52,7 +52,7 @@ pub fn openai_chat_to_responses(payload: &Value, codex: bool) -> Value {
                         message.get("tool_calls").and_then(|value| value.as_array())
                     {
                         for call in calls {
-                            let function = call.get("function").cloned().unwrap_or(Value::Null);
+                            let function = &call["function"];
                             input.push(json!({
                                 "type": "function_call",
                                 "call_id": call.get("id").and_then(|value| value.as_str()).unwrap_or(""),
@@ -80,33 +80,26 @@ pub fn openai_chat_to_responses(payload: &Value, codex: bool) -> Value {
     if codex && instructions.trim().is_empty() {
         instructions = CODEX_DEFAULT_INSTRUCTIONS.to_string();
     }
-    if !instructions.is_empty()
-        && let Some(object) = body.as_object_mut()
-    {
-        object.insert("instructions".into(), json!(instructions));
+    if !instructions.is_empty() {
+        body["instructions"] = json!(instructions);
     }
-    if let Some(tools) = convert_tools(payload.get("tools"))
-        && let Some(object) = body.as_object_mut()
-    {
-        object.insert("tools".into(), Value::Array(tools));
-        object.insert("tool_choice".into(), json!("auto"));
-        object.insert("parallel_tool_calls".into(), json!(true));
+    if let Some(tools) = convert_tools(payload.get("tools")) {
+        body["tools"] = Value::Array(tools);
+        body["tool_choice"] = json!("auto");
+        body["parallel_tool_calls"] = json!(true);
     }
     if !codex
         && let Some(max) = payload
             .get("max_tokens")
             .or_else(|| payload.get("max_output_tokens"))
-        && let Some(object) = body.as_object_mut()
     {
-        object.insert("max_output_tokens".into(), max.clone());
+        body["max_output_tokens"] = max.clone();
     }
-    if let Some(reasoning) = responses_reasoning(payload)
-        && let Some(object) = body.as_object_mut()
-    {
-        object.insert("reasoning".into(), reasoning);
+    if let Some(reasoning) = responses_reasoning(payload) {
+        body["reasoning"] = reasoning;
     }
-    if codex && let Some(object) = body.as_object_mut() {
-        object.insert("store".into(), json!(false));
+    if codex {
+        body["store"] = json!(false);
     }
     body
 }
@@ -217,7 +210,6 @@ pub fn responses_output_text(body: &Value) -> String {
 #[derive(Default)]
 pub struct ResponsesSseTranslator {
     event: String,
-    next_tool: u32,
     /// `(item id, call id)` per function call, in stream order.
     tools: Vec<(String, String)>,
 }
@@ -249,9 +241,9 @@ impl ResponsesSseTranslator {
             return Err(stream_error_message(&value));
         }
         let frames = match kind {
-            "response.output_text.delta" => delta_content(value.get("delta")),
+            "response.output_text.delta" => delta_text("content", value.get("delta")),
             "response.reasoning_summary_text.delta" | "response.reasoning_text.delta" => {
-                delta_reasoning(value.get("delta"))
+                delta_text("reasoning_content", value.get("delta"))
             }
             "response.output_item.added" => self.tool_started(value.get("item")),
             "response.function_call_arguments.delta" => self.tool_arguments(&value),
@@ -282,8 +274,7 @@ impl ResponsesSseTranslator {
             .get("call_id")
             .and_then(|value| value.as_str())
             .unwrap_or(item_id);
-        let index = self.next_tool;
-        self.next_tool += 1;
+        let index = self.tools.len() as u32;
         self.tools.push((item_id.to_string(), id.to_string()));
         vec![json!({
             "choices": [{
@@ -351,7 +342,7 @@ fn stream_error_message(value: &Value) -> String {
     format!("The model service reported an error: {message}")
 }
 
-fn delta_content(delta: Option<&Value>) -> Vec<Value> {
+fn delta_text(field: &str, delta: Option<&Value>) -> Vec<Value> {
     let Some(text) = delta.and_then(|value| value.as_str()) else {
         return Vec::new();
     };
@@ -359,19 +350,7 @@ fn delta_content(delta: Option<&Value>) -> Vec<Value> {
         return Vec::new();
     }
     vec![json!({
-        "choices": [{ "index": 0, "delta": { "content": text } }]
-    })]
-}
-
-fn delta_reasoning(delta: Option<&Value>) -> Vec<Value> {
-    let Some(text) = delta.and_then(|value| value.as_str()) else {
-        return Vec::new();
-    };
-    if text.is_empty() {
-        return Vec::new();
-    }
-    vec![json!({
-        "choices": [{ "index": 0, "delta": { "reasoning_content": text } }]
+        "choices": [{ "index": 0, "delta": { (field): text } }]
     })]
 }
 
