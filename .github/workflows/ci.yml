@@ -37,7 +37,7 @@ jobs:
             libwebkit2gtk-4.1-dev
 
       - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets --locked -- -D warnings
 
   test:
     name: Test
@@ -69,8 +69,13 @@ jobs:
       - name: Test
         run: cargo test --all-targets --locked
 
-      - name: Update UI and source installer regression tests
-        run: node --test tests/updates.test.cjs tests/source-installers.test.cjs
+      - name: Build integration test executable
+        run: cargo build --locked
+
+      - name: UI and source installer regression tests
+        env:
+          GOPHER_TEST_BINARY: ${{ runner.os == 'Windows' && 'target/debug/gopher.exe' || 'target/debug/gopher' }}
+        run: node --test tests/*.test.cjs
 
       - name: Windows source installer regression tests
         if: runner.os == 'Windows'

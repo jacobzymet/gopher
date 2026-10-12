@@ -18,6 +18,23 @@ function whenAborted(signal) {
   });
 }
 
+async function readStreamChunk(reader, signal) {
+  if (signal.aborted) return { aborted: true };
+  let onAbort;
+  try {
+    return await Promise.race([
+      reader.read().then((chunk) => ({ chunk })),
+      new Promise((resolve) => {
+        onAbort = () => resolve({ aborted: true });
+        signal.addEventListener('abort', onAbort, { once: true });
+        if (signal.aborted) onAbort();
+      }),
+    ]);
+  } finally {
+    if (onAbort) signal.removeEventListener('abort', onAbort);
+  }
+}
+
 /**
  * Reveal streamed text a few code points per frame so chunks feel like a
  * typewriter. Catches up when backlog grows, and snap-flushes on end so
@@ -310,7 +327,7 @@ function modelMenuIsOpen() {
 
 let modelMenuCloseTimer = null;
 
-/** When set, the shared menu is picking a model for a loop agent instead of the default. */
+/** When set, the shared menu is picking a model for a loop agent instead of the chat. */
 let modelMenuContext = null;
 
 function modelMenuSelectedId() {
@@ -343,9 +360,15 @@ function modelMenuSourceOptions() {
 }
 
 function syncModelMenuSummary() {
+  const convo = conversations.find((item) => item.id === activeId);
+  const override = convo ? convo.modelId : draftModelId;
+  const reset = document.getElementById('btnModelUseDefault');
+  if (reset) {
+    reset.classList.toggle('is-hidden', !!modelMenuContext || !override);
+  }
   const selected = modelMenuOptions.find((option) => option.value === modelMenuSelectedId());
   if (chatModelSummary) {
-    const prefix = modelMenuContext ? 'Selected' : 'Current';
+    const prefix = modelMenuContext ? 'Selected' : (override ? 'This chat' : 'Default');
     chatModelSummary.textContent = selected
       ? prefix + ' · ' + selected.label + ' · ' + modelProviderLabel(selected)
       : 'Search every available model';
@@ -419,7 +442,7 @@ function renderModelOptionHtml(option, index, { terms }) {
   const picking = !!modelMenuContext;
   const pinned = isModelPinned(option.value);
   const local = modelLooksLocal(option);
-  const defaultBadge = isSelected && !picking
+  const defaultBadge = !picking && option.value === resolveSavedModelId(settings.selectedChatModel, modelMenuOptions)
     ? '<span class="chat-model-default-pill" title="Default model">Default</span>'
     : '';
   const thinkingBadge = option.thinking
@@ -430,7 +453,7 @@ function renderModelOptionHtml(option, index, { terms }) {
     : '';
   const prefix = picking
     ? (isSelected ? 'Selected · ' : '')
-    : (isSelected ? 'Default · ' : 'Set as default · ');
+    : (isSelected ? 'Selected · ' : 'Use in this chat · ');
   const remoteBadge = /^ChatGPT\b/.test(String(option.provider || ''))
     ? '<span class="chat-model-capability">Leaves this computer</span>'
     : '';
@@ -509,7 +532,7 @@ function renderModelMenuList() {
     const picking = !!modelMenuContext;
     const prefix = picking
       ? (optionEl.classList.contains('is-selected') ? 'Selected · ' : '')
-      : (optionEl.classList.contains('is-selected') ? 'Default · ' : 'Set as default · ');
+      : (optionEl.classList.contains('is-selected') ? 'Selected · ' : 'Use in this chat · ');
     setIdentityTitle(optionEl, option ? prefix + modelOptionTitle(option.label, option.provider) : '');
   });
 
@@ -721,6 +744,8 @@ function openModelMenu(opts) {
 }
 
 function chooseModelOption(value) {
+  if (!requireUnlockedData()) return;
+  const inheritDefault = value === '@default';
   const picked = modelMenuOptions.find((item) => item.value === value);
   if (picked?.connectKind || String(value || '').startsWith('connect|')) {
     if (typeof openBuiltinConnect === 'function') openBuiltinConnect(picked?.connectKind || '');
@@ -730,24 +755,18 @@ function chooseModelOption(value) {
     closeModelMenu({ restoreFocus: true });
     return;
   }
-  rememberRecentModel(value);
+  if (!inheritDefault) rememberRecentModel(value);
   if (modelMenuContext && typeof modelMenuContext.onPick === 'function') {
     modelMenuContext.selectedId = value;
     modelMenuContext.onPick(value);
     closeModelMenu({ restoreFocus: true });
     return;
   }
-  if (value !== selectedChatModel) {
-    selectedChatModel = value;
-    selectedRemoteModelId = selectedChatModel;
-    persistModelPickerState();
-    const selected = modelMenuOptions.find((o) => o.value === selectedChatModel);
-    chatModelSelect.textContent = selected ? selected.label : 'Model';
-    setIdentityTitle(chatModelSelect, selected ? modelOptionTitle(selected.label, selected.provider) : '');
-    syncModelOriginPill(true, selected && selected.provider);
-  } else {
-    persistModelPickerState();
-  }
+  setChatModelSelection(inheritDefault ? '' : value);
+  const selected = modelMenuOptions.find((o) => o.value === selectedChatModel);
+  chatModelSelect.textContent = selected ? selected.label : (modelIdLabel(selectedChatModel) || 'Model');
+  setIdentityTitle(chatModelSelect, selected ? modelOptionTitle(selected.label, selected.provider) : '');
+  syncModelOriginPill(true, selected && selected.provider);
   closeModelMenu({ restoreFocus: true });
   if (latestState) updateInferenceState(latestState);
   if (typeof updateSendEnabled === 'function') updateSendEnabled();
@@ -850,6 +869,7 @@ function modelCatalogIsComplete(network, options) {
 function syncModelSelector(data) {
   // Never select or persist a fallback before saved preferences have loaded.
   if (!storageReady) return;
+  syncConversationModel();
   const network = data.network || {};
   const remoteModels = network.remote_models || [];
   const wasHidden = chatModelSelectWrap.classList.contains('is-hidden');
@@ -894,27 +914,26 @@ function syncModelSelector(data) {
     recentModelIds = [selectedChatModel];
     pickerChanged = true;
   }
-  const resolvedSelected = resolveSavedModelId(selectedRemoteModelId || selectedChatModel, remoteOptions);
-  if (resolvedSelected && resolvedSelected !== selectedChatModel) {
-    selectedChatModel = resolvedSelected;
-    pickerChanged = true;
-  }
-  if (remoteOptions.some((option) => option.value === selectedChatModel && option.connectKind)) {
-    selectedChatModel = '';
-    pickerChanged = true;
-  }
+  const savedDefault = String(settings.selectedChatModel || '').trim();
+  let resolvedDefault = resolveSavedModelId(savedDefault, remoteOptions);
+  if (remoteOptions.some((option) => option.value === resolvedDefault && option.connectKind)) resolvedDefault = '';
   const catalogComplete = modelCatalogIsComplete(network, remoteOptions);
   const selectable = remoteOptions.filter((option) => !option.connectKind);
   // Only invent a default when nothing is saved. A saved id that is not in
   // this snapshot stays selected so a later provider catalog can match it.
-  if (!selectedChatModel && catalogComplete && !menuOpen && selectable.length) {
-    selectedChatModel = selectable[0].value;
+  if (!resolvedDefault && catalogComplete && !menuOpen && selectable.length) {
+    resolvedDefault = selectable[0].value;
+  }
+  if (resolvedDefault !== savedDefault) {
+    settings = { ...settings, selectedChatModel: resolvedDefault };
     pickerChanged = true;
   }
+  syncConversationModel();
   if (pickerChanged) persistModelPickerState();
 
   const signature = [
     selectedChatModel,
+    settings.selectedChatModel,
     ...remoteOptions.map((o) => o.value + '|' + o.label + '|' + o.provider),
   ].join(';');
   if (chatModelMenu.dataset.signature !== signature) {
@@ -933,22 +952,20 @@ function syncModelSelector(data) {
   }
   const selected = remoteOptions.find((o) => o.value === selectedChatModel);
   const selectionPending = !!selectedChatModel && !selected && !catalogComplete;
-  if (!menuOpen) {
-    chatModelSelect.textContent = selected
-      ? selected.label
-      : (modelIdLabel(selectedChatModel) || 'Model');
-    if (selectionPending) {
-      chatModelSelect.title = 'Restoring ' + modelIdLabel(selectedChatModel) + '…';
-      chatModelSelect.setAttribute('aria-busy', 'true');
-    } else {
-      chatModelSelect.removeAttribute('aria-busy');
-      setIdentityTitle(
-        chatModelSelect,
-        selected
-          ? modelOptionTitle(selected.label, selected.provider)
-          : (selectedChatModel ? modelIdLabel(selectedChatModel) : '')
-      );
-    }
+  chatModelSelect.textContent = selected
+    ? selected.label
+    : (modelIdLabel(selectedChatModel) || 'Model');
+  if (selectionPending) {
+    chatModelSelect.title = 'Restoring ' + modelIdLabel(selectedChatModel) + '…';
+    chatModelSelect.setAttribute('aria-busy', 'true');
+  } else {
+    chatModelSelect.removeAttribute('aria-busy');
+    setIdentityTitle(
+      chatModelSelect,
+      selected
+        ? modelOptionTitle(selected.label, selected.provider)
+        : (selectedChatModel ? modelIdLabel(selectedChatModel) : '')
+    );
   }
   selectedRemoteModelId = selectedChatModel;
   syncModelOriginPill(true, selected && selected.provider);
@@ -1117,17 +1134,22 @@ let statePollInFlight = false;
 async function pollState() {
   if (statePollInFlight) return;
   statePollInFlight = true;
+  const epoch = storageWriteEpoch;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
   try {
     const requestedAt = performance.now();
-    const response = await fetch('/api/state');
+    const response = await fetch('/api/state', { signal: controller.signal });
     if (!response.ok) return;
     const data = await response.json();
+    if (epoch !== storageWriteEpoch) return;
     syncExternalEncryptionState(data);
     updateInferenceState(data);
     await resumeLiveTurns(data.live_turns, requestedAt);
   } catch {
     // control server briefly unreachable — retry on the next tick
   } finally {
+    clearTimeout(timer);
     statePollInFlight = false;
   }
 }
@@ -1258,6 +1280,7 @@ async function sendMessage({ branch = false } = {}) {
       title: branchConversationTitle(source),
       titleEdited: false,
       messages: cloneConversationMessages(source.messages),
+      modelId: source.modelId || '',
       updatedAt: Date.now(),
       projectId,
       sortOrder: nextTopSortOrder(projectId),
@@ -1294,6 +1317,7 @@ async function sendMessage({ branch = false } = {}) {
       title: draftIncognito ? 'Ghost Chat' : 'New chat',
       titleEdited: false,
       messages: [],
+      modelId: draftModelId,
       updatedAt: Date.now(),
       projectId: activeProjectId || null,
       sortOrder: nextTopSortOrder(activeProjectId || null),
@@ -1866,7 +1890,7 @@ async function runAssistantTurn(convo, {
     return false;
   }
   const speakerBot = speakerBotId && typeof getBot === 'function' ? getBot(speakerBotId, convo) : null;
-  const speakerModelId = speakerBot && speakerBot.model ? speakerBot.model : selectedChatModel;
+  const speakerModelId = speakerBot && speakerBot.model ? speakerBot.model : conversationModelId(convo);
   const remote = selectedRemoteModel(latestState, speakerModelId);
   if (!remote?.ready) {
     if (typeof showComposerHint === 'function') {
@@ -1964,7 +1988,7 @@ async function runAssistantTurn(convo, {
   stream.skipQueue = !!skipQueue;
   syncStreamSpeakerChrome(convo, stream);
 
-  stream.speakerModelId = speakerBot && speakerBot.model ? speakerBot.model : null;
+  stream.speakerModelId = remote.id || speakerModelId;
   let apiMessages;
   if (speakerBot && typeof botApiMessages === 'function') {
     apiMessages = botApiMessages(convo, speakerBot, dispatchedMessage ? text : null, {
@@ -2746,10 +2770,7 @@ async function driveAssistantSse(convo, stream, response) {
       try {
       for (;;) {
         if (stream.cancelled || stream.replaced || stream.controller.signal.aborted) break;
-        const next = await Promise.race([
-          reader.read().then((chunk) => ({ chunk })),
-          whenAborted(stream.controller.signal).then(() => ({ aborted: true })),
-        ]);
+        const next = await readStreamChunk(reader, stream.controller.signal);
         if (next.aborted || stream.cancelled || stream.replaced) break;
         const { value, done } = next.chunk;
         if (done) break;
@@ -3693,7 +3714,7 @@ function syncPrivacyModeUi(enabled) {
     const picking = !!modelMenuContext;
     const prefix = picking
       ? (optionEl.classList.contains('is-selected') ? 'Selected · ' : '')
-      : (optionEl.classList.contains('is-selected') ? 'Default · ' : 'Set as default · ');
+      : (optionEl.classList.contains('is-selected') ? 'Selected · ' : 'Use in this chat · ');
     setIdentityTitle(optionEl, option ? prefix + modelOptionTitle(option.label, option.provider) : '');
     const badge = optionEl.querySelector('.chat-model-origin-pill');
     if (badge) setIdentityTitle(badge, badge.textContent);
@@ -4553,6 +4574,7 @@ chatModelSearchWrap.addEventListener('click', (event) => {
 });
 chatModelBackdrop?.addEventListener('click', () => closeModelMenu({ restoreFocus: true }));
 document.getElementById('btnModelMenuClose')?.addEventListener('click', () => closeModelMenu({ restoreFocus: true }));
+document.getElementById('btnModelUseDefault')?.addEventListener('click', () => chooseModelOption('@default'));
 document.getElementById('btnModelClose')?.addEventListener('click', () => closeModelMenu({ restoreFocus: true }));
 document.getElementById('btnModelProviders')?.addEventListener('click', () => {
   closeModelMenu();

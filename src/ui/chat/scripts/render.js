@@ -3599,7 +3599,10 @@ function openProject(projectId, { incognito = false } = {}) {
   activeProjectId = projectId;
   cancelMessageEdit();
   activeId = null;
+  draftModelId = '';
+  syncConversationModel();
   draftIncognito = !!incognito;
+  if (latestState) updateInferenceState(latestState);
   showChatView();
   showEmptyState();
   renderSidebar();
@@ -5259,6 +5262,8 @@ function selectConversation(id) {
   activeId = id;
   draftIncognito = !!convo.incognito;
   activeProjectId = convo.projectId || null;
+  syncConversationModel();
+  if (latestState) updateInferenceState(latestState);
   stickToBottom = stickByConvo.has(id) ? stickByConvo.get(id) : true;
   userScrollOverride = !stickToBottom;
   resumeBottomIntent = false;
@@ -5289,6 +5294,7 @@ function startDraft({ incognito = false } = {}) {
   hideSelectionReplyBar();
   if (activeId) stickByConvo.set(activeId, stickToBottom);
   activeId = null;
+  draftModelId = '';
   draftIncognito = !!incognito;
   stickToBottom = true;
   userScrollOverride = false;
@@ -5298,6 +5304,8 @@ function startDraft({ incognito = false } = {}) {
   composerMentionIds.clear();
   renderComposerMentions();
   if (typeof resetDraftWorkspace === 'function') resetDraftWorkspace();
+  syncConversationModel();
+  if (latestState) updateInferenceState(latestState);
   renderComposerModes();
   showChatView();
   renderSidebar();

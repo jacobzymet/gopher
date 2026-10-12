@@ -14,9 +14,13 @@ pub const DEFAULT_UI_PORT: u16 = 3930;
 /// Friendly loopback hostname for printed / opened URLs (`*.localhost` → 127.0.0.1 in browsers).
 pub const PUBLIC_UI_HOST: &str = "gopher.localhost";
 
-/// Browser-facing URL for a bound loopback listener (hostname only; bind IP stays 127.0.0.1/::1).
+/// Prefer the friendly hostname for IPv4 localhost; other binds use their exact IP.
 pub fn public_ui_url(bind: SocketAddr) -> String {
-    format!("http://{PUBLIC_UI_HOST}:{}", bind.port())
+    if bind.ip() == IpAddr::V4(std::net::Ipv4Addr::LOCALHOST) {
+        format!("http://{PUBLIC_UI_HOST}:{}", bind.port())
+    } else {
+        loopback_ui_url(bind)
+    }
 }
 
 /// OS-resolver URL for the same listener. Chrome maps `*.localhost` to loopback
@@ -171,8 +175,12 @@ impl Default for UiConfig {
 
 impl Config {
     pub fn load(path: &Path) -> Result<Self> {
-        if !path.exists() {
-            return Ok(Self::default());
+        match std::fs::symlink_metadata(path) {
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(Self::default());
+            }
+            Err(error) => return Err(error).context("could not inspect configuration"),
         }
         let raw = secure_fs::read_to_string(path)?;
         toml::from_str(&raw).with_context(|| format!("invalid config at {}", path.display()))
@@ -293,6 +301,10 @@ mod tests {
         assert_eq!(public_ui_url(bind), "http://gopher.localhost:3930");
         let custom: SocketAddr = "127.0.0.1:4000".parse().unwrap();
         assert_eq!(public_ui_url(custom), "http://gopher.localhost:4000");
+        let custom_ip: SocketAddr = "127.0.0.42:4000".parse().unwrap();
+        assert_eq!(public_ui_url(custom_ip), "http://127.0.0.42:4000");
+        let ipv6: SocketAddr = "[::1]:4000".parse().unwrap();
+        assert_eq!(public_ui_url(ipv6), "http://[::1]:4000");
     }
 
     #[test]

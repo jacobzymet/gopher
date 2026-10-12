@@ -83,7 +83,11 @@ pub fn url_is_private_or_local(url: &str) -> bool {
     let Some(host) = parsed.host_str() else {
         return false;
     };
-    let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
+    let host = host
+        .trim()
+        .trim_matches(['[', ']'])
+        .trim_end_matches('.')
+        .to_ascii_lowercase();
     host == "localhost"
         || host.ends_with(".localhost")
         || host.ends_with(".local")
@@ -354,6 +358,21 @@ pub fn ip_is_non_public(ip: IpAddr) -> bool {
 const MAX_SAFE_REDIRECTS: usize = 10;
 const MAX_GUARDED_CLIENTS: usize = 64;
 
+fn public_fetch_host(url: &Url) -> Result<String, String> {
+    let host = url
+        .host_str()
+        .ok_or_else(|| "URL has no host".to_string())?
+        .to_ascii_lowercase();
+    let local_host = host.trim_matches(['[', ']']).trim_end_matches('.');
+    if local_host == "localhost"
+        || local_host.ends_with(".localhost")
+        || local_host.ends_with(".local")
+    {
+        return Err("fetch_url blocked a local or private destination".into());
+    }
+    Ok(host)
+}
+
 #[derive(PartialEq, Eq)]
 struct GuardedClientKey {
     host: String,
@@ -408,18 +427,12 @@ pub async fn safe_public_get(url: &str, loose_accept: bool) -> Result<reqwest::R
         {
             return Err("URL must be HTTP(S) and must not contain credentials".into());
         }
-        let host = current
-            .host_str()
-            .ok_or_else(|| "URL has no host".to_string())?
-            .trim_end_matches('.')
-            .to_ascii_lowercase();
-        if host == "localhost" || host.ends_with(".localhost") || host.ends_with(".local") {
-            return Err("fetch_url blocked a local or private destination".into());
-        }
+        let host = public_fetch_host(&current)?;
+        let dns_host = host.trim_matches(['[', ']']);
         let port = current
             .port_or_known_default()
             .ok_or_else(|| "URL has no valid port".to_string())?;
-        let addresses: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), port))
+        let addresses: Vec<SocketAddr> = tokio::net::lookup_host((dns_host, port))
             .await
             .map_err(|error| format!("DNS resolution failed: {error}"))?
             .collect();
@@ -429,7 +442,9 @@ pub async fn safe_public_get(url: &str, loose_accept: bool) -> Result<reqwest::R
             );
         }
 
-        // Revalidate every hop before using a pool pinned to exactly these DNS answers.
+        // Keep the URL's exact hostname (including a trailing dot) as the
+        // resolver override key. Normalizing only the key would let reqwest
+        // resolve the original URL again and bypass the validated DNS answers.
         static POOL: OnceLock<Mutex<GuardedClientPool>> = OnceLock::new();
         let client = POOL
             .get_or_init(|| Mutex::new(GuardedClientPool::default()))
@@ -463,6 +478,18 @@ pub async fn safe_public_get(url: &str, loose_accept: bool) -> Result<reqwest::R
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn private_provider_urls_include_ipv6_literals() {
+        for url in [
+            "http://[::1]/v1",
+            "http://[fc00::1]:8000/v1",
+            "http://[::ffff:127.0.0.1]/v1",
+        ] {
+            assert!(url_is_private_or_local(url), "{url}");
+        }
+        assert!(!url_is_private_or_local("http://[2606:4700:4700::1111]/v1"));
+    }
 
     fn init_tls() {
         #[cfg(not(target_os = "macos"))]
@@ -716,6 +743,17 @@ mod tests {
         pool.client("guarded.test", vec!["93.184.216.34:80".parse().unwrap()])
             .unwrap();
         assert_eq!(pool.clients.len(), 2);
+        let url = Url::parse(&format!("http://guarded.invalid.:{}/page", address.port())).unwrap();
+        let host = public_fetch_host(&url).unwrap();
+        assert_eq!(
+            host, "guarded.invalid.",
+            "resolver key must exactly match the URL host"
+        );
+        let client = pool.client(&host, vec![address]).unwrap();
+        assert_eq!(
+            client.get(url).send().await.unwrap().text().await.unwrap(),
+            "ok"
+        );
         server.abort();
     }
 
@@ -740,6 +778,9 @@ mod tests {
     async fn pooled_fetch_still_blocks_private_hosts_and_credentials() {
         for url in [
             "http://localhost/a",
+            "http://localhost./a",
+            "http://private.localhost./a",
+            "http://private.local./a",
             "http://127.0.0.1/a",
             "http://10.0.0.1/a",
             "http://[::1]/a",

@@ -125,7 +125,9 @@ impl LiveTurn {
 
     fn finish(&self) {
         self.finished.store(true, Ordering::SeqCst);
-        let _ = self.done.send(true);
+        // Keep completion even if Stop dropped the last subscriber before
+        // wait_done subscribes. send() discards the value without receivers.
+        self.done.send_replace(true);
     }
 
     fn request_cancel(&self) {
@@ -616,6 +618,19 @@ mod tests {
         assert!(turn.snapshot_info().finished);
     }
 
+    #[test]
+    fn completion_is_retained_when_cancellation_has_not_subscribed_yet() {
+        let turn = LiveTurn::new(info("completion-race"));
+        // A pump can finish between wait_done's atomic check and subscription.
+        // There are no watch receivers yet, but a later waiter must see true.
+        turn.finish();
+        let done = turn.done.subscribe();
+        assert!(
+            *done.borrow(),
+            "completion notification was lost without a receiver"
+        );
+    }
+
     #[tokio::test]
     async fn replay_then_end_for_a_finished_turn() {
         let hub = LiveHub::new();
@@ -734,7 +749,12 @@ mod tests {
             .start(info("c4"), Box::pin(futures_util::stream::pending()))
             .expect("first start");
 
-        let (cancelled, settled) = hub.cancel_and_wait("c4", Some("turn_test")).await;
+        let (cancelled, settled) = tokio::time::timeout(
+            Duration::from_secs(1),
+            hub.cancel_and_wait("c4", Some("turn_test")),
+        )
+        .await
+        .expect("normal Stop must settle before the five-second fallback");
         assert!(cancelled);
         assert!(settled);
 

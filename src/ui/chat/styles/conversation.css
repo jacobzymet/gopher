@@ -1966,6 +1966,7 @@ button.chat-model-section-label:focus-visible {
   display: flex;
   align-items: center;
   gap: 0.42rem;
+  flex-wrap: wrap;
 }
 .chat-model-menu-footer .btn {
   min-height: 1.95rem;

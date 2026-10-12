@@ -132,12 +132,14 @@ pub fn meta_path(root: &Path) -> PathBuf {
 
 pub fn load_meta(root: &Path) -> Result<Option<EncryptionMeta>> {
     let path = meta_path(root);
-    if !path.exists() {
-        return Ok(None);
+    match std::fs::symlink_metadata(&path) {
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error).context("could not inspect encryption metadata"),
     }
     let raw = secure_fs::read_limited_to_string(&path, MAX_META_BYTES)?;
     if raw.trim().is_empty() {
-        return Ok(None);
+        bail!("empty encryption metadata at {}", path.display());
     }
     let meta: EncryptionMeta = serde_json::from_str(&raw)
         .with_context(|| format!("invalid encryption metadata at {}", path.display()))?;
@@ -339,6 +341,19 @@ pub fn meta_for_key(key: &DiskKey, salt: [u8; SALT_LEN]) -> Result<EncryptionMet
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn empty_metadata_is_corruption_not_disabled_encryption() {
+        let dir = tempdir().unwrap();
+        assert!(load_meta(dir.path()).unwrap().is_none());
+        secure_fs::atomic_write(&meta_path(dir.path()), b" \n").unwrap();
+        assert!(
+            load_meta(dir.path())
+                .unwrap_err()
+                .to_string()
+                .contains("empty encryption metadata")
+        );
+    }
 
     #[test]
     fn roundtrip_encrypt_decrypt() {

@@ -61,7 +61,6 @@ fn main() -> Result<()> {
     let config = Config::load(&config_path)?;
 
     let bind = Config::resolve_ui_bind(cli.bind, &config)?;
-    let url = config::public_ui_url(bind);
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -91,6 +90,10 @@ fn main() -> Result<()> {
         Some(listener) => listener,
         None => return greet_running_instance(bind),
     };
+    let bind = listener
+        .local_addr()
+        .context("could not read the listen address")?;
+    let url = config::public_ui_url(bind);
 
     let mut app = App::new(config, config_path).map_err(anyhow::Error::msg)?;
     app.set_listen_addr(bind);

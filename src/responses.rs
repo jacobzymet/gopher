@@ -85,12 +85,18 @@ pub fn openai_chat_to_responses(payload: &Value, codex: bool) -> Value {
     }
     if let Some(tools) = convert_tools(payload.get("tools")) {
         body["tools"] = Value::Array(tools);
-        body["tool_choice"] = json!("auto");
-        body["parallel_tool_calls"] = json!(true);
+        body["tool_choice"] = responses_tool_choice(payload.get("tool_choice"));
+        body["parallel_tool_calls"] = json!(
+            payload
+                .get("parallel_tool_calls")
+                .and_then(Value::as_bool)
+                .unwrap_or(true)
+        );
     }
     if !codex
         && let Some(max) = payload
             .get("max_tokens")
+            .or_else(|| payload.get("max_completion_tokens"))
             .or_else(|| payload.get("max_output_tokens"))
     {
         body["max_output_tokens"] = max.clone();
@@ -102,6 +108,21 @@ pub fn openai_chat_to_responses(payload: &Value, codex: bool) -> Value {
         body["store"] = json!(false);
     }
     body
+}
+
+fn responses_tool_choice(choice: Option<&Value>) -> Value {
+    match choice {
+        Some(Value::String(choice)) if matches!(choice.as_str(), "auto" | "none" | "required") => {
+            json!(choice)
+        }
+        Some(choice) => choice
+            .pointer("/function/name")
+            .or_else(|| choice.get("name"))
+            .and_then(Value::as_str)
+            .map(|name| json!({"type": "function", "name": name}))
+            .unwrap_or_else(|| json!("auto")),
+        None => json!("auto"),
+    }
 }
 
 /// Keep the catalog's reasoning object, including an explicit disable effort.
@@ -172,6 +193,7 @@ fn convert_tools(tools: Option<&Value>) -> Option<Vec<Value>> {
             Some(json!({
                 "type": "function",
                 "name": name,
+                "strict": function.get("strict").and_then(Value::as_bool).unwrap_or(false),
                 "description": function.get("description").and_then(|value| value.as_str()).unwrap_or(""),
                 "parameters": function.get("parameters").cloned().unwrap_or_else(|| json!({
                     "type": "object",
@@ -210,14 +232,22 @@ pub fn responses_output_text(body: &Value) -> String {
 #[derive(Default)]
 pub struct ResponsesSseTranslator {
     event: String,
+    finished: bool,
     /// `(item id, call id)` per function call, in stream order.
     tools: Vec<(String, String)>,
 }
 
 impl ResponsesSseTranslator {
+    pub fn is_finished(&self) -> bool {
+        self.finished
+    }
+
     /// Translate one SSE line into zero or more OpenAI chat-completion frames.
     /// A failed response or error event becomes `Err` with the provider's message.
     pub fn push_line(&mut self, line: &str) -> Result<Vec<Vec<u8>>, String> {
+        if self.finished {
+            return Ok(Vec::new());
+        }
         let line = line.trim_end_matches('\r');
         if let Some(name) = line.strip_prefix("event:") {
             self.event = name.trim().to_string();
@@ -227,7 +257,11 @@ impl ResponsesSseTranslator {
             return Ok(Vec::new());
         };
         let data = data.trim();
-        if data.is_empty() || data == "[DONE]" {
+        if data.is_empty() {
+            return Ok(Vec::new());
+        }
+        if data == "[DONE]" {
+            self.finished = true;
             return Ok(vec![b"data: [DONE]\n\n".to_vec()]);
         }
         let Ok(value) = serde_json::from_str::<Value>(data) else {
@@ -239,6 +273,45 @@ impl ResponsesSseTranslator {
             .unwrap_or(self.event.as_str());
         if kind == "response.failed" || kind == "error" {
             return Err(stream_error_message(&value));
+        }
+        if kind == "response.incomplete" {
+            let reason = value
+                .pointer("/response/incomplete_details/reason")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown reason");
+            return Err(format!("The model response was incomplete: {reason}"));
+        }
+        if kind == "response.completed" {
+            self.finished = true;
+            let mut frames = Vec::new();
+            if let Some(source) = value.pointer("/response/usage").and_then(Value::as_object) {
+                let mut usage = serde_json::Map::new();
+                for (from, to) in [
+                    ("input_tokens", "prompt_tokens"),
+                    ("output_tokens", "completion_tokens"),
+                    ("total_tokens", "total_tokens"),
+                ] {
+                    if let Some(count) = source.get(from).and_then(Value::as_u64) {
+                        usage.insert(to.into(), json!(count));
+                    }
+                }
+                for (from, to) in [
+                    ("input_tokens_details", "prompt_tokens_details"),
+                    ("output_tokens_details", "completion_tokens_details"),
+                ] {
+                    if let Some(details) = source.get(from).filter(|value| value.is_object()) {
+                        usage.insert(to.into(), details.clone());
+                    }
+                }
+                if !usage.is_empty() {
+                    frames.push(
+                        format!("data: {}\n\n", json!({"choices": [], "usage": usage}))
+                            .into_bytes(),
+                    );
+                }
+            }
+            frames.push(b"data: [DONE]\n\n".to_vec());
+            return Ok(frames);
         }
         let frames = match kind {
             "response.output_text.delta" => delta_text("content", value.get("delta")),
@@ -470,5 +543,90 @@ mod tests {
         let error = translator
             .push_line("data: {\"type\":\"error\",\"message\":\"Instructions are required\"}");
         assert!(error.unwrap_err().contains("Instructions are required"));
+    }
+
+    #[test]
+    fn preserves_forced_tools_parallel_policy_and_optional_parameters() {
+        let mut chat = json!({
+            "tools": [{"type": "function", "function": {
+                "name": "read_file", "parameters": {"type": "object", "properties": {
+                    "path": {"type": "string"}, "offset": {"type": "integer"}
+                }, "required": ["path"]}
+            }}],
+            "parallel_tool_calls": false,
+            "max_completion_tokens": 128
+        });
+        for choice in [
+            json!("required"),
+            json!("none"),
+            json!("auto"),
+            json!({"type": "function", "function": {"name": "read_file"}}),
+        ] {
+            chat["tool_choice"] = choice.clone();
+            let result = openai_chat_to_responses(&chat, false);
+            let expected = if choice.is_object() {
+                json!({"type": "function", "name": "read_file"})
+            } else {
+                choice
+            };
+            assert_eq!(result["tool_choice"], expected);
+            assert_eq!(result["parallel_tool_calls"], false);
+            assert_eq!(result["tools"][0]["strict"], false);
+            assert_eq!(
+                result["tools"][0]["parameters"],
+                chat["tools"][0]["function"]["parameters"]
+            );
+            assert_eq!(result["max_output_tokens"], 128);
+        }
+        chat["tools"][0]["function"]["strict"] = json!(true);
+        assert_eq!(
+            openai_chat_to_responses(&chat, false)["tools"][0]["strict"],
+            true
+        );
+    }
+
+    #[test]
+    fn completed_stream_emits_usage_once_and_finishes_without_socket_close() {
+        let mut translator = ResponsesSseTranslator::default();
+        assert!(translator.push_line("data: ").unwrap().is_empty());
+        assert!(!translator.is_finished());
+        let source = json!({"type": "response.completed", "response": {"usage": {
+            "input_tokens": 37, "output_tokens": 11, "total_tokens": 48,
+            "input_tokens_details": {"cached_tokens": 12},
+            "output_tokens_details": {"reasoning_tokens": 3}
+        }}});
+        let frames = translator.push_line(&format!("data: {source}")).unwrap();
+        assert!(translator.is_finished());
+        assert_eq!(frames.len(), 2);
+        let frame = String::from_utf8_lossy(&frames[0]);
+        let usage: Value =
+            serde_json::from_str(frame.trim().strip_prefix("data:").unwrap().trim()).unwrap();
+        assert_eq!(usage["usage"]["prompt_tokens"], 37);
+        assert_eq!(usage["usage"]["completion_tokens"], 11);
+        assert_eq!(usage["usage"]["total_tokens"], 48);
+        assert_eq!(usage["usage"]["prompt_tokens_details"]["cached_tokens"], 12);
+        assert_eq!(
+            usage["usage"]["completion_tokens_details"]["reasoning_tokens"],
+            3
+        );
+        assert_eq!(frames[1], b"data: [DONE]\n\n");
+        assert!(
+            translator
+                .push_line(&format!("data: {source}"))
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn missing_usage_stays_unknown_and_incomplete_streams_fail() {
+        let mut translator = ResponsesSseTranslator::default();
+        let frames = translator
+            .push_line("data: {\"type\":\"response.completed\",\"response\":{\"usage\":null}}")
+            .unwrap();
+        assert_eq!(frames, vec![b"data: [DONE]\n\n".to_vec()]);
+        let mut translator = ResponsesSseTranslator::default();
+        let error = translator.push_line("data: {\"type\":\"response.incomplete\",\"response\":{\"incomplete_details\":{\"reason\":\"max_output_tokens\"}}}").unwrap_err();
+        assert!(error.contains("max_output_tokens"));
     }
 }

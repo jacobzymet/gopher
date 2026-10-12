@@ -365,6 +365,7 @@ fn glob_collect(
         }
         matches.len() < MAX_GLOB_MATCHES
     })
+    .map(|_| ())
 }
 
 pub fn grep_files(ws: &Workspace, args: &Value) -> Result<String, String> {
@@ -590,6 +591,7 @@ fn grep_walk(ws: &Workspace, start: &Path, search: &mut GrepSearch<'_>) -> Resul
         }
         true
     })
+    .map(|_| ())
 }
 
 fn grep_file_hits(
@@ -939,7 +941,7 @@ fn walk_files(
     root: &Path,
     dir: &Path,
     visit: &mut dyn FnMut(String, &Path, bool) -> bool,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     let entries = fs::read_dir(dir).map_err(|err| format!("Could not walk workspace: {err}"))?;
     for entry in entries {
         let entry = entry.map_err(|err| format!("Could not walk workspace: {err}"))?;
@@ -967,14 +969,16 @@ fn walk_files(
             .unwrap_or_default();
         if meta.is_dir() {
             if !visit(rel, &path, true) {
-                return Ok(());
+                return Ok(false);
             }
-            walk_files(root, &path, visit)?;
+            if !walk_files(root, &path, visit)? {
+                return Ok(false);
+            }
         } else if meta.is_file() && !visit(rel, &path, false) {
-            return Ok(());
+            return Ok(false);
         }
     }
-    Ok(())
+    Ok(true)
 }
 
 fn ensure_parent_in_workspace(ws: &Workspace, parent: &Path) -> Result<(), String> {
@@ -1280,6 +1284,24 @@ mod tests {
     use super::*;
     use serde_json::json;
     use std::fs;
+
+    #[test]
+    fn nested_walk_stop_propagates_to_every_parent() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["first", "second"] {
+            fs::create_dir(dir.path().join(name)).unwrap();
+            fs::write(dir.path().join(name).join("match.txt"), "match").unwrap();
+        }
+        let mut stopped = false;
+        let complete = walk_files(dir.path(), dir.path(), &mut |_, _, is_dir| {
+            assert!(!stopped, "visited another sibling after reaching the limit");
+            stopped = !is_dir;
+            !stopped
+        })
+        .unwrap();
+        assert!(!complete);
+        assert!(stopped);
+    }
 
     fn temp_ws() -> (tempfile::TempDir, Workspace) {
         let dir = tempfile::tempdir().unwrap();

@@ -476,6 +476,9 @@ function parseCompactJson(raw) {
 async function maybeCompactBotsConvo(convo, speakerBot) {
   if (!convo || convo.incognito || estimateConvoChars(convo) < BOT_COMPACT_CHARS) return;
   if ((convo.messages || []).length <= BOT_COMPACT_KEEP + 2) return;
+  const writeEpoch = storageWriteEpoch;
+  const runEpoch = botsOutboundEpochOf(convo.id);
+  const snapshot = convo.messages.slice();
   const dropCount = convo.messages.length - BOT_COMPACT_KEEP;
   const dropped = convo.messages.slice(0, dropCount);
   const kept = convo.messages.slice(dropCount);
@@ -500,6 +503,11 @@ async function maybeCompactBotsConvo(convo, speakerBot) {
       }) },
       { role: 'user', content: transcript.slice(0, 24000) },
     ], speakerBot?.model);
+    if (writeEpoch !== storageWriteEpoch || diskEncryptionLocked()
+      || runEpoch !== botsOutboundEpochOf(convo.id)
+      || !conversations.includes(convo)
+      || convo.messages.length !== snapshot.length
+      || snapshot.some((message, index) => convo.messages[index] !== message)) return;
     const parsed = parseCompactJson(raw);
     if (!parsed || !parsed.summary) return;
     convo.messages = [{

@@ -116,6 +116,8 @@ Chats, preferences, and skills are encrypted in place when encryption is enabled
 The UI manages these settings, but a minimal configuration is:
 
 ```toml
+active_provider_id = "…"
+
 [ui]
 host = "127.0.0.1"
 port = 3930
@@ -123,8 +125,6 @@ theme = "dark" # dark, light, or system
 
 [data]
 storage = "disk"
-
-active_provider_id = "…"
 
 [[providers]]
 id = "…"
@@ -135,6 +135,8 @@ token = ""           # optional for local endpoints
 ```
 
 Provider API style is detected when a provider is added or saved. Existing entries without `api_style` default to `openai`.
+
+**Settings → Composer → Default model** applies to chats without a manual model choice. Choosing a model beneath the composer saves it for that chat only, including after restart. **Use default** in the model menu clears that choice so the chat follows future default changes. A model chosen in an unsent draft belongs to the chat created from that draft; the next new chat starts with the default.
 
 Bind precedence is `--bind`, then `GOPHER_BIND`, then `[ui]`. Network-reachable addresses are refused because the local UI has no authentication.
 

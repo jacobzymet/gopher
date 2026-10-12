@@ -1843,6 +1843,12 @@ where
             }
             let line = String::from_utf8_lossy(line);
             apply_openai_sse_line(&line, content, reasoning, native_tools, forwarding, tx).await?;
+            if line
+                .strip_prefix("data:")
+                .is_some_and(|data| data.trim() == "[DONE]")
+            {
+                return Ok(());
+            }
             consumed = end + 1;
         }
         if consumed != 0 {
@@ -1853,6 +1859,18 @@ where
                 "Model SSE line exceeded the safety limit.".into(),
             ));
         }
+    }
+    if !buffer.is_empty() {
+        let line = String::from_utf8_lossy(&buffer);
+        apply_openai_sse_line(
+            line.trim_end_matches('\r'),
+            content,
+            reasoning,
+            native_tools,
+            forwarding,
+            tx,
+        )
+        .await?;
     }
     Ok(())
 }
@@ -1893,6 +1911,9 @@ where
                         .await?;
                 }
             }
+            if translator.is_finished() {
+                return Ok(());
+            }
             consumed = end + 1;
         }
         if consumed != 0 {
@@ -1902,6 +1923,16 @@ where
             return Err(StreamFail::Other(
                 "Model SSE line exceeded the safety limit.".into(),
             ));
+        }
+    }
+    if !buffer.is_empty() {
+        let line = String::from_utf8_lossy(&buffer);
+        for frame in translator
+            .push_line(line.trim_end_matches('\r'))
+            .map_err(StreamFail::Other)?
+        {
+            apply_openai_sse_frame(&frame, content, reasoning, native_tools, forwarding, tx)
+                .await?;
         }
     }
     Ok(())
@@ -1952,6 +1983,16 @@ where
             return Err(StreamFail::Other(
                 "Model SSE line exceeded the safety limit.".into(),
             ));
+        }
+    }
+    if !buffer.is_empty() {
+        let line = String::from_utf8_lossy(&buffer);
+        for frame in translator
+            .push_line(line.trim_end_matches('\r'))
+            .map_err(StreamFail::Other)?
+        {
+            apply_openai_sse_frame(&frame, content, reasoning, native_tools, forwarding, tx)
+                .await?;
         }
     }
     Ok(())
@@ -4295,6 +4336,108 @@ mod tests {
         )
         .await;
         assert!(matches!(result, Err(StreamFail::Stalled)));
+    }
+
+    #[tokio::test]
+    async fn all_agent_stream_formats_preserve_the_final_line_without_newline() {
+        for (style, line) in [
+            (
+                ApiStyle::Openai,
+                "data: {\"choices\":[{\"delta\":{\"content\":\"你好\"}}]}",
+            ),
+            (
+                ApiStyle::Responses,
+                "data: {\"type\":\"response.output_text.delta\",\"delta\":\"你好\"}",
+            ),
+            (
+                ApiStyle::Anthropic,
+                "data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"你好\"}}",
+            ),
+        ] {
+            let mut stream = futures_util::stream::iter([Ok::<_, reqwest::Error>(line.as_bytes())]);
+            let (tx, _rx) = mpsc::channel(8);
+            let (mut content, mut reasoning, mut native_tools, mut forwarding) =
+                (String::new(), String::new(), Vec::new(), true);
+            match style {
+                ApiStyle::Openai => {
+                    consume_openai_sse_agent(
+                        &mut stream,
+                        &mut content,
+                        &mut reasoning,
+                        &mut native_tools,
+                        &mut forwarding,
+                        &tx,
+                    )
+                    .await
+                }
+                ApiStyle::Responses => {
+                    consume_responses_as_openai_agent(
+                        &mut stream,
+                        &mut content,
+                        &mut reasoning,
+                        &mut native_tools,
+                        &mut forwarding,
+                        &tx,
+                    )
+                    .await
+                }
+                ApiStyle::Anthropic => {
+                    consume_anthropic_as_openai_agent(
+                        &mut stream,
+                        &mut content,
+                        &mut reasoning,
+                        &mut native_tools,
+                        &mut forwarding,
+                        &tx,
+                    )
+                    .await
+                }
+            }
+            .unwrap();
+            assert_eq!(content, "你好", "{style:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn agent_completion_markers_finish_without_waiting_for_socket_close() {
+        for (style, data) in [
+            (ApiStyle::Openai, "data: [DONE]\n\n"),
+            (
+                ApiStyle::Responses,
+                "data: {\"type\":\"response.completed\",\"response\":{}}\n\n",
+            ),
+        ] {
+            let mut stream = futures_util::stream::iter([Ok::<_, reqwest::Error>(data.as_bytes())])
+                .chain(futures_util::stream::pending());
+            let (tx, _rx) = mpsc::channel(8);
+            let (mut content, mut reasoning, mut native_tools, mut forwarding) =
+                (String::new(), String::new(), Vec::new(), true);
+            let result = match style {
+                ApiStyle::Openai => {
+                    consume_openai_sse_agent(
+                        &mut stream,
+                        &mut content,
+                        &mut reasoning,
+                        &mut native_tools,
+                        &mut forwarding,
+                        &tx,
+                    )
+                    .await
+                }
+                _ => {
+                    consume_responses_as_openai_agent(
+                        &mut stream,
+                        &mut content,
+                        &mut reasoning,
+                        &mut native_tools,
+                        &mut forwarding,
+                        &tx,
+                    )
+                    .await
+                }
+            };
+            assert!(result.is_ok(), "{style:?}: {result:?}");
+        }
     }
 
     #[test]

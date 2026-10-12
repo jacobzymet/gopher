@@ -108,7 +108,13 @@ test('actual vendored sanitizer blocks executable and UI-clobbering model HTML',
     await page.route('**/*', (route) => route.abort());
     await page.addScriptTag({ path: join(root, 'src/ui/vendor/purify.min.js') });
     await page.addScriptTag({ path: join(root, 'src/ui/vendor/marked.min.js') });
-    await page.addScriptTag({ content: 'function applyMarkdownImageRefs(text) { return text; }\n' + declaration('render.js', 'renderMarkdown') });
+    const renderer = readFileSync(join(root, 'src/ui/chat/scripts/render.js'), 'utf8');
+    const mathRenderer = renderer.slice(renderer.indexOf('const TEX_COMMANDS'), renderer.indexOf('\nlet markdownImages'));
+    assert.ok(mathRenderer.includes('function renderMarkdown'));
+    await page.addScriptTag({ content: [
+      'function applyMarkdownImageRefs(text) { return text; }',
+      declaration('render.js', 'escapeHtml'), mathRenderer,
+    ].join('\n') });
     const result = await page.evaluate(() => {
       const attacks = [
         '<img src=x onerror="window.__xss=true"><script>window.__xss=true</script>',

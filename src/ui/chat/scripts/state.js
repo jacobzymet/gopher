@@ -124,7 +124,7 @@ const DEFAULT_SETTINGS = {
   chatBackgroundImageName: '',
   chatBackgroundPosition: 'center',
   chatBackgroundOverlay: 72,
-  selectedChatModel: '',
+  selectedChatModel: '', // Default; manual chat choices live in conversation.modelId.
   recentModelIds: [],
   pinnedModelIds: [],
   collapsedModelProviders: [],
@@ -760,7 +760,8 @@ const PINNED_MODELS_MAX = 48;
 const MODEL_PIN_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1z"/></svg>';
 const MODEL_MARK_ICON = '<svg class="chat-model-option-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>';
 let selectedRemoteModelId = '';
-let selectedChatModel = '';
+let selectedChatModel = ''; // Effective model for the visible chat or draft.
+let draftModelId = '';
 let selectedModelMissingPolls = 0;
 let recentModelIds = [];
 let pinnedModelIds = [];
@@ -820,10 +821,37 @@ function resetDraftWorkspace() {
   draftWorkspaceRoot = '';
 }
 
+function conversationModelId(convo) {
+  return (typeof convo?.modelId === 'string' ? convo.modelId.trim() : '')
+    || (typeof settings.selectedChatModel === 'string' ? settings.selectedChatModel.trim() : '');
+}
+
+function syncConversationModel() {
+  const convo = conversations.find((item) => item.id === activeId);
+  const value = convo ? conversationModelId(convo) : (draftModelId || conversationModelId(null));
+  selectedChatModel = typeof resolveSavedModelId === 'function' && typeof modelMenuOptions !== 'undefined'
+    ? resolveSavedModelId(value, modelMenuOptions)
+    : value;
+  selectedRemoteModelId = selectedChatModel;
+}
+
+function setChatModelSelection(value) {
+  const modelId = String(value || '').trim();
+  const convo = conversations.find((item) => item.id === activeId);
+  if (convo) {
+    if (modelId) convo.modelId = modelId;
+    else delete convo.modelId;
+    convo.updatedAt = Date.now();
+    saveConversations({ immediate: true });
+  } else {
+    draftModelId = modelId;
+  }
+  syncConversationModel();
+}
+
 function persistModelPickerState() {
   saveSettings({
     ...settings,
-    selectedChatModel,
     recentModelIds: recentModelIds.slice(),
     pinnedModelIds: pinnedModelIds.slice(),
   }, { immediate: true });
@@ -859,10 +887,7 @@ function togglePinnedModel(value) {
 }
 
 function hydrateModelPickerState() {
-  selectedChatModel = typeof settings.selectedChatModel === 'string'
-    ? settings.selectedChatModel
-    : '';
-  selectedRemoteModelId = selectedChatModel;
+  syncConversationModel();
   if (selectedChatModel && chatModelSelect) {
     const parts = selectedChatModel.split('|').filter(Boolean);
     chatModelSelect.textContent = parts[parts.length - 1] || 'Model';
@@ -959,6 +984,7 @@ function normalizeConversation(convo) {
       ? Math.max(0, Math.min(3, Math.floor(convo.titleAttempts)))
       : 0,
     messages: Array.isArray(convo.messages) ? convo.messages : [],
+    modelId: typeof convo.modelId === 'string' ? convo.modelId.trim() : '',
     updatedAt: typeof convo.updatedAt === 'number' ? convo.updatedAt : Date.now(),
     projectId: typeof convo.projectId === 'string' ? convo.projectId : null,
     sortOrder: typeof convo.sortOrder === 'number' && Number.isFinite(convo.sortOrder)
@@ -1592,9 +1618,9 @@ function canBranchFromActiveConversation() {
   return !!(convo && Array.isArray(convo.messages) && convo.messages.length > 0);
 }
 
-async function requestGeneratedTitle(userText) {
+async function requestGeneratedTitle(userText, modelId) {
   const body = { message: String(userText || '').trim() };
-  const remote = selectedRemoteModel(latestState);
+  const remote = selectedRemoteModel(latestState, modelId);
   if (remote) {
     body.remote_base = remote.base;
     if (remote.provider_id) body.provider_id = remote.provider_id;
@@ -1820,7 +1846,7 @@ function generateConversationTitle(convo, userText) {
   void (async () => {
     let retry = false;
     try {
-      const title = await requestGeneratedTitle(text);
+      const title = await requestGeneratedTitle(text, conversationModelId(convo));
       if (convo._titleReq !== requestId) return;
       if (!conversations.some((item) => item.id === convo.id)) return;
       convo.title = title;
@@ -2051,6 +2077,7 @@ function enqueueSettingsWrite(snapshot) {
 
 function applySettingsInMemory(next) {
   settings = next;
+  syncConversationModel();
   syncActiveProfileFromMemory({ touch: true });
   syncAccountProfileUi();
   applyChatBackground(settings);
@@ -2452,6 +2479,7 @@ function clearMemoryAfterLock() {
   stickByConvo.clear();
   selectedChatModel = '';
   selectedRemoteModelId = '';
+  draftModelId = '';
   recentModelIds = [];
   pinnedModelIds = [];
   modelMenuOptions = [];

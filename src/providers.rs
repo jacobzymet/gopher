@@ -2008,18 +2008,12 @@ fn host_is_local(host: &str) -> bool {
 
 pub fn split_openai_base(base: &str) -> Option<(String, String, u16)> {
     let base = normalize_openai_base(base)?;
-    let url = base.trim_end_matches("/v1");
-    let without_scheme = url.split("://").nth(1)?;
-    let scheme = url.split("://").next()?.to_string();
-    let authority = without_scheme.split('/').next()?;
-    let (host, port) = if let Some((h, p)) = authority.rsplit_once(':') {
-        let port = p.parse().ok()?;
-        (h.to_string(), port)
-    } else {
-        let port = if scheme == "https" { 443 } else { 80 };
-        (authority.to_string(), port)
-    };
-    Some((scheme, host, port))
+    let url = reqwest::Url::parse(&base).ok()?;
+    Some((
+        url.scheme().to_string(),
+        url.host_str()?.to_string(),
+        url.port_or_known_default()?,
+    ))
 }
 
 pub fn provider_base_same_host(linked: &str, candidate: &str) -> bool {
@@ -2163,6 +2157,26 @@ fn jinja_mentions_ident(template: &str, ident: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ipv6_provider_bases_keep_local_http_and_parse_default_ports() {
+        assert_eq!(
+            normalize_openai_base("http://[::1]/v1").as_deref(),
+            Some("http://[::1]/v1")
+        );
+        assert_eq!(
+            split_openai_base("http://[::1]/v1"),
+            Some(("http".into(), "[::1]".into(), 80))
+        );
+        assert_eq!(
+            split_openai_base("http://[::1]:11434/v1"),
+            Some(("http".into(), "[::1]".into(), 11434))
+        );
+        assert_eq!(
+            split_openai_base("https://example.com/v1"),
+            Some(("https".into(), "example.com".into(), 443))
+        );
+    }
 
     #[test]
     fn cloudflare_access_service_token_uses_access_headers() {

@@ -37,6 +37,8 @@ pub struct App {
 
 impl App {
     pub fn new(mut config: Config, config_path: PathBuf) -> Result<Self, String> {
+        let config_path = std::path::absolute(config_path)
+            .map_err(|error| format!("Could not resolve config path: {error}"))?;
         let before = config.clone();
         config.providers.migrate();
         config.ui.normalize_fonts();

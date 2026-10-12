@@ -117,7 +117,7 @@ function conflictHarness() {
     activeStreams: new Map(), outboundStarting: new Set(), outboundStartEpochs: new Map(),
     latestState: {}, selectedChatModel: 'model', thinkingSupported: false,
     activeId: convo.id, selectedRemoteModel: () => ({ ready: true, model: 'model' }),
-    settings: {},
+    settings: { selectedChatModel: 'model' },
     DEFAULT_SETTINGS: {},
     WEB_SEARCH_DEPTHS: [],
     WEB_SEARCH_PROVIDERS: [],
@@ -155,6 +155,7 @@ function conflictHarness() {
       if (state.activeStreams.get(c.id) === stream) state.activeStreams.delete(c.id);
     },
   });
+  load(state, 'state.js', ['conversationModelId']);
   load(state, 'controls.js', ['markOutboundStarting', 'clearOutboundStarting', 'outboundStartIsCurrent']);
   load(state, 'runtime.js', ['runAssistantTurn', 'dropLiveSubscriber']);
   const run = (overrides = {}) => state.runAssistantTurn(convo, {
@@ -189,6 +190,29 @@ test('outbound prompts retain stage instructions and place the fresh clock after
   h.respond(200);
   await pending;
 });
+
+for (const [name, override, expected] of [
+  ['its manual choice', 'chat-model', 'chat-model'],
+  ['the default when no manual choice exists', '', 'model'],
+]) {
+  test('a background send uses ' + name + ' instead of the visible chat model', async () => {
+    const h = conflictHarness();
+    h.convo.modelId = override;
+    h.state.activeId = 'other-chat';
+    h.state.selectedChatModel = 'other-model';
+    h.state.selectedRemoteModel = (_, modelId) => {
+      assert.equal(modelId, expected);
+      return { ready: true, id: 'provider|' + expected, model: expected };
+    };
+    const pending = h.run();
+    await new Promise(setImmediate);
+    assert.equal(h.requests[0].model, expected);
+    assert.equal(h.state.activeStreams.get(h.convo.id).speakerModelId, 'provider|' + expected);
+    h.respond(200);
+    await pending;
+    assert.equal(h.state.selectedChatModel, 'other-model');
+  });
+}
 
 test('temporary turns exclude retrieval and persistent conversation identifiers', async () => {
   const h = conflictHarness();

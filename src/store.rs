@@ -117,12 +117,16 @@ fn atomic_write_json(path: &Path, value: &Value) -> Result<()> {
 }
 
 fn read_json_file(path: &Path) -> Result<Option<Value>> {
-    if !path.exists() {
-        return Ok(None);
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(error).with_context(|| format!("could not inspect {}", path.display()));
+        }
     }
     let raw = secure_fs::read_to_string(path)?;
     if raw.trim().is_empty() {
-        return Ok(None);
+        anyhow::bail!("empty JSON file at {}", path.display());
     }
     let value = serde_json::from_str(&raw)
         .with_context(|| format!("invalid JSON at {}", path.display()))?;
@@ -147,6 +151,9 @@ fn normalize_store(value: Value) -> Result<Value> {
             "bots": [],
         }),
         Value::Object(mut map) => {
+            if map.contains_key("profiles") && !map.get("profiles").is_some_and(Value::is_array) {
+                anyhow::bail!("profiles must be a JSON array");
+            }
             if let Some(Value::Array(profiles)) = map.get_mut("profiles") {
                 for profile in profiles.iter_mut() {
                     let Value::Object(profile) = profile else {
@@ -362,6 +369,22 @@ mod tests {
 
         secure_fs::atomic_write_json(&chats_path(root), &serde_json::json!(42)).unwrap();
         assert!(load_chats(root, None).is_err());
+    }
+
+    #[test]
+    fn rejects_empty_files_and_malformed_profiles_without_overwriting() {
+        let dir = tempdir().unwrap();
+        for path in [chats_path(dir.path()), preferences_path(dir.path())] {
+            secure_fs::atomic_write(&path, b" \n").unwrap();
+        }
+        assert!(load_chats(dir.path(), None).is_err());
+        assert!(load_preferences(dir.path(), None).is_err());
+        for profiles in [Value::Null, serde_json::json!({}), serde_json::json!("bad")] {
+            assert!(
+                save_chats(dir.path(), serde_json::json!({"profiles": profiles}), None).is_err()
+            );
+        }
+        assert_eq!(secure_fs::read(&chats_path(dir.path())).unwrap(), b" \n");
     }
 
     #[test]

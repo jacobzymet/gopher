@@ -56,7 +56,7 @@ mod tests {
         assert!(CHAT_JS.contains("pinnedModelIds: pinnedModelIds.slice()"));
         assert!(CHAT_JS.contains("remote_catalog_pending"));
         assert!(CHAT_JS.contains(
-            "if (!selectedChatModel && catalogComplete && !menuOpen && selectable.length)"
+            "if (!resolvedDefault && catalogComplete && !menuOpen && selectable.length)"
         ));
         assert!(CHAT_JS.contains("!option.connectKind"));
         assert!(!CHAT_JS.contains("!allValues.includes(selectedChatModel)"));

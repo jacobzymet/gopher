@@ -632,17 +632,26 @@ async function postSteerToAgent(stream, entry) {
 }
 
 async function flushPendingSteers(stream) {
-  if (!stream?.steerId || !Array.isArray(stream.pendingSteers)) return;
-  for (const entry of stream.pendingSteers.slice()) {
-    if (entry.posted || entry.applied) continue;
-    try {
-      await postSteerToAgent(stream, entry);
-      entry.posted = true;
-    } catch (error) {
-      entry.posted = false;
-      showAttachHint(error?.message || 'Could not steer this turn');
-      if (!entry.applied) restoreSteerToQueue(stream, entry);
+  if (!stream?.steerId || !Array.isArray(stream.pendingSteers) || stream.steerFlushing) return;
+  stream.steerFlushing = true;
+  try {
+    for (;;) {
+      const entry = stream.pendingSteers.find((entry) => !entry.posted && !entry.applied && !entry.posting);
+      if (!entry) break;
+      entry.posting = true;
+      try {
+        await postSteerToAgent(stream, entry);
+        entry.posted = true;
+      } catch (error) {
+        entry.posted = false;
+        showAttachHint(error?.message || 'Could not steer this turn');
+        if (!entry.applied && stream.pendingSteers.includes(entry)) restoreSteerToQueue(stream, entry);
+      } finally {
+        entry.posting = false;
+      }
     }
+  } finally {
+    stream.steerFlushing = false;
   }
 }
 
@@ -1155,7 +1164,7 @@ function fillDefaultModelSetting() {
           provider: String(model.provider_name || '').trim(),
         }
     )));
-  const current = String(selectedChatModel || settings.selectedChatModel || '').trim();
+  const current = String(settings.selectedChatModel || '').trim();
   const previous = select.value;
   select.replaceChildren();
   if (!options.length) {
@@ -2293,7 +2302,6 @@ async function commitSettings() {
   if (typeof hydrateModelPickerState === 'function') hydrateModelPickerState();
   if (next.selectedChatModel) {
     rememberRecentModel(next.selectedChatModel);
-    selectedRemoteModelId = next.selectedChatModel;
   }
   if (latestState && typeof syncModelSelector === 'function') syncModelSelector(latestState);
   syncThinkingEffortControls(settings.thinkingEffort);

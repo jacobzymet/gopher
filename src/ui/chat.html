@@ -331,6 +331,7 @@
                           <span id="chatModelCatalogMeta">Available models</span>
                           <div>
                             <button type="button" class="btn btn-ghost" id="btnModelRefresh">Refresh models</button>
+                            <button type="button" class="btn btn-ghost is-hidden" id="btnModelUseDefault">Use default</button>
                             <button type="button" class="btn btn-ghost" id="btnModelProviders">Manage providers</button>
                             <button type="button" class="btn" id="btnModelClose">Cancel</button>
                           </div>
@@ -1063,7 +1064,7 @@
                   <option value="">No models available</option>
                 </select>
               </div>
-              <p class="field-hint" id="settingDefaultModelHint">The app uses this model for new turns. You can also select a model from the menu below the composer.</p>
+              <p class="field-hint" id="settingDefaultModelHint">Chats use this default until you choose a model in that chat. Choose Use default in the composer model menu to follow this setting again.</p>
             </div>
             <div class="settings-section">
               <label class="field-check">

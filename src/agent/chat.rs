@@ -324,9 +324,9 @@ async fn proxy_responses_sse(
         ApiStyle::Responses,
         &upstream.token,
         payload,
-        false,
+        upstream.allow_insecure_tls,
         &upstream.extra_headers,
-        true,
+        upstream.no_redirect,
         upstream.kind,
     )
     .await?;
@@ -350,6 +350,9 @@ async fn proxy_responses_sse(
             let line = String::from_utf8_lossy(line);
             for frame in translator.push_line(&line).map_err(StreamFail::Other)? {
                 send_sse(tx, frame).await?;
+            }
+            if translator.is_finished() {
+                return Ok(());
             }
             consumed = end + 1;
         }
@@ -984,6 +987,53 @@ mod stream_tests {
         stream_from_worker,
     };
     use futures_util::StreamExt;
+
+    #[tokio::test]
+    async fn custom_responses_provider_streams_and_finishes_before_socket_close() {
+        use axum::{Router, body::Body, routing::post};
+        #[cfg(not(target_os = "macos"))]
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let router = Router::new().route("/v1/responses", post(|| async {
+            let frames = futures_util::stream::iter([Ok::<_, std::io::Error>(
+                b"data: {\"type\":\"response.output_text.delta\",\"delta\":\"hello\"}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":7,\"output_tokens\":1,\"total_tokens\":8}}}\n\n".to_vec()
+            )]).chain(futures_util::stream::pending());
+            Body::from_stream(frames)
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
+        let upstream = crate::subscription::PreparedUpstream {
+            api_base: format!("http://{address}/v1"),
+            token: String::new(),
+            style: crate::providers::ApiStyle::Responses,
+            allow_insecure_tls: false,
+            extra_headers: vec![],
+            no_redirect: false,
+            kind: crate::providers::ProviderKind::Custom,
+            wire_model: "local-model".into(),
+        };
+        let stream = super::stream_remote_completion(
+            upstream,
+            serde_json::json!({"messages": [{"role": "user", "content": "Hi"}]}),
+        );
+        let frames = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            stream.collect::<Vec<_>>(),
+        )
+        .await
+        .unwrap();
+        server.abort();
+        let text = frames
+            .into_iter()
+            .map(|frame| String::from_utf8(frame.unwrap()).unwrap())
+            .collect::<String>();
+        assert!(text.contains("hello"), "{text}");
+        assert!(text.contains("prompt_tokens\":7"), "{text}");
+        assert!(text.contains("[DONE]"), "{text}");
+        assert!(!text.contains("event: error"), "{text}");
+    }
 
     #[test]
     fn compatible_hosts_receive_one_leading_system_message_without_losing_context() {

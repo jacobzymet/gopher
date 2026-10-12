@@ -230,6 +230,7 @@ test('failed title requests retry before applying a deterministic fallback', asy
       },
       clearTimeout() {},
     },
+    conversationModelId: () => 'model',
     requestGeneratedTitle: async () => { throw new Error('provider busy'); },
     firstUserText: () => convo.messages[0].content,
     needsGeneratedTitle: (item) => item.titleStatus === 'pending',
@@ -277,6 +278,7 @@ test('a concise first message may be used directly as its generated title', asyn
   let revealed = '';
   const state = vm.createContext({
     conversations: [convo],
+    conversationModelId: () => 'model',
     requestGeneratedTitle: async () => text,
     firstUserText: () => text,
     saveConversations() {},
