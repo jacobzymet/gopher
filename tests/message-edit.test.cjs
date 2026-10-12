@@ -130,7 +130,7 @@ test('composer presents an edit as restart, not queue, and disables duplicate se
   const attributes = {};
   Object.assign(h.state, {
     composerInput: { value: '' }, pendingAttachments: [], pendingReplyQuote: '',
-    selectedChatModel: 'model', selectedModelIsReady: () => true,
+    selectedChatModel: 'model', selectedModelIsReady: () => true, storageReady: true,
     diskEncryptionLocked: () => false, btnBranch: null,
     btnSend: {
       classList: { toggle(name, on) { if (on) classes.add(name); else classes.delete(name); } },

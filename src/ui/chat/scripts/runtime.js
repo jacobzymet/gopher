@@ -153,7 +153,7 @@ function updateSendEnabled() {
   const submittingEdit = editingLive && editingRow.dataset.editSubmitting === 'true';
   const botsDraft = typeof isBotsSurface === 'function' && isBotsSurface() && !activeId;
   const modelReady = selectedModelIsReady();
-  const canCompose = !diskEncryptionLocked()
+  const canCompose = storageReady && !diskEncryptionLocked()
     && serverReady
     && modelReady
     && !botsDraft
@@ -848,6 +848,8 @@ function modelCatalogIsComplete(network, options) {
 }
 
 function syncModelSelector(data) {
+  // Never select or persist a fallback before saved preferences have loaded.
+  if (!storageReady) return;
   const network = data.network || {};
   const remoteModels = network.remote_models || [];
   const wasHidden = chatModelSelectWrap.classList.contains('is-hidden');
@@ -3879,6 +3881,7 @@ function syncSearchActiveItem() {
   if (active) active.scrollIntoView({ block: 'nearest' });
 }
 
+document.getElementById('btnRetryLocalData')?.addEventListener('click', () => window.location.reload());
 document.getElementById('btnSearchChats')?.addEventListener('click', openSearchModal);
 searchModalInput?.addEventListener('input', () => {
   renderSearchResults(searchModalInput.value);

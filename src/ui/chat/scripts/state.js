@@ -1200,6 +1200,7 @@ let conversations = [];
 let bots = [];
 let dataInfo = null;
 let storageReady = false;
+let localDataLoadError = '';
 let saveStoreTimer = null;
 let saveSettingsTimer = null;
 let settingsWriteChain = Promise.resolve();
@@ -1334,6 +1335,10 @@ function diskEncryptionLocked() {
 }
 
 function requireUnlockedData() {
+  if (localDataLoadError) {
+    showLocalDataLoadError(localDataLoadError);
+    return false;
+  }
   if (!diskEncryptionLocked()) return true;
   promptUnlockSession();
   return false;
@@ -2058,8 +2063,8 @@ function applySettingsInMemory(next) {
 }
 
 function saveSettings(next, { immediate = true } = {}) {
-  applySettingsInMemory(next);
   if (!storageReady || diskEncryptionLocked()) return Promise.resolve(false);
+  applySettingsInMemory(next);
   saveStore({ immediate });
   clearTimeout(saveSettingsTimer);
   saveSettingsTimer = null;
@@ -2217,12 +2222,52 @@ function adoptLoadedData(loaded) {
   settings = loaded.preferences;
 }
 
+async function fetchLocalDataJson(path) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+    try {
+      const response = await fetch(path, { signal: controller.signal });
+      if (!response.ok) {
+        const problem = await response.json().catch(() => ({}));
+        const error = new Error(problem.error || 'Could not load saved data (' + response.status + ')');
+        error.code = problem.code;
+        error.status = response.status;
+        throw error;
+      }
+      const value = await response.json();
+      if (!value || typeof value !== 'object'
+          || (Array.isArray(value) && path !== '/api/data/store')) {
+        throw new Error('Saved data response is invalid');
+      }
+      return value;
+    } catch (error) {
+      if (error.code === 'encrypted_locked' || (error.status && error.status < 500)
+          || attempt === 2) throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200 * (attempt + 1)));
+  }
+}
+
+function showLocalDataLoadError(message) {
+  localDataLoadError = message;
+  const banner = document.getElementById('localDataError');
+  const detail = document.getElementById('localDataErrorDetail');
+  if (banner) banner.classList.toggle('is-hidden', !message);
+  if (detail) detail.textContent = message;
+  if (typeof updateSendEnabled === 'function') updateSendEnabled();
+}
+
 async function initLocalData() {
+  storageReady = false;
+  showLocalDataLoadError('');
   try {
-    const response = await fetch('/api/data');
-    if (response.ok) dataInfo = await response.json();
-  } catch {
-    dataInfo = null;
+    dataInfo = await fetchLocalDataJson('/api/data');
+  } catch (error) {
+    showLocalDataLoadError(error.message || 'Could not load local data');
+    return;
   }
   if (dataInfo?.browser_storage) {
     try {
@@ -2237,14 +2282,7 @@ async function initLocalData() {
     }
   }
 
-  if (!dataInfo) {
-    profiles = [];
-    activeProfileId = DEFAULT_PROFILE_ID;
-    projects = [];
-    conversations = [];
-    bots = [];
-    settings = { ...DEFAULT_SETTINGS };
-  } else if (dataInfo.encryption_enabled && !dataInfo.encryption_unlocked) {
+  if (dataInfo.encryption_enabled && !dataInfo.encryption_unlocked) {
     profiles = [];
     activeProfileId = DEFAULT_PROFILE_ID;
     projects = [];
@@ -2254,34 +2292,24 @@ async function initLocalData() {
     // Stay on disk mode but wait for unlock before reading encrypted files.
   } else {
     try {
-      const storeRes = await fetch('/api/data/store');
-      if (storeRes.status === 403) {
-        const problem = await storeRes.json().catch(() => ({}));
-        if (problem.code === 'encrypted_locked') {
-          profiles = [];
-          activeProfileId = DEFAULT_PROFILE_ID;
-          projects = [];
-          conversations = [];
-          bots = [];
-          settings = { ...DEFAULT_SETTINGS };
-          if (dataInfo) dataInfo.encryption_unlocked = false;
-        } else {
-          throw new Error(problem.error || 'Could not load chats');
-        }
+      const store = parseStorePayload(await fetchLocalDataJson('/api/data/store'));
+      const rawPrefs = await fetchLocalDataJson('/api/data/preferences');
+      const loaded = normalizeLoadedStore(store, rawPrefs);
+      adoptLoadedData(loaded);
+    } catch (error) {
+      if (error.code === 'encrypted_locked') {
+        profiles = [];
+        activeProfileId = DEFAULT_PROFILE_ID;
+        projects = [];
+        conversations = [];
+        bots = [];
+        settings = { ...DEFAULT_SETTINGS };
+        dataInfo.encryption_enabled = true;
+        dataInfo.encryption_unlocked = false;
       } else {
-        const store = parseStorePayload(storeRes.ok ? await storeRes.json() : {});
-        const prefRes = await fetch('/api/data/preferences');
-        const rawPrefs = prefRes.ok ? await prefRes.json() : {};
-        const loaded = normalizeLoadedStore(store, rawPrefs);
-        adoptLoadedData(loaded);
+        showLocalDataLoadError(error.message || 'Could not load saved chats and settings');
+        return;
       }
-    } catch {
-      profiles = [];
-      activeProfileId = DEFAULT_PROFILE_ID;
-      projects = [];
-      conversations = [];
-      bots = [];
-      settings = { ...DEFAULT_SETTINGS };
     }
   }
 
@@ -2294,7 +2322,7 @@ async function initLocalData() {
 
   hydrateModelPickerState();
   restoreOutboundQueues(conversations);
-  storageReady = true;
+  storageReady = !diskEncryptionLocked();
   if (typeof restoreAppSurface === 'function') restoreAppSurface();
   if (typeof loadTraceSplitPrefs === 'function') loadTraceSplitPrefs();
   if (profiles.some((profile) => profile.conversations._sortOrderMigrated)) {
@@ -2396,6 +2424,7 @@ function refreshUiFromMemoryStore() {
 }
 
 function clearMemoryAfterLock() {
+  storageReady = false;
   if (typeof cancelOcrWorkers === 'function') cancelOcrWorkers();
   storageWriteEpoch += 1;
   clearTimeout(saveStoreTimer);
@@ -2439,16 +2468,13 @@ function clearMemoryAfterLock() {
 }
 
 async function loadDiskDataAfterUnlock() {
-  const storeRes = await fetch('/api/data/store');
-  if (!storeRes.ok) {
-    const problem = await storeRes.json().catch(() => ({}));
-    throw new Error(problem.error || 'Could not load chats');
-  }
-  const store = parseStorePayload(await storeRes.json());
-  const prefRes = await fetch('/api/data/preferences');
-  const rawPrefs = prefRes.ok ? await prefRes.json() : {};
+  storageReady = false;
+  const store = parseStorePayload(await fetchLocalDataJson('/api/data/store'));
+  const rawPrefs = await fetchLocalDataJson('/api/data/preferences');
   const loaded = normalizeLoadedStore(store, rawPrefs);
   adoptLoadedData(loaded);
+  storageReady = true;
+  showLocalDataLoadError('');
   hydrateModelPickerState();
   restoreOutboundQueues(conversations);
   if (typeof restoreAppSurface === 'function') restoreAppSurface();

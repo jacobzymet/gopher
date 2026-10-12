@@ -2429,6 +2429,10 @@ function updateGreeting() {
 }
 
 function updateComposerHint() {
+  if (localDataLoadError) {
+    showComposerHint('Saved settings could not be loaded. Retry loading above.', { warn: true });
+    return;
+  }
   if (diskEncryptionLocked()) {
     showComposerHint('Unlock local data to chat and save messages.', { warn: true });
     return;

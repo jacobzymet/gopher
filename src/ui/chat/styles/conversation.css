@@ -22,6 +22,19 @@
   transition: opacity var(--dur-enter) var(--ease-out);
 }
 .chat-background.has-image { opacity: 1; }
+.local-data-error {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  padding: 0.75rem 1rem;
+  background: var(--color-paper-2);
+  border-bottom: 1px solid var(--color-warn);
+  font-size: var(--text-sm);
+}
+.local-data-error p { flex: 1 1 16rem; min-width: 0; margin: 0; overflow-wrap: anywhere; }
 .chat-background img,
 .chat-background-overlay {
   position: absolute;
