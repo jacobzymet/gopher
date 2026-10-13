@@ -174,9 +174,9 @@
         <div class="notifications-inner">
           <header class="notifications-top">
             <div>
-              <p class="notifications-kicker">Task inbox</p>
+              <p class="notifications-kicker">All chats</p>
               <h2 class="notifications-title" id="notificationsTitle">Notifications</h2>
-              <p class="notifications-lede" id="notificationsLede">Completed work and tasks that need you.</p>
+              <p class="notifications-lede" id="notificationsLede">Completed work and requests from all chats.</p>
             </div>
             <button type="button" class="btn btn-ghost" id="btnNotificationsMarkRead">Mark all read</button>
           </header>
@@ -505,6 +505,10 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
           <span>App</span>
         </button>
+        <button type="button" class="settings-nav-btn" data-settings-pane="logs">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2h-3"/><rect x="8" y="1" width="8" height="4" rx="1"/><path d="M8 10h8M8 14h8M8 18h5"/></svg>
+          <span>Logs</span>
+        </button>
       </aside>
       <div class="settings-main">
         <div class="settings-scroll" id="settingsScroll">
@@ -790,9 +794,9 @@
               <p class="field-hint" style="margin:0 0 0.75rem">This setting applies to all capabilities below. File writes and terminal commands always require your approval.</p>
               <div class="segmented segmented-stack" id="approvalModeToggle" role="tablist" aria-label="Tool approval">
                 <button type="button" data-approval-mode="auto_safe" role="tab" aria-selected="false">Auto-approve safe actions</button>
-                <button type="button" data-approval-mode="manual" class="is-active" role="tab" aria-selected="true">Approve every request</button>
+                <button type="button" data-approval-mode="manual" class="is-active" role="tab" aria-selected="true">Ask before every action</button>
               </div>
-              <p class="field-hint" style="margin-top:0.65rem">Safe actions are web search, URL retrieval, file reads, and browser control. By default, the app asks for approval for each action.</p>
+              <p class="field-hint" style="margin-top:0.65rem">Auto-approve safe actions lets web searches, URL retrieval, file reads, and browser control proceed without asking. Ask before every action pauses each request until you choose Allow or Deny. Changes apply to new turns.</p>
             </div>
             <div class="settings-section">
               <h3 class="settings-section-title">Web search</h3>
@@ -1200,6 +1204,26 @@
                 </div>
               </div>
             </div>
+          </section>
+          <section class="settings-pane" data-settings-pane="logs">
+            <h2 class="settings-pane-title">Logs</h2>
+            <p class="settings-pane-lede">Trace the time from Send to the first token, with browser, server, provider, and tool logs in one place.</p>
+            <label class="field-check">
+              <input type="checkbox" id="settingDiagnosticsEnabled">
+              <span><strong>Enable diagnostic logging</strong><span class="diagnostics-hint">Off by default. Captures prompt and response content, raw provider streams, request timings, tool events, console output, and errors. Credentials are redacted.</span></span>
+            </label>
+            <p class="field-hint" id="diagnosticsStatus" role="status">Loading diagnostics…</p>
+            <p class="field-hint">Saved logs use your local-data encryption. Without encryption, logs stay in memory. Locking clears the live buffer. Keeps the most recent 2,000 entries or 8 MiB; oversized entries are marked.</p>
+            <div class="diagnostics-toolbar">
+              <input type="search" id="diagnosticsSearch" placeholder="Search logs…" aria-label="Search logs">
+              <select id="diagnosticsLevel" aria-label="Log severity"><option value="">All levels</option><option value="error">Errors</option><option value="warn">Warnings</option><option value="info">Info</option><option value="debug">Debug</option><option value="trace">Trace</option></select>
+              <select id="diagnosticsTrace" aria-label="Request trace"><option value="">All requests</option></select>
+              <button type="button" class="btn btn-ghost" id="btnDiagnosticsPause">Pause view</button>
+              <button type="button" class="btn btn-ghost" id="btnDiagnosticsExport">Export JSON</button>
+              <button type="button" class="btn btn-ghost" id="btnDiagnosticsClear">Clear logs</button>
+            </div>
+            <p class="diagnostics-timings" id="diagnosticsTimings">Enable logging, save, and send a prompt to measure the delay.</p>
+            <div class="diagnostics-feed" id="diagnosticsFeed" aria-label="Diagnostic entries"></div>
           </section>
         </div>
         <div class="dialog-actions">

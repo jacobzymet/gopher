@@ -104,6 +104,11 @@ fn main() -> Result<()> {
         runtime.spawn(async move { web::serve(shared, listener).await })
     };
 
+    if let Ok(app) = shared.lock() {
+        gopher::diagnostics::install(&app.diagnostics);
+    }
+    log::info!("Gopher listening on {url}");
+    log::info!("Chat {url}/; Settings {url}/settings");
     println!("Gopher listening on {url}");
     println!("  Chat     {url}/");
     println!("  Settings {url}/settings");

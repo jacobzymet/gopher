@@ -428,6 +428,7 @@ pub async fn close_all_sessions() {
         let _ = timeout(Duration::from_secs(2), session.browser.close()).await;
         let _ = session.browser.kill().await;
         if let Err(error) = session._profile.close() {
+            log::error!("Could not remove temporary browser profile: {error}");
             eprintln!("Could not remove temporary browser profile: {error}");
         }
     }

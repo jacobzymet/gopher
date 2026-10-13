@@ -114,6 +114,8 @@ struct Envelope {
 #[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct DiskKey([u8; KEY_LEN]);
 
+pub const AAD_DIAGNOSTICS: &[u8] = b"gopher:diagnostics:v1";
+
 impl DiskKey {
     pub fn as_bytes(&self) -> &[u8; KEY_LEN] {
         &self.0

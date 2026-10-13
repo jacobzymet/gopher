@@ -10,6 +10,51 @@ use crate::{crypto, secure_fs};
 pub const CHATS_FILE: &str = "chats.json";
 pub const PREFERENCES_FILE: &str = "preferences.json";
 pub const PROVIDER_TOKENS_FILE: &str = "provider-tokens.json";
+pub const DIAGNOSTICS_FILE: &str = "diagnostics.json";
+
+pub fn diagnostics_path(root: &Path) -> PathBuf {
+    root.join(DIAGNOSTICS_FILE)
+}
+
+/// Diagnostics never have a plaintext disk representation.
+pub fn load_diagnostics(root: &Path, key: &crypto::DiskKey) -> Result<Value, StoreError> {
+    let path = diagnostics_path(root);
+    let value = match std::fs::symlink_metadata(&path) {
+        Ok(_) => Some(
+            serde_json::from_str::<Value>(&secure_fs::read_limited_to_string(
+                &path,
+                32 * 1024 * 1024,
+            )?)
+            .with_context(|| format!("invalid diagnostics at {}", path.display()))?,
+        ),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(anyhow::Error::from(error).into()),
+    };
+    match value {
+        Some(value) if crypto::is_envelope(&value) => {
+            crypto::decrypt_value(key, &value, crypto::AAD_DIAGNOSTICS).map_err(StoreError::from)
+        }
+        Some(_) => Err(StoreError::Other(anyhow::anyhow!(
+            "Stored diagnostics must be encrypted."
+        ))),
+        None => Ok(serde_json::json!({"version": 1, "entries": [], "last_id": 0, "dropped": 0})),
+    }
+}
+
+pub fn save_diagnostics(
+    root: &Path,
+    value: &Value,
+    key: &crypto::DiskKey,
+) -> Result<(), StoreError> {
+    ensure_data_dir(root)?;
+    let encrypted = crypto::encrypt_value(key, value, crypto::AAD_DIAGNOSTICS)?;
+    atomic_write_json(&diagnostics_path(root), &encrypted)?;
+    Ok(())
+}
+
+pub fn clear_diagnostics(root: &Path) -> Result<()> {
+    secure_fs::remove_file(&diagnostics_path(root))
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]

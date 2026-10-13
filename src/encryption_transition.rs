@@ -39,6 +39,8 @@ pub struct Snapshot {
     pub preferences: Value,
     pub provider_tokens: Value,
     pub skills: Vec<UserSkill>,
+    #[serde(default)]
+    pub diagnostics: Value,
 }
 
 #[derive(Debug, Deserialize)]
@@ -162,6 +164,7 @@ mod tests {
             preferences: serde_json::json!({"theme": "dark"}),
             provider_tokens: serde_json::json!({"p1": "secret"}),
             skills: vec![],
+            diagnostics: Value::Null,
         }
     }
 

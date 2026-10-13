@@ -121,6 +121,42 @@ test('a temporary catalog absence preserves a manual model rather than falling b
   assert.equal(s.settings.selectedChatModel, 'provider|default');
 });
 
+test('saved provider identities never migrate to a different provider with the same model', () => {
+  const { context: s } = harness();
+  const options = [{ value: 'remote|nvidia|https://nvidia.invalid/v1|shared', providerId: 'nvidia', base: 'https://nvidia.invalid/v1', label: 'shared' }];
+  assert.equal(s.resolveSavedModelId('remote|chosen|https://chosen.invalid/v1|shared', options), 'remote|chosen|https://chosen.invalid/v1|shared');
+  assert.equal(s.resolveSavedModelId('chosen|shared', options), 'chosen|shared');
+  assert.equal(s.resolveSavedModelId('shared', options), options[0].value);
+  assert.equal(s.resolveSavedModelId('remote|https://nvidia.invalid/v1|shared', options), options[0].value);
+});
+
+test('an explicit empty background selection cannot inherit the visible chat model', () => {
+  const { context: s } = harness();
+  load(s, 'runtime.js', ['catalogOptionFromRemote', 'modelCatalogIsComplete', 'selectedRemoteModel']);
+  s.selectedChatModel = s.selectedRemoteModelId = 'visible';
+  const data = { network: { remote_saved: true, remote_models: [{ id: 'visible', model: 'visible', ready: true }] } };
+  assert.equal(s.selectedRemoteModel(data, ''), null);
+  assert.equal(s.selectedRemoteModel(data).id, 'visible');
+});
+
+test('a legacy model alias waits for the complete provider catalog before resolving', () => {
+  const { context: s } = harness();
+  load(s, 'runtime.js', ['catalogOptionFromRemote', 'modelCatalogIsComplete', 'selectedRemoteModel']);
+  const model = { id: 'remote|nvidia|https://nvidia.invalid/v1|shared', provider_id: 'nvidia', model: 'shared', ready: true };
+  const data = { network: { remote_saved: true, remote_checking: true, remote_models: [model] } };
+  assert.equal(s.selectedRemoteModel(data, 'shared'), null);
+  assert.equal(s.selectedRemoteModel(data, model.id).id, model.id);
+  assert.equal(s.resolveSavedModelId('shared', [s.catalogOptionFromRemote(model)], false), 'shared');
+  data.network.remote_checking = false;
+  assert.equal(s.selectedRemoteModel(data, 'shared').id, model.id);
+});
+
+test('Loop compaction cannot send a request without its selected provider', async () => {
+  const state = vm.createContext({ latestState: {}, selectedRemoteModel: () => null, fetch: async () => { throw new Error('must not send'); } });
+  load(state, 'bots.js', ['collectCompletionText']);
+  await assert.rejects(state.collectCompletionText([], 'missing'), /selected Loop model is unavailable/);
+});
+
 let chromium;
 try { ({ chromium } = require('playwright')); } catch {}
 

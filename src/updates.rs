@@ -621,6 +621,7 @@ pub fn spawn_restart_if_pending() {
             .stderr(Stdio::inherit());
     }
     if let Err(error) = cmd.spawn() {
+        log::error!("could not restart Gopher: {error}");
         eprintln!("could not restart Gopher: {error}");
     }
 }

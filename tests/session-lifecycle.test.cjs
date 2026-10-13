@@ -31,7 +31,7 @@ function runtimeDeclaration(name) {
 }
 
 function stateDeclaration(name) {
-  const match = chatState.match(new RegExp('^function ' + name + '\\([\\s\\S]*?^\\}$', 'm'));
+  const match = chatState.match(new RegExp('^(?:async )?function ' + name + '\\([\\s\\S]*?^\\}$', 'm'));
   assert.ok(match, 'missing state function ' + name);
   return match[0];
 }
@@ -291,6 +291,50 @@ test('a concise first message may be used directly as its generated title', asyn
   assert.equal(convo.titleStatus, 'generated');
   assert.equal(convo.title, text);
   assert.equal(revealed, text);
+});
+
+test('an unavailable title model uses a local title without retries or console spam', async () => {
+  const convo = { id: 'missing-title-model', titleStatus: 'pending', messages: [{ role: 'user', content: 'Please explain provider routing' }] };
+  const state = vm.createContext({
+    conversations: [convo], conversationModelId: () => 'missing',
+    requestGeneratedTitle: async () => { const error = new Error('Unavailable model'); error.retryable = false; throw error; },
+    firstUserText: () => convo.messages[0].content,
+    saveConversations() {}, revealGeneratedTitle() {},
+    console: { warn() { throw new Error('must not spam the console'); } },
+  });
+  vm.runInContext('const TITLE_RETRY_DELAYS = [500, 2000, 8000];', state);
+  for (const name of ['fallbackConversationTitle', 'generateConversationTitle']) vm.runInContext(stateDeclaration(name), state);
+  state.generateConversationTitle(convo, convo.messages[0].content);
+  await new Promise(setImmediate);
+  assert.equal(convo.titleAttempts, 1);
+  assert.equal(convo.titleStatus, 'fallback');
+  assert.equal(convo.title, 'explain provider routing');
+});
+
+test('title jobs wait for another title job to release the provider', () => {
+  const a = { id: 'a' }; const b = { id: 'b', _titleBusy: true };
+  const state = vm.createContext({ conversations: [a, b] });
+  vm.runInContext(stateDeclaration('conversationTitleProviderBusy'), state);
+  assert.equal(state.conversationTitleProviderBusy(a), true);
+  b._titleBusy = false;
+  assert.equal(state.conversationTitleProviderBusy(a), false);
+});
+
+test('title requests never send an implicit provider or an unavailable model', async () => {
+  let selected = null; let requests = 0; let captured;
+  const state = vm.createContext({
+    latestState: {}, AbortSignal,
+    selectedRemoteModel: () => selected,
+    fetch: async (_url, init) => { requests++; captured = JSON.parse(init.body); return { ok: true, json: async () => ({ title: 'Correct title' }) }; },
+  });
+  vm.runInContext(stateDeclaration('requestGeneratedTitle'), state);
+  await assert.rejects(state.requestGeneratedTitle('hello', 'chosen'), error => error.retryable === false);
+  selected = { model: 'chosen', ready: true };
+  await assert.rejects(state.requestGeneratedTitle('hello', 'chosen'), error => error.retryable === false);
+  assert.equal(requests, 0);
+  selected = { model: 'chosen', ready: true, provider_id: 'chosen-provider', base: 'http://chosen/v1' };
+  assert.equal(await state.requestGeneratedTitle('hello', 'chosen'), 'Correct title');
+  assert.deepEqual(captured, { message: 'hello', model: 'chosen', provider_id: 'chosen-provider', remote_base: 'http://chosen/v1' });
 });
 
 test('Stop invalidates a pending start without clearing a newer attempt', () => {

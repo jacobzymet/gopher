@@ -116,6 +116,7 @@ mod tests {
         (
             ToolCall {
                 id: value.into(),
+                wire_id: None,
                 name: name.into(),
                 arguments: args.into(),
             },

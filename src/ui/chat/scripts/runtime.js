@@ -796,10 +796,11 @@ function escapeModelText(value) {
 }
 
 /** Map a saved picker id onto the current catalog without dropping unknown ids. */
-function resolveSavedModelId(savedId, options) {
+function resolveSavedModelId(savedId, options, allowAliases = true) {
   const id = String(savedId || '').trim();
   if (!id || !options.length) return id;
   if (options.some((option) => option.value === id)) return id;
+  if (!allowAliases) return id;
   const stripped = id.replace(/^remote\|/, '');
   const suffixHits = options.filter((option) => option.value.endsWith('|' + stripped));
   if (suffixHits.length === 1) return suffixHits[0].value;
@@ -809,22 +810,23 @@ function resolveSavedModelId(savedId, options) {
     const base = parts.slice(0, -1).join('|');
     const baseHits = options.filter((option) => {
       if (option.label !== model) return false;
+      // A provider-qualified id must never migrate to a different provider.
+      if (parts.length >= 3 && option.providerId !== parts[0]
+        && !option.value.startsWith('remote|' + parts[0] + '|')) return false;
       return option.base === base
         || option.value.includes('|' + base + '|')
         || option.value.endsWith('|' + base + '|' + model);
     });
     if (baseHits.length === 1) return baseHits[0].value;
   }
-  const labelHits = options.filter((option) => option.label && id.endsWith('|' + option.label));
-  if (labelHits.length === 1) return labelHits[0].value;
   return id;
 }
 
-function remapSavedModelIds(ids, options) {
+function remapSavedModelIds(ids, options, allowAliases = true) {
   const seen = new Set();
   const next = [];
   (Array.isArray(ids) ? ids : []).forEach((id) => {
-    const resolved = resolveSavedModelId(id, options);
+    const resolved = resolveSavedModelId(id, options, allowAliases);
     if (!resolved || seen.has(resolved)) return;
     seen.add(resolved);
     next.push(resolved);
@@ -903,9 +905,10 @@ function syncModelSelector(data) {
   if (wasHidden) refreshStarfieldClearZone();
 
   const remoteOptions = remoteModels.map(catalogOptionFromRemote);
+  const catalogComplete = modelCatalogIsComplete(network, remoteOptions);
   modelMenuOptions = remoteOptions;
-  const remappedPins = remapSavedModelIds(pinnedModelIds, remoteOptions);
-  const remappedRecents = remapSavedModelIds(recentModelIds, remoteOptions);
+  const remappedPins = remapSavedModelIds(pinnedModelIds, remoteOptions, catalogComplete);
+  const remappedRecents = remapSavedModelIds(recentModelIds, remoteOptions, catalogComplete);
   let pickerChanged = !sameIdList(remappedPins, pinnedModelIds)
     || !sameIdList(remappedRecents, recentModelIds);
   pinnedModelIds = remappedPins;
@@ -915,9 +918,8 @@ function syncModelSelector(data) {
     pickerChanged = true;
   }
   const savedDefault = String(settings.selectedChatModel || '').trim();
-  let resolvedDefault = resolveSavedModelId(savedDefault, remoteOptions);
+  let resolvedDefault = resolveSavedModelId(savedDefault, remoteOptions, catalogComplete);
   if (remoteOptions.some((option) => option.value === resolvedDefault && option.connectKind)) resolvedDefault = '';
-  const catalogComplete = modelCatalogIsComplete(network, remoteOptions);
   const selectable = remoteOptions.filter((option) => !option.connectKind);
   // Only invent a default when nothing is saved. A saved id that is not in
   // this snapshot stays selected so a later provider catalog can match it.
@@ -987,8 +989,9 @@ function selectedRemoteModel(data, modelId) {
   const models = data?.network?.remote_models || [];
   if (!models.length) return null;
   const options = modelMenuOptions.length ? modelMenuOptions : models.map(catalogOptionFromRemote);
-  const saved = modelId || selectedRemoteModelId || selectedChatModel;
-  const resolved = resolveSavedModelId(saved, options);
+  const saved = modelId === undefined ? (selectedRemoteModelId || selectedChatModel) : modelId;
+  if (modelId !== undefined && !saved) return null;
+  const resolved = resolveSavedModelId(saved, options, modelCatalogIsComplete(data?.network, options));
   const matched = models.find((model) => model.id === resolved)
     || models.find((model) => model.id === saved);
   if (matched) return matched;
@@ -1217,7 +1220,11 @@ async function sendMessage({ branch = false } = {}) {
     surface: appSurface, incognito: draftIncognito, workspace: draftWorkspaceRoot,
     input: composerInput.value, quote: pendingReplyQuote, replyTarget: pendingReplyTarget,
     attachments: queuedFiles, mentions: [...composerMentionIds],
+    diagnosticTraceId: typeof diagnosticMark === 'function' && settings.diagnosticsEnabled ? newId('turn') : '',
+    diagnosticStartedAt: Date.now(),
   };
+  const diagnosticContext = { traceId: attempt.diagnosticTraceId, convoId: activeId, startedAt: attempt.diagnosticStartedAt };
+  if (typeof diagnosticMark === 'function') diagnosticMark('prompt.prepare.started', { attachments: queuedFiles.length, model: selectedChatModel }, diagnosticContext);
   pendingComposerSend = attempt;
   updateSendEnabled();
   try {
@@ -1243,6 +1250,7 @@ async function sendMessage({ branch = false } = {}) {
   }
 
   // Async attachment work must never send into another chat or erase a newer draft.
+  if (typeof diagnosticMark === 'function') diagnosticMark('prompt.prepare.finished', { attachments: prepared.length }, diagnosticContext);
   if (!composerSendIsCurrent(attempt)) {
     if (activeId === attempt.convoId) showComposerHint('Draft changed during preparation. Review it and send again.');
     return;
@@ -1341,6 +1349,8 @@ async function sendMessage({ branch = false } = {}) {
 
   const outbound = {
     id: newId('q'),
+    diagnosticTraceId: attempt.diagnosticTraceId,
+    diagnosticStartedAt: attempt.diagnosticStartedAt,
     editText: typed,
     displayText: displayText || (storedAttachments.length ? '(attachment)' : ''),
     apiText,
@@ -1568,12 +1578,13 @@ function upsertLiveToolPart(stream, payload) {
     if (body) part.body = body;
     stampTimelinePart(part, stream);
   }
-  if (payload && (payload.needs_approval || payload.phase === 'tool_approval')) {
+  if (payload && (payload.needs_approval || payload.phase === 'tool_approval')
+    && part.live && !['allowed', 'denied', 'expired'].includes(part.approval)) {
     part.approval = 'pending';
     part.approvalRisk = payload.risk ? String(payload.risk) : (part.approvalRisk || 'write');
     part.executing = false;
   }
-  if (payload && payload.phase === 'tool_executing') {
+  if (payload && payload.phase === 'tool_executing' && part.live) {
     part.approval = 'allowed';
     part.executing = true;
   }
@@ -1877,13 +1888,20 @@ async function runAssistantTurn(convo, {
   }
   const startEpoch = markOutboundStarting(convo.id);
   const workStartedAt = Date.now();
+  const clientTurnId = convo.incognito ? null : (queueItem?.diagnosticTraceId || newId('turn'));
+  const diagnosticTraceId = clientTurnId || queueItem?.diagnosticTraceId || '';
+  const diagnosticStartedAt = queueItem?.diagnosticStartedAt || workStartedAt;
+  const diagnosticContext = { traceId: diagnosticTraceId, convoId: convo.id, startedAt: diagnosticStartedAt };
+  if (typeof diagnosticMark === 'function') diagnosticMark('turn.started', { queue_wait_ms: workStartedAt - diagnosticStartedAt }, diagnosticContext);
   let liveStarted = false;
   let startedStream = null;
   try {
   if (typeof clearBotsOutboundStopped === 'function') clearBotsOutboundStopped(convo.id);
   if (typeof clearLiveTurnUserCancel === 'function') clearLiveTurnUserCancel(convo.id);
   if (typeof waitForCancel === 'function') {
+    if (typeof diagnosticMark === 'function') diagnosticMark('cancel.wait.started', {}, diagnosticContext);
     await waitForCancel(convo.id);
+    if (typeof diagnosticMark === 'function') diagnosticMark('cancel.wait.finished', {}, diagnosticContext);
   }
   if (typeof outboundStartIsCurrent === 'function'
     && !outboundStartIsCurrent(convo.id, startEpoch)) {
@@ -1968,7 +1986,6 @@ async function runAssistantTurn(convo, {
     if (turnForceTools.includes('fetch_url')) turnSkills.fetch_url = true;
   }
 
-  const clientTurnId = convo.incognito ? null : newId('turn');
   const stream = beginLiveStream(convo, {
     useAgent,
     deepResearch,
@@ -1983,6 +2000,8 @@ async function runAssistantTurn(convo, {
   });
   liveStarted = true;
   startedStream = stream;
+  stream.diagnosticTraceId = diagnosticTraceId;
+  stream.diagnosticStartedAt = diagnosticStartedAt;
   clearOutboundStarting(convo.id, startEpoch);
   stream.speakerBotId = speakerBotId || null;
   stream.skipQueue = !!skipQueue;
@@ -2052,16 +2071,20 @@ async function runAssistantTurn(convo, {
   try {
     // New chats must be persisted before the server binds their retrieval scope.
     if (turnSkills.chat_retrieval && typeof saveStore === 'function') {
+      if (typeof diagnosticMark === 'function') diagnosticMark('store.wait.started', {}, diagnosticContext);
       saveStore({ immediate: true });
       if (typeof storeWriteChain !== 'undefined') await storeWriteChain;
+      if (typeof diagnosticMark === 'function') diagnosticMark('store.wait.finished', {}, diagnosticContext);
     }
     for (let attempt = 0; attempt < 2; attempt += 1) {
       if (stream.controller.signal.aborted || stream.cancelled) break;
+      if (typeof diagnosticMark === 'function') diagnosticMark('chat.request.dispatch', { attempt, messages: apiMessages.length, model: remote?.model }, diagnosticContext);
       response = await Promise.race([
         fetch('/api/chat/completions', {
           method: 'POST',
           headers: {
             'content-type': 'application/json',
+            ...(diagnosticTraceId && settings.diagnosticsEnabled ? { 'x-gopher-request-id': diagnosticTraceId } : {}),
           },
           body: JSON.stringify(requestBody),
           signal: stream.controller.signal,
@@ -2561,8 +2584,12 @@ async function driveAssistantSse(convo, stream, response) {
     setStreamThinkingLabel(stream, nextLabel);
     paintStreamIntoView(convo, stream, replyText, streaming);
   });
-  const markFirstToken = () => {
+  const markFirstToken = (kind) => {
     if (firstTokenAt == null) firstTokenAt = Date.now();
+    if (kind && !stream['diagnosticFirst' + kind]) {
+      stream['diagnosticFirst' + kind] = true;
+      if (typeof diagnosticStreamMark === 'function') diagnosticStreamMark(stream, convo, 'browser.first_' + kind + '_token');
+    }
   };
   const onAgentEvent = (payload) => {
     if (payload.phase === 'content_clear') {
@@ -2576,17 +2603,16 @@ async function driveAssistantSse(convo, stream, response) {
         paintStreamIntoView(convo, stream, typer.shown || '', true);
       }
     } else if (payload.phase === 'tool_prepare' || payload.phase === 'tool_call') {
+      if (!stream.diagnosticFirstTool) {
+        stream.diagnosticFirstTool = true;
+        if (typeof diagnosticStreamMark === 'function') diagnosticStreamMark(stream, convo, 'browser.first_tool_token', { name: payload.name });
+      }
       commitStreamBuffer(stream, typer);
       if (stream.dom) stream.dom.row.dataset.raw = '';
       const part = upsertLiveToolPart(stream, payload);
       setStreamThinkingLabel(stream, liveToolStatusLabel(stream, payload));
     } else if (payload.phase === 'tool_approval') {
       const part = upsertLiveToolPart(stream, payload);
-      if (part) {
-        part.approval = 'pending';
-        part.approvalRisk = payload.risk ? String(payload.risk) : (part.approvalRisk || 'write');
-        part.executing = false;
-      }
       setStreamThinkingLabel(stream, liveToolStatusLabel(stream, payload));
       if (typeof refreshNotificationsUi === 'function') refreshNotificationsUi();
     } else if (payload.phase === 'tool_executing') {
@@ -2774,6 +2800,10 @@ async function driveAssistantSse(convo, stream, response) {
         if (next.aborted || stream.cancelled || stream.replaced) break;
         const { value, done } = next.chunk;
         if (done) break;
+        if (!stream.diagnosticFirstByte) {
+          stream.diagnosticFirstByte = true;
+          if (typeof diagnosticStreamMark === 'function') diagnosticStreamMark(stream, convo, 'browser.first_byte', { bytes: value.byteLength });
+        }
         buffer += decoder.decode(value, { stream: true });
         const events = buffer.split(/\r?\n\r?\n/);
         buffer = events.pop() ?? '';
@@ -2796,6 +2826,7 @@ async function driveAssistantSse(convo, stream, response) {
                 stream.deepResearchOutput = meta.deep_research_output;
               }
               if (meta.model) stream.turnModel = String(meta.model);
+              if (typeof meta.finished === 'boolean') stream.serverFinished = meta.finished;
             } catch {
               // ignore malformed meta
             }
@@ -2804,6 +2835,7 @@ async function driveAssistantSse(convo, stream, response) {
           if (parsed.event === 'live') {
             stream.catchingUp = false;
             typer.setCatchingUp(false);
+            if (typeof refreshNotificationsUi === 'function') refreshNotificationsUi();
             continue;
           }
           if (parsed.event === 'error') {
@@ -2846,12 +2878,12 @@ async function driveAssistantSse(convo, stream, response) {
             (choice && choice.message && (choice.message.reasoning_content || choice.message.reasoning)) ||
             '';
           if (reasoning) {
-            markFirstToken();
+            markFirstToken('reasoning');
             typer.pushReasoning(String(reasoning));
           }
           const delta = deltaObj.content || '';
           if (delta) {
-            markFirstToken();
+            markFirstToken('content');
             typer.push(delta);
           }
         }

@@ -351,6 +351,9 @@ function connectTabSocket(tab) {
     if (tab.term) sendPtyResize(tab, tab.term.cols, tab.term.rows);
   });
   ws.addEventListener('message', (event) => {
+    if (typeof diagnosticMark === 'function') diagnosticMark('terminal.output', {
+      session_id: tab.id, text: event.data instanceof ArrayBuffer ? new TextDecoder().decode(event.data) : String(event.data),
+    });
     if (!tab.term) return;
     if (event.data instanceof ArrayBuffer) {
       tab.term.write(new Uint8Array(event.data));

@@ -80,10 +80,12 @@ const CHAT_STYLE_FILES: &[&str] = &[
     "src/ui/chat/styles/profiles.css",
     "src/ui/chat/styles/bots.css",
     "src/ui/chat/styles/terminal.css",
+    "src/ui/chat/styles/diagnostics.css",
 ];
 
 const CHAT_SCRIPT_FILES: &[&str] = &[
     "src/ui/chat/scripts/state.js",
+    "src/ui/chat/scripts/diagnostics.js",
     "src/ui/chat/scripts/input.js",
     "src/ui/chat/scripts/controls.js",
     "src/ui/chat/scripts/render.js",

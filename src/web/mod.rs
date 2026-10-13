@@ -12,7 +12,7 @@ use axum::{
     Json, Router,
     body::Body,
     extract::{
-        DefaultBodyLimit, OriginalUri, Path, State,
+        DefaultBodyLimit, OriginalUri, Path, Query, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
     http::{HeaderMap, HeaderValue, Request, StatusCode, header},
@@ -384,6 +384,32 @@ pub async fn serve(app: SharedApp, listener: TcpListener) -> anyhow::Result<()> 
         .map(|app| app.encryption_enabled() && !app.encryption_unlocked())
         .unwrap_or(true);
     crate::session::set_locked(locked);
+    let diagnostics = app
+        .lock()
+        .map_err(|_| anyhow::anyhow!("app lock poisoned"))?
+        .diagnostics
+        .clone();
+    crate::diagnostics::install(&diagnostics);
+    log::info!(
+        "Gopher diagnostics connected; build {}",
+        crate::updates::build_label()
+    );
+    let flush_app = Arc::downgrade(&app);
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(2));
+        loop {
+            interval.tick().await;
+            let Some(app) = flush_app.upgrade() else {
+                break;
+            };
+            let _ = tokio::task::spawn_blocking(move || {
+                if let Ok(app) = app.lock() {
+                    let _ = app.flush_diagnostics();
+                }
+            })
+            .await;
+        }
+    });
     // Probe providers before the first browser poll so Chat doesn't flash unreachable.
     schedule_provider_cache_warm(Arc::clone(&app));
 
@@ -404,6 +430,12 @@ pub async fn serve(app: SharedApp, listener: TcpListener) -> anyhow::Result<()> 
         .route("/api/workspace/pick", post(pick_workspace_folder))
         .route("/api/chat/title", post(chat_title))
         .route("/api/state", get(state))
+        .route(
+            "/api/diagnostics",
+            get(get_diagnostics)
+                .post(append_diagnostics)
+                .delete(clear_diagnostics),
+        )
         .route("/api/ui/theme", post(set_ui_theme))
         .route("/api/ui/appearance", post(set_ui_appearance))
         .route("/api/ui/appearance/reset", post(reset_ui_appearance))
@@ -499,6 +531,10 @@ pub async fn serve(app: SharedApp, listener: TcpListener) -> anyhow::Result<()> 
         .layer(middleware::from_fn_with_state(
             security,
             secure_local_request,
+        ))
+        .layer(middleware::from_fn_with_state(
+            Arc::clone(&app),
+            diagnostic_request,
         ))
         .with_state(app);
 
@@ -814,6 +850,26 @@ struct ChatTitleBody {
     provider_id: Option<String>,
 }
 
+impl ChatTitleBody {
+    fn selected_model(&self) -> Result<&str, ApiError> {
+        let model = self.model.as_deref().unwrap_or_default().trim();
+        let has_provider = self
+            .provider_id
+            .as_deref()
+            .is_some_and(|id| !id.trim().is_empty())
+            || self
+                .remote_base
+                .as_deref()
+                .is_some_and(|base| !base.trim().is_empty());
+        if model.is_empty() || !has_provider {
+            return Err(ApiError::bad_request(
+                "Title generation requires the chat's model and provider.",
+            ));
+        }
+        Ok(model)
+    }
+}
+
 #[derive(Debug, Serialize)]
 struct ChatTitleResponse {
     title: String,
@@ -898,25 +954,23 @@ async fn chat_title(
     if message.is_empty() {
         return Err(ApiError::bad_request("message must not be empty"));
     }
-    let model = body
-        .model
-        .as_deref()
-        .map(str::trim)
-        .filter(|m| !m.is_empty())
-        .map(str::to_string);
-    let model_name = model.unwrap_or_default();
+    let model_name = body.selected_model()?;
     let (upstream, thinking_model) = prepare_upstream(
         &app,
         body.remote_base.as_deref(),
         body.provider_id.as_deref(),
-        &model_name,
+        model_name,
         None,
     )
     .await?;
 
     let title = chat::generate_chat_title(&upstream, message, thinking_model.as_ref())
         .await
-        .map_err(ApiError::bad_request)?;
+        .map_err(|message| ApiError {
+            status: StatusCode::BAD_GATEWAY,
+            message,
+            code: Some("title_provider_failed"),
+        })?;
     Ok(Json(ChatTitleResponse { title }))
 }
 
@@ -924,6 +978,7 @@ async fn chat_completions(
     State(app): State<SharedApp>,
     Json(mut body): Json<serde_json::Value>,
 ) -> Result<Response, ApiError> {
+    crate::diagnostics::record("chat.received", || serde_json::json!({"body": body}));
     let remote_base_override = body
         .as_object_mut()
         .and_then(|obj| obj.remove("remote_base"))
@@ -943,6 +998,10 @@ async fn chat_completions(
         .and_then(|v| v.as_str().map(|s| s.trim().to_string()))
         .filter(|id| !id.is_empty());
     let conversation_id = conversation_id.map(validate_live_id).transpose()?;
+    crate::diagnostics::record(
+        "provider.prepare.started",
+        || serde_json::json!({"model": remote_model, "provider_id": provider_id}),
+    );
     let (upstream, thinking_model) = prepare_upstream(
         &app,
         remote_base_override.as_deref(),
@@ -951,6 +1010,10 @@ async fn chat_completions(
         conversation_id.as_deref(),
     )
     .await?;
+    crate::diagnostics::record(
+        "provider.prepare.finished",
+        || serde_json::json!({"model": upstream.wire_model, "style": format!("{:?}", upstream.style)}),
+    );
     let user_skills = {
         let app = app.lock().map_err(|_| ApiError::lock())?;
         app.enabled_user_skills()
@@ -1049,6 +1112,11 @@ async fn chat_completions(
         }
     };
 
+    let stream = if let Ok(trace) = crate::diagnostics::CURRENT.try_with(Clone::clone) {
+        crate::diagnostics::trace_stream(stream, trace)
+    } else {
+        stream
+    };
     let stream = if let Some(conversation_id) = conversation_id {
         let info = crate::live::LiveTurnInfo {
             conversation_id,
@@ -1096,11 +1164,19 @@ struct CancelTurnBody {
 async fn chat_cancel(
     Json(body): Json<CancelTurnBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    crate::diagnostics::record(
+        "cancel.requested",
+        || serde_json::json!({"conversation_id": body.conversation_id, "turn_id": body.turn_id}),
+    );
     let id = validate_live_id(body.conversation_id)?;
     let turn_id = body.turn_id.map(validate_live_id).transpose()?;
     let (cancelled, settled) = crate::live::hub()
         .cancel_and_wait(&id, turn_id.as_deref())
         .await;
+    crate::diagnostics::record(
+        "cancel.settled",
+        || serde_json::json!({"cancelled": cancelled, "settled": settled}),
+    );
     Ok(Json(serde_json::json!({
         "ok": settled,
         "cancelled": cancelled,
@@ -1156,8 +1232,11 @@ struct ApproveBody {
 }
 
 async fn chat_approve(Json(body): Json<ApproveBody>) -> Result<Json<serde_json::Value>, ApiError> {
-    agent::submit_tool_approval(&body.id, body.allow).map_err(ApiError::bad_request)?;
-    Ok(Json(serde_json::json!({ "ok": true })))
+    let accepted =
+        agent::submit_tool_approval(&body.id, body.allow).map_err(ApiError::bad_request)?;
+    Ok(Json(
+        serde_json::json!({ "ok": accepted, "expired": !accepted }),
+    ))
 }
 
 #[derive(Debug, Deserialize)]
@@ -2103,6 +2182,107 @@ async fn get_chat_store(State(app): State<SharedApp>) -> Result<Json<serde_json:
     Ok(Json(value))
 }
 
+#[derive(Deserialize)]
+struct DiagnosticQuery {
+    #[serde(default)]
+    after: u64,
+}
+
+async fn get_diagnostics(
+    State(app): State<SharedApp>,
+    Query(query): Query<DiagnosticQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let app = app.lock().map_err(|_| ApiError::lock())?;
+    let mut value = app.diagnostics.view(query.after);
+    value["persisted"] = serde_json::json!(app.encryption_enabled() && app.encryption_unlocked());
+    Ok(Json(value))
+}
+
+#[derive(Deserialize)]
+struct DiagnosticBatch {
+    generation: u64,
+    entries: Vec<crate::diagnostics::Input>,
+}
+
+async fn append_diagnostics(
+    State(app): State<SharedApp>,
+    Json(body): Json<DiagnosticBatch>,
+) -> Result<StatusCode, ApiError> {
+    if body.entries.len() > 64 {
+        return Err(ApiError::bad_request(
+            "At most 64 diagnostic entries per batch.",
+        ));
+    }
+    let app = app.lock().map_err(|_| ApiError::lock())?;
+    if body.generation != app.diagnostics.generation() {
+        return Err(ApiError::conflict("Diagnostics session changed."));
+    }
+    for entry in body.entries {
+        app.diagnostics.push("browser", entry);
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn clear_diagnostics(
+    State(app): State<SharedApp>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let app = app.lock().map_err(|_| ApiError::lock())?;
+    app.clear_diagnostics().map_err(store_api_error)?;
+    let mut value = app.diagnostics.view(0);
+    value["persisted"] = serde_json::json!(app.encryption_enabled() && app.encryption_unlocked());
+    Ok(Json(value))
+}
+
+async fn diagnostic_request(
+    State(app): State<SharedApp>,
+    request: Request<Body>,
+    next: Next,
+) -> Response {
+    let path = request.uri().path().to_string();
+    if !path.starts_with("/api/") || path.starts_with("/api/diagnostics") {
+        return next.run(request).await;
+    }
+    let hub = { app.lock().ok().map(|app| app.diagnostics.clone()) };
+    let Some(hub) = hub else {
+        return next.run(request).await;
+    };
+    if !hub.enabled() {
+        return next.run(request).await;
+    }
+    let (trace_id, conversation_id) = {
+        let header_id = |name: &str| {
+            request
+                .headers()
+                .get(name)
+                .and_then(|value| value.to_str().ok())
+                .filter(|value| {
+                    value.len() <= 128
+                        && value.bytes().all(|byte| {
+                            byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.')
+                        })
+                })
+                .map(str::to_string)
+        };
+        (
+            header_id("x-gopher-request-id").unwrap_or_else(crate::live::new_turn_id),
+            header_id("x-gopher-conversation-id").unwrap_or_default(),
+        )
+    };
+    let trace = crate::diagnostics::Trace::new(hub, trace_id, conversation_id);
+    trace.record(
+        "http.request",
+        serde_json::json!({"method": request.method().as_str(), "path": path}),
+    );
+    let response = crate::diagnostics::CURRENT
+        .scope(trace.clone(), next.run(request))
+        .await;
+    trace.record(
+        "http.response",
+        serde_json::json!({"path": path, "status": response.status().as_u16()}),
+    );
+    response
+}
+
 async fn put_chat_store(
     State(app): State<SharedApp>,
     Json(body): Json<serde_json::Value>,
@@ -2507,6 +2687,10 @@ impl ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
+        crate::diagnostics::record(
+            "api.error",
+            || serde_json::json!({"status": self.status.as_u16(), "message": self.message, "code": self.code}),
+        );
         let mut body = serde_json::json!({ "error": self.message });
         if let Some(code) = self.code {
             body.as_object_mut()
@@ -2519,6 +2703,44 @@ impl IntoResponse for ApiError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn titles_require_explicit_model_and_provider() {
+        for body in [
+            serde_json::json!({"message":"hello"}),
+            serde_json::json!({"message":"hello", "model":"chosen"}),
+            serde_json::json!({"message":"hello", "model":"chosen", "provider_id":" "}),
+            serde_json::json!({"message":"hello", "provider_id":"chosen"}),
+        ] {
+            let body: ChatTitleBody = serde_json::from_value(body).unwrap();
+            assert!(body.selected_model().is_err());
+        }
+        for selector in ["provider_id", "remote_base"] {
+            let mut body = serde_json::json!({"message":"hello", "model":" chosen "});
+            body[selector] = serde_json::json!("configured");
+            let body: ChatTitleBody = serde_json::from_value(body).unwrap();
+            assert_eq!(body.selected_model().unwrap_or_default(), "chosen");
+        }
+    }
+
+    #[tokio::test]
+    async fn expired_approval_is_a_successful_terminal_response() {
+        let Json(body) = chat_approve(Json(ApproveBody {
+            id: "expired-web-regression".into(),
+            allow: true,
+        }))
+        .await
+        .unwrap_or_else(|_| panic!("expired approval must not be an HTTP error"));
+        assert_eq!(body, serde_json::json!({"ok":false,"expired":true}));
+        assert!(
+            chat_approve(Json(ApproveBody {
+                id: " ".into(),
+                allow: true
+            }))
+            .await
+            .is_err()
+        );
+    }
 
     #[test]
     fn local_responses_block_framing_and_api_caching() {

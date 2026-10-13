@@ -174,6 +174,8 @@ pub(crate) async fn open_llm_sse(
     no_redirect: bool,
     kind: crate::providers::ProviderKind,
 ) -> Result<reqwest::Response, StreamFail> {
+    crate::diagnostics::upstream_started(url, payload);
+    let diagnostic_started = std::time::Instant::now();
     if no_redirect {
         crate::subscription::require_request_url(kind, url).map_err(StreamFail::Other)?;
     }
@@ -194,6 +196,12 @@ pub(crate) async fn open_llm_sse(
         .await
         .map_err(|_| StreamFail::Stalled)?
         .map_err(|error| StreamFail::Other(error.to_string()))?;
+    crate::diagnostics::record("provider.headers", || {
+        serde_json::json!({
+            "status": response.status().as_u16(), "request_elapsed_ms": diagnostic_started.elapsed().as_secs_f64() * 1000.0,
+            "headers": response.headers().iter().map(|(name, value)| (name.as_str().to_string(), value.to_str().unwrap_or("[binary]").to_string())).collect::<std::collections::BTreeMap<_, _>>()
+        })
+    });
 
     if response.status().is_redirection() {
         return Err(StreamFail::Other(
@@ -392,13 +400,26 @@ async fn forward_raw_sse(
 pub(crate) async fn next_stream_chunk<S, T, E>(stream: &mut S) -> Result<Option<T>, StreamFail>
 where
     S: StreamExt<Item = Result<T, E>> + Unpin,
+    T: AsRef<[u8]>,
     E: std::fmt::Display,
 {
     match timeout(STREAM_STALL_TIMEOUT, stream.next()).await {
-        Ok(Some(Ok(chunk))) => Ok(Some(chunk)),
-        Ok(Some(Err(error))) => Err(StreamFail::Other(error.to_string())),
+        Ok(Some(Ok(chunk))) => {
+            crate::diagnostics::upstream_chunk(chunk.as_ref());
+            Ok(Some(chunk))
+        }
+        Ok(Some(Err(error))) => {
+            crate::diagnostics::record(
+                "provider.error",
+                || serde_json::json!({"error": error.to_string()}),
+            );
+            Err(StreamFail::Other(error.to_string()))
+        }
         Ok(None) => Ok(None),
-        Err(_) => Err(StreamFail::Stalled),
+        Err(_) => {
+            crate::diagnostics::record("provider.stalled", || serde_json::json!({}));
+            Err(StreamFail::Stalled)
+        }
     }
 }
 
@@ -421,7 +442,7 @@ pub(crate) async fn send_sse(
 const TITLE_TIMEOUT: Duration = Duration::from_secs(45);
 const TITLE_MAX_TOKENS: u32 = 192;
 
-/// Ask the active provider for a short session title from the first user message.
+/// Ask the explicitly selected chat provider for a short session title.
 pub async fn generate_chat_title(
     upstream: &crate::subscription::PreparedUpstream,
     user_message: &str,
@@ -523,6 +544,8 @@ async fn post_title_completion(
         let token = upstream.token.clone();
         let extra = upstream.extra_headers.clone();
         async move {
+            crate::diagnostics::upstream_started(&url, &body);
+            let started = std::time::Instant::now();
             let mut request = client.post(&url).timeout(TITLE_TIMEOUT).json(&body);
             for (name, value) in providers::provider_auth_headers(style, &token) {
                 request = request.header(name, value);
@@ -530,7 +553,15 @@ async fn post_title_completion(
             for (name, value) in extra {
                 request = request.header(name, value);
             }
-            request.send().await.map_err(|error| error.to_string())
+            let response = request
+                .send()
+                .await
+                .map_err(|error| format!("{:#}", anyhow::Error::new(error)))?;
+            crate::diagnostics::record(
+                "title.provider.headers",
+                || serde_json::json!({ "status": response.status().as_u16(), "request_elapsed_ms": started.elapsed().as_secs_f64() * 1000.0 }),
+            );
+            Ok::<_, String>(response)
         }
     };
 
@@ -575,6 +606,10 @@ async fn post_title_completion(
         return Err(format!("title request failed ({status}): {text}"));
     }
     let text = response_text_limited(response).await;
+    crate::diagnostics::record(
+        "title.provider.response",
+        || serde_json::json!({"body": text}),
+    );
     if codex {
         return collect_responses_sse_text(&text)
             .map(|text| serde_json::json!({ "output_text": text }));

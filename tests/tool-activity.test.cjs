@@ -90,6 +90,31 @@ test('denied calls stay denied after the chat is saved', () => {
   assert.match(context.agentStepHtml(persisted), />Denied<\/span>/);
 });
 
+test('expired approvals show their state and cannot be submitted again', () => {
+  const context = harness();
+  const html = context.agentStepHtml({ type: 'tool', name: 'web_search', id: 'expired', live: true, approval: 'expired' });
+  assert.match(html, />No longer pending<\/span>/);
+  assert.doesNotMatch(html, /data-tool-allow|data-tool-deny|>Needs approval</);
+});
+
+test('saved pending cards cannot render actionable approval buttons', () => {
+  const context = harness();
+  assert.doesNotMatch(context.agentStepHtml({ name: 'web_search', id: 'old', live: false, approval: 'pending' }), /data-tool-allow|data-tool-deny|Needs approval/);
+});
+
+test('a delayed approval announcement cannot undo an accepted decision or revive a completed card', () => {
+  const context = harness([{ type: 'tool', id: 'call', name: 'web_search', live: true, approval: 'allowed', executing: true }]);
+  for (const name of ['toolDetailFromPayload', 'upsertLiveToolPart']) vm.runInContext(declaration(runtime, name), context);
+  context.onAgentEvent({ phase: 'tool_approval', id: 'call', name: 'web_search' });
+  assert.equal(context.stream.timeline[0].approval, 'allowed');
+  assert.equal(context.stream.timeline[0].executing, true);
+  context.stream.timeline[0].live = false;
+  context.stream.timeline[0].approval = '';
+  context.onAgentEvent({ phase: 'tool_approval', id: 'call', name: 'web_search' });
+  assert.equal(context.stream.timeline[0].approval, '');
+  assert.equal(context.stream.timeline[0].live, false);
+});
+
 test('successful calls clear stale failure notes and render a success marker', () => {
   const context = harness([{ type: 'tool', id: 'read', name: 'read_file', live: true, ok: false, note: 'Tool failed' }]);
   context.onAgentEvent({ phase: 'tool_result', id: 'read', name: 'read_file', ok: true, result: 'content' });

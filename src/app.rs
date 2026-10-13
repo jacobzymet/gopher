@@ -29,6 +29,7 @@ pub struct App {
     pub listen_addr: Option<SocketAddr>,
     pub remote_health: HealthCache,
     pub remote_catalog: CatalogCache,
+    pub diagnostics: std::sync::Arc<crate::diagnostics::Diagnostics>,
     /// Session key for disk encryption at rest. Cleared on lock / process exit.
     disk_key: Option<crypto::DiskKey>,
     /// Prevent concurrent processes from interleaving protected-data writes.
@@ -60,6 +61,7 @@ impl App {
             listen_addr: None,
             remote_health: HealthCache::default(),
             remote_catalog: CatalogCache::default(),
+            diagnostics: std::sync::Arc::new(crate::diagnostics::Diagnostics::default()),
             disk_key: None,
             _data_lock: data_lock,
         };
@@ -67,6 +69,7 @@ impl App {
         if changed || app.encryption_enabled() {
             app.try_persist_config()?;
         }
+        app.restore_diagnostics();
         Ok(app)
     }
 
@@ -698,8 +701,56 @@ impl App {
     }
 
     pub fn save_chat_preferences(&self, value: serde_json::Value) -> Result<(), String> {
+        let enabled = value["diagnosticsEnabled"].as_bool().unwrap_or(false);
         store::save_preferences(&self.data_dir(), value, self.disk_key())
-            .map_err(Self::map_store_err)
+            .map_err(Self::map_store_err)?;
+        self.diagnostics.configure(enabled);
+        Ok(())
+    }
+
+    fn restore_diagnostics(&self) {
+        if self.encryption_enabled() && !self.encryption_unlocked() {
+            return;
+        }
+        if let Some(key) = self.disk_key.as_ref() {
+            match store::load_diagnostics(&self.data_dir(), key)
+                .map_err(Self::map_store_err)
+                .and_then(|value| self.diagnostics.restore(value))
+            {
+                Ok(()) => {}
+                Err(error) => {
+                    self.diagnostics.restore_error(error);
+                    return;
+                }
+            }
+        }
+        if let Ok(preferences) = self.load_chat_preferences() {
+            self.diagnostics
+                .configure(preferences["diagnosticsEnabled"].as_bool().unwrap_or(false));
+        }
+    }
+
+    pub fn flush_diagnostics(&self) -> Result<(), String> {
+        let Some(key) = self.disk_key.as_ref() else {
+            return Ok(());
+        };
+        if let Some((revision, value)) = self.diagnostics.pending() {
+            if let Err(error) =
+                store::save_diagnostics(&self.data_dir(), &value, key).map_err(Self::map_store_err)
+            {
+                self.diagnostics.error(error.clone());
+                return Err(error);
+            }
+            self.diagnostics.saved(revision);
+        }
+        Ok(())
+    }
+
+    pub fn clear_diagnostics(&self) -> Result<(), String> {
+        // Explicit clearing also repairs a damaged log file without touching chats.
+        store::clear_diagnostics(&self.data_dir()).map_err(|error| format!("{error:#}"))?;
+        self.diagnostics.clear();
+        self.flush_diagnostics()
     }
 
     fn derive_and_verify_key(
@@ -820,10 +871,13 @@ impl App {
             self.disk_key = None;
             return Err(error);
         }
+        self.restore_diagnostics();
         Ok(())
     }
 
     pub fn lock_disk_encryption(&mut self) {
+        let _ = self.flush_diagnostics();
+        self.diagnostics.suspend();
         self.disk_key = None; // DiskKey zeroizes on drop
         if self.encryption_enabled() {
             for provider in &mut self.config.providers.items {
@@ -869,6 +923,7 @@ impl App {
             preferences: prefs,
             provider_tokens: self.provider_payload_value(),
             skills,
+            diagnostics: self.diagnostics.stored(),
         };
         let record = encryption_transition::begin(&root, Operation::Enable, meta, &key, &snapshot)
             .map_err(|error| format!("Could not stage encryption safely: {error:#}"))?;
@@ -899,6 +954,7 @@ impl App {
             preferences: prefs,
             provider_tokens: provider_payload,
             skills,
+            diagnostics: self.diagnostics.stored(),
         };
         let record = encryption_transition::begin(&root, Operation::Disable, meta, &key, &snapshot)
             .map_err(|error| format!("Could not stage decryption safely: {error:#}"))?;
@@ -938,6 +994,7 @@ impl App {
         key: crypto::DiskKey,
     ) -> Result<(), String> {
         let root = self.data_dir();
+        let diagnostics = snapshot.diagnostics.clone();
         let result = (|| -> Result<(), String> {
             match record.operation {
                 Operation::Enable => {
@@ -952,6 +1009,8 @@ impl App {
                     store::save_chats(&root, snapshot.chats, Some(&key))
                         .map_err(Self::map_store_err)?;
                     store::save_preferences(&root, snapshot.preferences, Some(&key))
+                        .map_err(Self::map_store_err)?;
+                    store::save_diagnostics(&root, &snapshot.diagnostics, &key)
                         .map_err(Self::map_store_err)?;
                     store::save_provider_tokens(&root, &snapshot.provider_tokens, &key)
                         .map_err(Self::map_store_err)?;
@@ -970,6 +1029,7 @@ impl App {
                         .map_err(Self::map_store_err)?;
                     store::save_preferences_plaintext_for_disable(&root, snapshot.preferences)
                         .map_err(Self::map_store_err)?;
+                    store::clear_diagnostics(&root).map_err(|error| format!("{error:#}"))?;
                     crate::skills::SkillStore::new(&self.config_path, None, false)
                         .rewrite(&snapshot.skills)
                         .map_err(|error| error.to_string())?;
@@ -990,6 +1050,12 @@ impl App {
             // A partially applied transition must lock immediately so ordinary
             // writes cannot race ahead of the authenticated recovery snapshot.
             self.disk_key = None;
+            self.diagnostics.suspend();
+        } else {
+            if let Err(error) = self.diagnostics.restore(diagnostics) {
+                self.diagnostics.error(error);
+            }
+            self.restore_diagnostics();
         }
         result
     }
@@ -1060,6 +1126,94 @@ mod tests {
         let saved = std::fs::read_to_string(config_path).unwrap();
         assert!(!saved.contains("browser"));
         assert!(saved.contains("disk") || !saved.contains("storage"));
+    }
+
+    #[test]
+    fn diagnostics_never_write_plaintext_and_follow_encryption_lifetime() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut app = test_app(temp.path());
+        app.save_chat_preferences(serde_json::json!({"diagnosticsEnabled": true}))
+            .unwrap();
+        let trace =
+            crate::diagnostics::Trace::new(app.diagnostics.clone(), "trace".into(), "chat".into());
+        trace.record(
+            "test.prompt",
+            serde_json::json!({"text": "private diagnostic prompt"}),
+        );
+        app.flush_diagnostics().unwrap();
+        assert!(!store::diagnostics_path(temp.path()).exists());
+        app.enable_disk_encryption("diagnostics passphrase", "diagnostics passphrase")
+            .unwrap();
+        let raw = std::fs::read_to_string(store::diagnostics_path(temp.path())).unwrap();
+        assert!(!raw.contains("private diagnostic prompt"));
+        assert!(crypto::is_envelope(&serde_json::from_str(&raw).unwrap()));
+        app.lock_disk_encryption();
+        assert!(!app.diagnostics.enabled());
+        assert!(
+            app.diagnostics.stored()["entries"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        app.unlock_disk_encryption("diagnostics passphrase")
+            .unwrap();
+        assert!(app.diagnostics.enabled());
+        assert!(
+            app.diagnostics
+                .stored()
+                .to_string()
+                .contains("private diagnostic prompt")
+        );
+        trace.record("revoked", serde_json::json!({"text": "stale work"}));
+        assert!(!app.diagnostics.stored().to_string().contains("stale work"));
+        app.disable_disk_encryption("diagnostics passphrase")
+            .unwrap();
+        assert!(!store::diagnostics_path(temp.path()).exists());
+        app.flush_diagnostics().unwrap();
+        assert!(!store::diagnostics_path(temp.path()).exists());
+        app.clear_diagnostics().unwrap();
+        assert!(
+            app.diagnostics.stored()["entries"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn damaged_diagnostics_are_reported_and_preserved_until_explicit_clear() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut app = test_app(temp.path());
+        app.save_chat_preferences(serde_json::json!({"diagnosticsEnabled": true}))
+            .unwrap();
+        app.enable_disk_encryption("diagnostics passphrase", "diagnostics passphrase")
+            .unwrap();
+        app.lock_disk_encryption();
+        std::fs::write(
+            store::diagnostics_path(temp.path()),
+            b"damaged diagnostic file",
+        )
+        .unwrap();
+        app.unlock_disk_encryption("diagnostics passphrase")
+            .unwrap();
+        assert!(
+            !app.diagnostics.view(0)["error"]
+                .as_str()
+                .unwrap()
+                .is_empty()
+        );
+        app.save_chat_preferences(serde_json::json!({"diagnosticsEnabled": true}))
+            .unwrap();
+        let trace =
+            crate::diagnostics::Trace::new(app.diagnostics.clone(), "trace".into(), "chat".into());
+        trace.record("test", serde_json::json!({}));
+        app.flush_diagnostics().unwrap();
+        assert_eq!(
+            std::fs::read(store::diagnostics_path(temp.path())).unwrap(),
+            b"damaged diagnostic file"
+        );
+        app.clear_diagnostics().unwrap();
+        assert!(store::load_diagnostics(temp.path(), app.disk_key.as_ref().unwrap()).is_ok());
     }
 
     #[test]
@@ -1243,6 +1397,7 @@ mod tests {
             preferences,
             provider_tokens: app.provider_payload_value(),
             skills: vec![],
+            diagnostics: serde_json::Value::Null,
         };
         encryption_transition::begin(root, Operation::Enable, meta, &key, &snapshot).unwrap();
         // Simulate a crash after only the first protected file was replaced.
@@ -1307,6 +1462,7 @@ mod tests {
             preferences: app.load_chat_preferences().unwrap(),
             provider_tokens: store::load_provider_tokens(root, &key).unwrap(),
             skills: app.list_user_skills().unwrap(),
+            diagnostics: app.diagnostics.stored(),
         };
         encryption_transition::begin(root, Operation::Disable, meta, &key, &snapshot).unwrap();
         // Simulate a crash with a mixed encrypted/plaintext payload set.

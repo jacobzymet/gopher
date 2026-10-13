@@ -138,6 +138,8 @@ Provider API style is detected when a provider is added or saved. Existing entri
 
 **Settings → Composer → Default model** applies to chats without a manual model choice. Choosing a model beneath the composer saves it for that chat only, including after restart. **Use default** in the model menu clears that choice so the chat follows future default changes. A model chosen in an unsent draft belongs to the chat created from that draft; the next new chat starts with the default.
 
+**Settings → Logs → Enable diagnostic logging** is off by default. It combines browser console/errors, application logs, request stages, raw provider requests/streams, and tool events. Per-request timings separate preparation and cancellation waits from provider headers, first bytes, and first reasoning/content tokens. Search/filter the entries or export JSON for debugging. Logs include prompt/response content with credentials redacted. Saved logs live in encrypted `diagnostics.json` under the same passphrase as local data; without encryption they remain in memory. Locking clears the live buffer. Turning encryption off removes the encrypted log file and keeps the session buffer in memory. Raw logs retain up to 2,000 entries or 8 MiB, with oversized entries marked; a separate bounded timing index retains first-token milestones after raw-log rotation.
+
 Bind precedence is `--bind`, then `GOPHER_BIND`, then `[ui]`. Network-reachable addresses are refused because the local UI has no authentication.
 
 LLM system and tool prompts live under [`prompts/`](prompts/) and are embedded at compile time.

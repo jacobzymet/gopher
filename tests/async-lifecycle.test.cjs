@@ -105,6 +105,7 @@ function compactHarness() {
     conversations: [convo], window: {}, estimateConvoChars: () => 100,
     botsOutboundEpochOf: () => 1, diskEncryptionLocked: () => false,
     isBotGroup: () => true, getBot: () => null,
+    conversationModelId: () => 'owning-chat-model',
     collectCompletionText: () => new Promise(resolve => { finish = resolve; }),
     parseCompactJson: () => ({ summary: 'summary', memory: 'memory' }),
     persistGroupMemory: () => { memories++; },

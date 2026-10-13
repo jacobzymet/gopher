@@ -18,6 +18,9 @@ function showSettingsPane(pane) {
     renderProfilesSettingsList();
   } else if (pane === 'app' && typeof refreshAppUpdatePane === 'function') {
     refreshAppUpdatePane();
+  } else if (pane === 'logs' && typeof refreshDiagnostics === 'function') {
+    if (typeof renderDiagnostics === 'function') renderDiagnostics();
+    refreshDiagnostics();
   }
 }
 
@@ -228,6 +231,7 @@ function abortStream(convoId, {
   const cancelDone = cancelServer && convoId
     ? scheduleCancel(convoId, stream?.turnId || null)
     : Promise.resolve();
+  if (typeof refreshNotificationsUi === 'function') refreshNotificationsUi();
   syncComposerStreamUi();
   return cancelDone;
 }
@@ -1382,6 +1386,7 @@ function fillSettingsFormFromState() {
   document.getElementById('settingThinkingEffort').value = settings.thinkingEffort;
   document.getElementById('settingAutoOpenTraceSidebar').checked = settings.autoOpenTraceSidebar !== false;
   document.getElementById('settingEnterSends').checked = settings.enterSends;
+  document.getElementById('settingDiagnosticsEnabled').checked = !!settings.diagnosticsEnabled;
   document.getElementById('settingSkillWebSearch').checked = settings.skillWebSearch;
   document.getElementById('settingWebSearchDepth').value = settings.webSearchDepth || 'off';
   document.getElementById('settingWebSearchProvider').value = settings.webSearchProvider || 'auto';
@@ -1458,6 +1463,7 @@ function readSettingsForm() {
     skillTerminal: document.getElementById('settingSkillTerminal').checked,
     skillBrowser: document.getElementById('settingSkillBrowser').checked,
     terminalTimeoutSecs: Number(document.getElementById('settingTerminalTimeout').value),
+    diagnosticsEnabled: !!document.getElementById('settingDiagnosticsEnabled')?.checked,
     approvalMode: document.querySelector('#approvalModeToggle [data-approval-mode].is-active')?.dataset.approvalMode
       || settings.approvalMode
       || 'manual',

@@ -5,6 +5,7 @@ pub mod attachments;
 pub mod config;
 pub mod crypto;
 pub mod desktop;
+pub mod diagnostics;
 pub mod encryption_transition;
 pub mod http;
 pub mod live;

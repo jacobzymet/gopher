@@ -109,6 +109,7 @@ const DEFAULT_SETTINGS = {
   webSearchPageMaxChars: 0,
   skillDeepResearch: true,
   approvalMode: 'manual',
+  diagnosticsEnabled: false,
   skillFilesystem: false,
   skillTerminal: false,
   skillBrowser: false,
@@ -830,7 +831,8 @@ function syncConversationModel() {
   const convo = conversations.find((item) => item.id === activeId);
   const value = convo ? conversationModelId(convo) : (draftModelId || conversationModelId(null));
   selectedChatModel = typeof resolveSavedModelId === 'function' && typeof modelMenuOptions !== 'undefined'
-    ? resolveSavedModelId(value, modelMenuOptions)
+    ? resolveSavedModelId(value, modelMenuOptions,
+      typeof modelCatalogIsComplete === 'function' && modelCatalogIsComplete(latestState?.network, modelMenuOptions))
     : value;
   selectedRemoteModelId = selectedChatModel;
 }
@@ -1621,19 +1623,25 @@ function canBranchFromActiveConversation() {
 async function requestGeneratedTitle(userText, modelId) {
   const body = { message: String(userText || '').trim() };
   const remote = selectedRemoteModel(latestState, modelId);
-  if (remote) {
-    body.remote_base = remote.base;
-    if (remote.provider_id) body.provider_id = remote.provider_id;
-    body.model = remote.model;
+  if (!remote?.ready || !remote.model || (!remote.provider_id && !remote.base)) {
+    const error = new Error('The chat model is unavailable for title generation');
+    error.retryable = false;
+    throw error;
   }
+  body.remote_base = remote.base;
+  if (remote.provider_id) body.provider_id = remote.provider_id;
+  body.model = remote.model;
   const response = await fetch('/api/chat/title', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(50000),
   });
   if (!response.ok) {
     const problem = await response.json().catch(() => ({}));
-    throw new Error(problem.error || 'Could not generate title');
+    const error = new Error(problem.error || 'Could not generate title');
+    error.retryable = response.status === 408 || response.status === 429 || response.status >= 500;
+    throw error;
   }
   const payload = await response.json();
   const title = String(payload.title || '').trim();
@@ -1793,6 +1801,7 @@ function fallbackConversationTitle(convo, userText) {
 
 function conversationTitleProviderBusy(convo) {
   if (!convo) return false;
+  if (conversations.some((item) => item !== convo && item._titleBusy)) return true;
   if (typeof activeStreams !== 'undefined' && activeStreams.size > 0) return true;
   if (typeof outboundStarting !== 'undefined' && outboundStarting.size > 0) return true;
   if (typeof isConvoBusy === 'function' && isConvoBusy(convo.id)) return true;
@@ -1811,6 +1820,7 @@ function maybeEnsureConversationTitle(convo, { delay } = {}) {
   const wait = Number.isFinite(delay) ? Math.max(0, delay) : TITLE_RETRY_DELAYS[attempt];
   const timer = window.setTimeout(() => {
     titleRetryTimers.delete(convo.id);
+    if (!conversations.includes(convo)) return;
     if (!needsGeneratedTitle(convo)) return;
     if (conversationTitleProviderBusy(convo)) {
       maybeEnsureConversationTitle(convo, { delay: TITLE_RETRY_DELAYS[0] });
@@ -1848,15 +1858,19 @@ function generateConversationTitle(convo, userText) {
     try {
       const title = await requestGeneratedTitle(text, conversationModelId(convo));
       if (convo._titleReq !== requestId) return;
-      if (!conversations.some((item) => item.id === convo.id)) return;
+      if (!conversations.includes(convo)) return;
       convo.title = title;
       convo.titleStatus = 'generated';
       saveConversations();
       revealGeneratedTitle(convo, title);
     } catch (error) {
-      console.warn('Chat title generation failed:', error?.message || error);
       if (convo._titleReq !== requestId) return;
-      if ((convo.titleAttempts || 0) >= TITLE_RETRY_DELAYS.length) {
+      if (!conversations.includes(convo)) return;
+      if (typeof diagnosticMark === 'function') diagnosticMark('title.failed', {
+        modelId: conversationModelId(convo), message: error?.message || String(error),
+        attempt: convo.titleAttempts,
+      }, { convoId: convo.id });
+      if (error?.retryable === false || (convo.titleAttempts || 0) >= TITLE_RETRY_DELAYS.length) {
         const fallback = fallbackConversationTitle(convo, text);
         convo.title = fallback;
         convo.titleStatus = 'fallback';
@@ -2004,6 +2018,7 @@ function normalizeSettings(parsed) {
     approvalMode: APPROVAL_MODES.includes(parsed.approvalMode)
       ? parsed.approvalMode
       : DEFAULT_SETTINGS.approvalMode,
+    diagnosticsEnabled: parsed.diagnosticsEnabled === true,
     skillFilesystem: parsed.skillFilesystem === true,
     skillTerminal: parsed.skillTerminal === true,
     skillBrowser: parsed.skillBrowser === true,
@@ -2087,6 +2102,7 @@ function applySettingsInMemory(next) {
   syncResearchControls();
   syncAttachButton();
   if (typeof applyTerminalHeight === 'function') applyTerminalHeight();
+  if (typeof syncDiagnosticsCapture === 'function') syncDiagnosticsCapture();
 }
 
 function saveSettings(next, { immediate = true } = {}) {
@@ -2129,7 +2145,7 @@ function refreshLocalDataPane() {
   if (filesEl) {
     if (dataInfo) {
       filesEl.textContent = dataInfo.encryption_enabled
-        ? 'One passphrase encrypts all profiles, preferences, provider credentials, and skills. The config.toml file contains only startup configuration that is not sensitive.'
+        ? 'One passphrase encrypts all profiles, preferences, provider credentials, skills, and saved diagnostic logs. The config.toml file contains only startup configuration that is not sensitive.'
         : 'This folder contains config.toml, chats.json, preferences.json, and chat-skills/. The chats.json file contains the profile data.';
     } else {
       filesEl.textContent = 'Not available';
@@ -2451,6 +2467,7 @@ function refreshUiFromMemoryStore() {
 }
 
 function clearMemoryAfterLock() {
+  if (typeof clearDiagnosticsMemory === 'function') clearDiagnosticsMemory();
   storageReady = false;
   if (typeof cancelOcrWorkers === 'function') cancelOcrWorkers();
   storageWriteEpoch += 1;

@@ -84,7 +84,8 @@ struct SteerPayload {
     client_id: Option<String>,
 }
 
-pub fn submit_tool_approval(id: &str, allow: bool) -> Result<(), String> {
+/// False means the approval was already consumed or its turn ended.
+pub fn submit_tool_approval(id: &str, allow: bool) -> Result<bool, String> {
     let id = id.trim();
     if id.is_empty() {
         return Err("approval id is required".into());
@@ -92,11 +93,8 @@ pub fn submit_tool_approval(id: &str, allow: bool) -> Result<(), String> {
     let sender = approval_waiters()
         .lock()
         .map_err(|_| "approval waiters lock poisoned".to_string())?
-        .remove(id)
-        .ok_or_else(|| "No pending tool approval for that id (it may have expired).".to_string())?;
-    sender
-        .send(allow)
-        .map_err(|_| "Agent turn is no longer waiting for approval.".to_string())
+        .remove(id);
+    Ok(sender.is_some_and(|sender| sender.send(allow).is_ok()))
 }
 
 pub fn submit_clarify_answers(id: &str, answers: Value) -> Result<(), String> {
@@ -674,6 +672,8 @@ impl AgentRequest {
 #[derive(Debug, Clone)]
 struct ToolCall {
     id: String,
+    /// Provider id used only in the upstream assistant/tool exchange.
+    wire_id: Option<String>,
     name: String,
     arguments: Value,
 }
@@ -719,7 +719,7 @@ fn append_openai_tool_exchange(
         .map(|(call, _)| {
             let arguments = serde_json::to_string(&call.arguments).unwrap_or_else(|_| "{}".into());
             json!({
-                "id": call.id,
+                "id": call.wire_id.as_deref().unwrap_or(&call.id),
                 "type": "function",
                 "function": {
                     "name": call.name,
@@ -736,7 +736,7 @@ fn append_openai_tool_exchange(
     for (call, result) in results {
         messages.push(json!({
             "role": "tool",
-            "tool_call_id": call.id,
+            "tool_call_id": call.wire_id.as_deref().unwrap_or(&call.id),
             "name": call.name,
             "content": result
         }));
@@ -1661,6 +1661,7 @@ pub fn compact_chat_messages(
 #[derive(Debug, Default, Clone)]
 struct AccumToolCall {
     id: String,
+    event_id: String,
     name: String,
     arguments: String,
     announced: bool,
@@ -2175,8 +2176,8 @@ async fn announce_preparing_tools(
         if slot.name.trim().is_empty() {
             continue;
         }
-        if slot.id.trim().is_empty() {
-            slot.id = new_tool_call_id();
+        if slot.event_id.is_empty() {
+            slot.event_id = new_tool_call_id();
         }
         let grown = slot.arguments.len().saturating_sub(slot.emit_at) >= 96;
         if slot.announced && !grown {
@@ -2189,7 +2190,7 @@ async fn announce_preparing_tools(
             tx,
             sse_agent(json!({
                 "phase": "tool_prepare",
-                "id": slot.id,
+                "id": slot.event_id,
                 "name": slot.name,
                 "arguments": arguments,
             })),
@@ -2277,13 +2278,16 @@ fn merge_tool_call_delta(
         slots.push(None);
     }
     let slot = slots[index].get_or_insert_with(AccumToolCall::default);
+    if slot.event_id.is_empty() {
+        slot.event_id = new_tool_call_id();
+    }
 
     if let Some(id) = delta.get("id").and_then(|v| v.as_str()) {
         let id = id.trim();
         if id.len() > MAX_TOOL_METADATA_BYTES {
             return Err("Model tool-call ID exceeded the safety limit.".into());
         }
-        if !id.is_empty() && (!slot.announced || slot.id.trim().is_empty()) {
+        if !id.is_empty() {
             slot.id = id.to_string();
         }
     }
@@ -2709,11 +2713,12 @@ fn tool_calls_from_native(slots: &[Option<AccumToolCall>]) -> Vec<ToolCall> {
                     .unwrap_or_else(|_| json!({ "raw": call.arguments }))
             };
             ToolCall {
-                id: if call.id.trim().is_empty() {
+                id: if call.event_id.is_empty() {
                     new_tool_call_id()
                 } else {
-                    call.id.clone()
+                    call.event_id.clone()
                 },
+                wire_id: (!call.id.trim().is_empty()).then(|| call.id.clone()),
                 name: call.name.clone(),
                 arguments,
             }
@@ -3173,6 +3178,7 @@ fn parse_tool_call_json(raw: &str) -> Option<ToolCall> {
     let arguments = value.get("arguments").cloned().unwrap_or_else(|| json!({}));
     Some(ToolCall {
         id: new_tool_call_id(),
+        wire_id: None,
         name,
         arguments,
     })
@@ -4513,9 +4519,9 @@ mod tests {
         ).unwrap();
         let turn = resolve_streamed_turn("", "", &slots);
         assert_eq!(turn.tools.len(), 2);
-        assert_eq!(turn.tools[0].id, "call_a");
+        assert_eq!(turn.tools[0].wire_id.as_deref(), Some("call_a"));
         assert_eq!(turn.tools[0].arguments["query"], "one");
-        assert_eq!(turn.tools[1].id, "call_b");
+        assert_eq!(turn.tools[1].wire_id.as_deref(), Some("call_b"));
         assert_eq!(turn.tools[1].name, "fetch_url");
     }
 
@@ -4650,6 +4656,7 @@ mod tests {
         .enumerate()
         .map(|(i, (name, arguments))| ToolCall {
             id: i.to_string(),
+            wire_id: None,
             name: name.into(),
             arguments,
         })
@@ -4752,6 +4759,7 @@ mod tests {
             .enumerate()
             .map(|(i, name)| ToolCall {
                 id: i.to_string(),
+                wire_id: None,
                 name: (*name).into(),
                 arguments: json!({}),
             })
@@ -4772,6 +4780,7 @@ mod tests {
         let many = (0..19)
             .map(|i| ToolCall {
                 id: i.to_string(),
+                wire_id: None,
                 name: "read_file".into(),
                 arguments: json!({}),
             })
@@ -4871,11 +4880,13 @@ mod tests {
             let calls = vec![
                 ToolCall {
                     id: id.clone(),
+                    wire_id: None,
                     name: "str_replace".into(),
                     arguments: json!({"path":"a.txt", "old_string":"original", "new_string":"edited"}),
                 },
                 ToolCall {
                     id: new_runtime_id("read"),
+                    wire_id: None,
                     name: "read_file".into(),
                     arguments: json!({"path":"a.txt"}),
                 },
@@ -4965,9 +4976,43 @@ mod tests {
         let allow = wait_for_approval(id, rx, &tx).await.expect("wait");
         assert!(allow);
         assert!(
-            submit_tool_approval(id, true).is_err(),
+            !submit_tool_approval(id, true).unwrap(),
             "duplicate allow should not find a waiter"
         );
+    }
+
+    #[tokio::test]
+    async fn reused_provider_ids_do_not_share_approval_waiters_or_ui_events() {
+        let delta = json!({"index":0,"id":"call_1","function":{"name":"web_search","arguments":"{\"query\":\"hello\"}"}});
+        let mut first = Vec::new();
+        let mut second = Vec::new();
+        merge_tool_call_delta(&mut first, &delta).unwrap();
+        merge_tool_call_delta(&mut second, &delta).unwrap();
+        let first_turn = resolve_streamed_turn("", "", &first);
+        let second_turn = resolve_streamed_turn("", "", &second);
+        let a = &first_turn.tools[0];
+        let b = &second_turn.tools[0];
+        assert_ne!(a.id, b.id);
+        assert_eq!(a.wire_id, b.wire_id);
+        let mut first_rx = arm_tool_approval(&a.id).unwrap();
+        let second_rx = arm_tool_approval(&b.id).unwrap();
+        assert!(submit_tool_approval(&b.id, false).unwrap());
+        assert!(!second_rx.await.unwrap());
+        assert!(matches!(
+            first_rx.try_recv(),
+            Err(oneshot::error::TryRecvError::Empty)
+        ));
+        assert!(submit_tool_approval(&a.id, true).unwrap());
+        assert!(first_rx.await.unwrap());
+        let mut messages = Vec::new();
+        append_openai_tool_exchange(&mut messages, &first_turn, &[(a.clone(), "result".into())]);
+        assert_eq!(messages[0]["tool_calls"][0]["id"], "call_1");
+        assert_eq!(messages[1]["tool_call_id"], "call_1");
+        let (tx, mut events) = mpsc::channel(1);
+        announce_preparing_tools(&mut first, &tx).await.unwrap();
+        let bytes = events.recv().await.unwrap().unwrap();
+        assert!(String::from_utf8(bytes).unwrap().contains(&a.id));
+        assert_eq!(resolve_streamed_turn("", "", &first).tools[0].id, a.id);
     }
 
     #[test]

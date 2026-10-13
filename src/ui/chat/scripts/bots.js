@@ -420,12 +420,13 @@ function estimateConvoChars(convo) {
 
 async function collectCompletionText(messages, modelId) {
   const remote = selectedRemoteModel(latestState, modelId);
-  const body = { messages, agent: false, skills: {}, force_tools: [] };
-  if (remote) {
-    body.remote_base = remote.base;
-    if (remote.provider_id) body.provider_id = remote.provider_id;
-    body.model = remote.model;
+  if (!remote?.ready || !remote.model || (!remote.provider_id && !remote.base)) {
+    throw new Error('The selected Loop model is unavailable for compaction');
   }
+  const body = { messages, agent: false, skills: {}, force_tools: [] };
+  body.remote_base = remote.base;
+  if (remote.provider_id) body.provider_id = remote.provider_id;
+  body.model = remote.model;
   const response = await fetch('/api/chat/completions', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -502,7 +503,7 @@ async function maybeCompactBotsConvo(convo, speakerBot) {
           : (String(speakerBot?.memory || '').trim() || '(empty)'),
       }) },
       { role: 'user', content: transcript.slice(0, 24000) },
-    ], speakerBot?.model);
+    ], speakerBot?.model || conversationModelId(convo));
     if (writeEpoch !== storageWriteEpoch || diskEncryptionLocked()
       || runEpoch !== botsOutboundEpochOf(convo.id)
       || !conversations.includes(convo)

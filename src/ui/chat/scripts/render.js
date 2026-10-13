@@ -1578,8 +1578,14 @@ async function submitToolApproval(id, allow) {
   if (!key || approvalInFlight.has(key)) return;
   const stream = typeof activeStream === 'function' ? activeStream() : null;
   const part = stream?.timeline?.find((item) => item.type === 'tool' && item.id === key);
-  if (part && (part.approval === 'allowed' || part.approval === 'denied')) return;
+  if (!stream || stream.cancelled || stream.serverFinished || stream.settled
+    || stream.controller?.signal.aborted || !part?.live) return;
+  if (part && ['allowed', 'denied', 'expired'].includes(part.approval)) return;
   approvalInFlight.add(key);
+  if (typeof diagnosticStreamMark === 'function' && stream) {
+    const convo = conversations.find(item => item.id === activeId);
+    if (convo) diagnosticStreamMark(stream, convo, 'approval.decision', { id: key, allow: !!allow });
+  }
   if (part) {
     part.approval = allow ? 'allowed' : 'denied';
   }
@@ -1598,9 +1604,17 @@ async function submitToolApproval(id, allow) {
       const problem = await response.json().catch(() => null);
       throw new Error((problem && problem.error) || 'Could not submit approval');
     }
+    const result = await response.json();
+    if (result.expired) {
+      if (part) part.approval = 'expired';
+      refreshNotificationsUi();
+      if (typeof refreshTraceSidebar === 'function') refreshTraceSidebar({ animate: false });
+    }
   } catch (error) {
-    const expired = /no pending tool approval/i.test(String(error?.message || ''));
-    if (expired && allow) {
+    const expired = /no pending tool approval|no longer waiting for approval/i.test(String(error?.message || ''));
+    if (expired) {
+      if (part) part.approval = 'expired';
+      refreshNotificationsUi();
       if (typeof refreshTraceSidebar === 'function') refreshTraceSidebar({ animate: false });
       return;
     }
@@ -1740,11 +1754,13 @@ function agentStepHtml({
   }
   const elapsedMs = toolDurationMs({ live, startedAt, durationMs, endedAt });
   const elapsed = elapsedMs > 0 || live ? formatToolElapsed(elapsedMs) : '';
-  const waitingApproval = approval === 'pending';
+  const waitingApproval = !!live && approval === 'pending';
   const executing = !!executingFlag;
   const failed = !live && ok === false;
+  const liveStatus = waitingApproval ? 'Needs approval'
+    : approval === 'expired' ? 'No longer pending' : skillLiveVerb(name, { kind, approval, executing });
   const status = live
-    ? '<span class="agent-step-status">' + escapeHtml(waitingApproval ? 'Needs approval' : skillLiveVerb(name, { kind, approval, executing })) + '</span>'
+    ? '<span class="agent-step-status">' + escapeHtml(liveStatus) + '</span>'
     : failed ? '<span class="agent-step-status">' + (approval === 'denied' ? 'Denied' : 'Failed') + '</span>'
     : running ? '<span class="agent-step-status">Running</span>' : '';
   const meta = (status || elapsed)
@@ -3186,17 +3202,20 @@ function recordConversationNotification(convo, { kind = 'complete', at = Date.no
 function pendingAttentionNotifications() {
   const items = [];
   for (const [convoId, stream] of activeStreams.entries()) {
+    if (!stream || stream.cancelled || stream.replaced || stream.settled || stream.serverFinished
+        || stream.controller?.signal?.aborted || stream.catchingUp) continue;
     const convo = conversations.find((item) => item.id === convoId);
     if (!convo) continue;
     for (const part of stream.timeline || []) {
-      if (part?.type === 'tool' && part.approval === 'pending') {
+      if (part?.type === 'tool' && part.live && part.approval === 'pending') {
+        const tool = skillLabel(part.name, part.args);
         items.push({
           type: 'approval',
           convo,
           at: Number(part.startedAt) || Date.now(),
           title: convo.title || 'New chat',
           label: 'Approval needed',
-          detail: part.detail || ('Review the pending ' + String(part.name || 'tool').replaceAll('_', ' ') + ' call.'),
+          detail: tool + ' · ' + (part.detail || 'Review this request to continue the task.'),
         });
       } else if (part?.type === 'clarify' && part.live) {
         const count = Array.isArray(part.questions) ? part.questions.length : 0;
@@ -3334,10 +3353,10 @@ function refreshNotificationsUi() {
   if (btnNotificationsMarkRead) btnNotificationsMarkRead.disabled = unreadCompleted === 0;
   if (notificationsLede) {
     notificationsLede.textContent = approvals.length
-      ? (approvals.length + ' task' + (approvals.length === 1 ? '' : 's') + ' waiting for you.')
+      ? (approvals.length + ' request' + (approvals.length === 1 ? '' : 's') + ' waiting across chats.')
       : (unreadCompleted
         ? (unreadCompleted + ' unread response' + (unreadCompleted === 1 ? '' : 's') + '.')
-        : 'Completed work and tasks that need you.');
+        : 'Completed work and requests from all chats.');
   }
   if (!notificationsFeed || !notificationsPopoverIsOpen()) return;
   notificationsFeed.innerHTML = '';
