@@ -1,4 +1,4 @@
-const { chromium, appTestsEnabled, spawnApp, browserLaunchOptions, stopApp, removeAppData } = require('./helpers/app.cjs');
+const { chromium, appTestsEnabled, spawnApp, browserLaunchOptions, stopApp, removeAppData, mockAppUpdates } = require('./helpers/app.cjs');
 // Requires a built app and Playwright. Uses an isolated temporary data directory.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -45,6 +45,7 @@ test('built app supports offline OCR and revokes terminal sockets on encryption 
       }
       return route.continue();
     });
+    await mockAppUpdates(page, origin);
     await page.goto(origin);
     await page.waitForFunction(() => typeof ocrAttachmentImage === 'function');
     const text = await page.evaluate(async () => {

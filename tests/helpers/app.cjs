@@ -61,4 +61,19 @@ function browserLaunchOptions(channel) {
   return { headless: true, ...(executablePath ? { executablePath } : {}) };
 }
 
-module.exports = { appTestsEnabled, browserTestsEnabled, chromium, spawnApp, stopApp, removeAppData, browserLaunchOptions };
+/** Keep unrelated browser flows independent of the live upstream master commit. */
+async function mockAppUpdates(page, origin) {
+  const commit = '1111111111111111111111111111111111111111';
+  await page.route('**/api/updates/check*', route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.origin !== origin || url.pathname !== '/api/updates/check' || request.method() !== 'GET') return route.fallback();
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+      current: 'master@' + commit.slice(0, 12), current_commit: commit, latest: commit, branch: 'master',
+      commit_url: 'https://github.com/jacobzymet/gopher/commit/' + commit,
+      update_available: false, can_install: false, checked: true, error: null,
+    }) });
+  });
+}
+
+module.exports = { appTestsEnabled, browserTestsEnabled, chromium, spawnApp, stopApp, removeAppData, browserLaunchOptions, mockAppUpdates };

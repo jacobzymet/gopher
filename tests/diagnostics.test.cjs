@@ -1,4 +1,4 @@
-const { chromium, appTestsEnabled, spawnApp, browserLaunchOptions, stopApp, removeAppData } = require('./helpers/app.cjs');
+const { chromium, appTestsEnabled, spawnApp, browserLaunchOptions, stopApp, removeAppData, mockAppUpdates } = require('./helpers/app.cjs');
 const { readUiScript } = require('./helpers/ui-source.cjs');
 const assert = require('node:assert/strict');
 const { readFileSync, mkdtempSync, writeFileSync, rmSync, existsSync } = require('node:fs');
@@ -150,6 +150,7 @@ test('real Logs tab locates provider delay, redacts credentials, and persists on
       }
       return route.continue();
     });
+    await mockAppUpdates(page, origin);
     await page.goto(origin);
     await page.waitForFunction(() => storageReady && modelMenuOptions.some(model => model.label === 'diagnostic-model'));
     assert.equal(await page.evaluate(() => settings.diagnosticsEnabled), false);

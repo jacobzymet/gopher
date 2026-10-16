@@ -1,4 +1,4 @@
-const { chromium, appTestsEnabled, spawnApp, browserLaunchOptions, stopApp, removeAppData } = require('./helpers/app.cjs');
+const { chromium, appTestsEnabled, spawnApp, browserLaunchOptions, stopApp, removeAppData, mockAppUpdates } = require('./helpers/app.cjs');
 const { readUiScript } = require('./helpers/ui-source.cjs');
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
@@ -232,6 +232,7 @@ test('workspace browser flows preserve drafts across navigation and reload, sear
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
     await page.route('**/*', (route) => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
+    await mockAppUpdates(page, origin);
     await page.goto(origin);
     await page.waitForFunction(() => storageReady && composerDraftContext);
     await page.locator('.welcome-connect').waitFor();

@@ -1,4 +1,4 @@
-const { chromium, appTestsEnabled, spawnApp, browserLaunchOptions, stopApp, removeAppData } = require('./helpers/app.cjs');
+const { chromium, appTestsEnabled, spawnApp, browserLaunchOptions, stopApp, removeAppData, mockAppUpdates } = require('./helpers/app.cjs');
 const { readUiScript } = require('./helpers/ui-source.cjs');
 // Run without compiling the app: node --test tests/notifications.test.cjs
 const assert = require('node:assert/strict');
@@ -312,6 +312,7 @@ test('real approval inbox follows live SSE, clears on Stop, and ignores finished
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
+    await mockAppUpdates(page, origin);
     await page.goto(origin);
     await page.waitForFunction(() => storageReady);
     await page.evaluate(() => {

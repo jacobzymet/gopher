@@ -1,4 +1,4 @@
-const { chromium, appTestsEnabled, spawnApp, browserLaunchOptions, stopApp, removeAppData } = require('./helpers/app.cjs');
+const { chromium, appTestsEnabled, spawnApp, browserLaunchOptions, stopApp, removeAppData, mockAppUpdates } = require('./helpers/app.cjs');
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const { mkdtempSync, writeFileSync, rmSync } = require('node:fs');
@@ -48,6 +48,7 @@ test('chat and title requests use the selected provider even when another provid
     const page = await browser.newPage(); const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
+    await mockAppUpdates(page, origin);
     await page.goto(origin);
     await page.waitForFunction(() => storageReady && latestState?.network && !latestState.network.remote_catalog_pending && latestState.network.remote_models.some(model => model.provider_id === 'chosen' && model.ready));
     await page.evaluate(async () => {

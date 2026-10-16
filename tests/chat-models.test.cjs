@@ -1,4 +1,4 @@
-const { chromium, appTestsEnabled, spawnApp, browserLaunchOptions, stopApp, removeAppData } = require('./helpers/app.cjs');
+const { chromium, appTestsEnabled, spawnApp, browserLaunchOptions, stopApp, removeAppData, mockAppUpdates } = require('./helpers/app.cjs');
 const { readUiScript } = require('./helpers/ui-source.cjs');
 const assert = require('node:assert/strict');
 const { join } = require('node:path');
@@ -252,9 +252,12 @@ test('real chat model picks survive switching, default changes, reload, and back
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
+    await mockAppUpdates(page, origin);
     await step('initial catalog', async () => {
       await page.goto(origin);
       await page.waitForFunction(() => storageReady && modelMenuOptions.filter(model => !model.connectKind).length === 3);
+      assert.equal((await page.evaluate(() => checkForAppUpdate({ force: true }))).update_available, false);
+      assert.equal(await page.locator('#updateToast').isVisible(), false);
     }, 15000);
     const ids = await step('seed conversations', () => page.evaluate(async () => {
       const ids = Object.fromEntries(modelMenuOptions.filter(model => !model.connectKind).map(model => [model.label, model.value]));
