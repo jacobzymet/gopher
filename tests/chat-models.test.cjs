@@ -162,14 +162,14 @@ test('Loop compaction cannot send a request without its selected provider', asyn
 test('real chat model picks survive switching, default changes, reload, and background sends', {
   skip: !appTestsEnabled || !chromium,
   timeout: 60000,
-}, async () => {
+}, async (context) => {
   const { mkdtempSync, writeFileSync, rmSync } = require('node:fs');
   const { tmpdir } = require('node:os');
   const { spawn } = require('node:child_process');
   const { resolve } = require('node:path');
   const { createServer } = require('node:http');
   const { setTimeout: delay } = require('node:timers/promises');
-  const sentModels = [];
+  const completions = [];
   const provider = createServer(async (request, response) => {
     if (request.url === '/v1/models') {
       response.setHeader('content-type', 'application/json');
@@ -178,7 +178,12 @@ test('real chat model picks survive switching, default changes, reload, and back
       let body = '';
       for await (const chunk of request) body += chunk;
       const payload = JSON.parse(body);
-      sentModels.push(payload.model);
+      if (payload.stream === false) {
+        response.setHeader('content-type', 'application/json');
+        response.end(JSON.stringify({ choices: [{ message: { content: 'Fixture title' } }] }));
+        return;
+      }
+      completions.push({ model: payload.model, prompt: payload.messages.filter(message => message.role === 'user').at(-1)?.content });
       response.setHeader('content-type', 'text/event-stream');
       response.end('data: {"choices":[{"delta":{"content":"Answer"}}]}\n\ndata: [DONE]\n\n');
     } else {
@@ -201,24 +206,57 @@ test('real chat model picks survive switching, default changes, reload, and back
   child.stdout.on('data', data => { logs += data; });
   child.stderr.on('data', data => { logs += data; });
   let browser;
-  try {
-    let origin;
-    for (let i = 0; i < 100; i++) {
-      if (spawnError) throw spawnError;
-      if (child.exitCode !== null) throw new Error(logs);
-      const port = logs.match(/Gopher listening on http:\/\/gopher\.localhost:(\d+)/)?.[1];
-      if (port && Number(port) > 0) { origin = `http://127.0.0.1:${port}`; break; }
-      await delay(100);
+  let page;
+  let phase = 'server readiness';
+  const timings = [];
+  async function step(name, work, timeout = 10000) {
+    phase = name;
+    const started = Date.now();
+    let timer;
+    try {
+      return await Promise.race([work(), new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`Model-picker phase '${name}' did not finish within ${timeout}ms`)), timeout);
+      })]);
+    } finally {
+      clearTimeout(timer);
+      timings.push({ phase: name, milliseconds: Date.now() - started });
     }
-    assert.ok(origin, logs);
-    browser = await chromium.launch(browserLaunchOptions(process.env.SECURITY_BROWSER_CHANNEL));
-    const page = await browser.newPage();
+  }
+  function assertModel(prompt, model) {
+    assert.deepEqual(completions.filter(request => request.prompt === prompt).map(request => request.model), [model], prompt);
+  }
+  async function completedTurn(convoId, assistantCount) {
+    await page.waitForFunction(({ convoId, assistantCount }) => {
+      const id = convoId || activeId;
+      const convo = conversations.find(item => item.id === id);
+      const replies = convo?.messages.filter(message => message.role === 'assistant') || [];
+      return id && !pendingComposerSend && !outboundStarting.has(id) && !activeStreams.has(id)
+        && replies.length === assistantCount && replies.at(-1)?.content === 'Answer';
+    }, { convoId, assistantCount });
+  }
+  try {
+    const origin = await step('server readiness', async () => {
+      for (let i = 0; i < 100; i++) {
+        if (spawnError) throw spawnError;
+        if (child.exitCode !== null) throw new Error(logs);
+        const port = logs.match(/Gopher listening on http:\/\/gopher\.localhost:(\d+)/)?.[1];
+        if (port && Number(port) > 0) return `http://127.0.0.1:${port}`;
+        await delay(100);
+      }
+      assert.fail(logs || 'The app did not report its bound port');
+    }, 12000);
+    browser = await step('browser launch', () => chromium.launch(browserLaunchOptions(process.env.SECURITY_BROWSER_CHANNEL)), 20000);
+    page = await browser.newPage();
+    page.setDefaultTimeout(10000);
+    page.setDefaultNavigationTimeout(15000);
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
-    await page.goto(origin);
-    await page.waitForFunction(() => storageReady && modelMenuOptions.filter(model => !model.connectKind).length === 3);
-    const ids = await page.evaluate(async () => {
+    await step('initial catalog', async () => {
+      await page.goto(origin);
+      await page.waitForFunction(() => storageReady && modelMenuOptions.filter(model => !model.connectKind).length === 3);
+    }, 15000);
+    const ids = await step('seed conversations', () => page.evaluate(async () => {
       const ids = Object.fromEntries(modelMenuOptions.filter(model => !model.connectKind).map(model => [model.label, model.value]));
       await saveSettings({ ...settings, selectedChatModel: ids.alpha, chatRetrieval: false }, { immediate: true });
       conversations.push(...['a', 'b'].map(id => normalizeConversation({ id, title: id, titleEdited: true, messages: [] })));
@@ -226,66 +264,94 @@ test('real chat model picks survive switching, default changes, reload, and back
       await storeWriteChain;
       selectConversation('a');
       return ids;
+    }));
+    await step('chat A manual pick', async () => {
+      await page.locator('#chatModelSelect').click();
+      await page.locator('#chatModelSearch').fill('beta');
+      await page.locator('[data-model-pick]').filter({ hasText: 'beta' }).click();
+      assert.equal(await page.evaluate(() => settings.selectedChatModel), ids.alpha);
     });
-    await page.locator('#chatModelSelect').click();
-    await page.locator('#chatModelSearch').fill('beta');
-    await page.locator('[data-model-pick]').filter({ hasText: 'beta' }).click();
-    assert.equal(await page.evaluate(() => settings.selectedChatModel), ids.alpha);
-    await page.evaluate(() => selectConversation('b'));
-    assert.equal(await page.locator('#chatModelSelect').textContent(), 'alpha');
-    await page.evaluate(async defaultId => {
-      await saveSettings({ ...settings, selectedChatModel: defaultId }, { immediate: true });
-      syncModelSelector(latestState);
-    }, ids.gamma);
-    assert.equal(await page.locator('#chatModelSelect').textContent(), 'gamma');
-    await page.locator('#chatModelSelect').click();
-    await page.locator('#chatModelSearch').fill('alpha');
-    await page.locator('[data-model-pick]').filter({ hasText: 'alpha' }).click();
-    await page.evaluate(() => selectConversation('a'));
-    assert.equal(await page.locator('#chatModelSelect').textContent(), 'beta');
-    await page.evaluate(() => fillDefaultModelSetting());
-    assert.equal(await page.locator('#settingDefaultModel').inputValue(), ids.gamma);
-    await page.evaluate(async () => { saveConversations({ immediate: true }); await storeWriteChain; });
-    await page.reload();
-    await page.waitForFunction(() => storageReady && modelMenuOptions.filter(model => !model.connectKind).length === 3);
-    await page.evaluate(() => selectConversation('b'));
-    assert.equal(await page.locator('#chatModelSelect').textContent(), 'alpha');
-    await page.evaluate(async () => {
-      const convo = conversations.find(item => item.id === 'a');
-      const message = { role: 'user', content: 'Background send' };
-      convo.messages.push(message);
-      await runAssistantTurn(convo, { useAgent: false, text: message.content, skills: {}, dispatchedMessage: message });
+    await step('inherited default change', async () => {
+      await page.evaluate(() => selectConversation('b'));
+      assert.equal(await page.locator('#chatModelSelect').textContent(), 'alpha');
+      await page.evaluate(async defaultId => {
+        await saveSettings({ ...settings, selectedChatModel: defaultId }, { immediate: true });
+        syncModelSelector(latestState);
+      }, ids.gamma);
+      assert.equal(await page.locator('#chatModelSelect').textContent(), 'gamma');
     });
-    assert.equal(sentModels.at(-1), 'beta');
-    assert.equal(await page.locator('#chatModelSelect').textContent(), 'alpha');
-    await page.evaluate(() => selectConversation('a'));
-    await page.setViewportSize({ width: 360, height: 800 });
-    await page.locator('#chatModelSelect').click();
-    const resetFits = await page.locator('#btnModelUseDefault').evaluate(button => {
-      const menu = button.closest('.chat-model-menu').getBoundingClientRect();
-      const bounds = button.getBoundingClientRect();
-      return bounds.left >= menu.left && bounds.right <= menu.right;
+    await step('chat B manual pick', async () => {
+      await page.locator('#chatModelSelect').click();
+      await page.locator('#chatModelSearch').fill('alpha');
+      await page.locator('[data-model-pick]').filter({ hasText: 'alpha' }).click();
+      await page.evaluate(() => selectConversation('a'));
+      assert.equal(await page.locator('#chatModelSelect').textContent(), 'beta');
+      await page.evaluate(() => fillDefaultModelSetting());
+      assert.equal(await page.locator('#settingDefaultModel').inputValue(), ids.gamma);
     });
-    assert.ok(resetFits, 'Use default should fit the narrow model menu');
-    await page.locator('#btnModelUseDefault').click();
-    await page.setViewportSize({ width: 1280, height: 800 });
-    assert.equal(await page.locator('#chatModelSelect').textContent(), 'gamma');
-    await page.evaluate(() => startDraft());
-    await page.locator('#chatModelSelect').click();
-    await page.locator('#chatModelSearch').fill('beta');
-    await page.locator('[data-model-pick]').filter({ hasText: 'beta' }).click();
-    await page.evaluate(async () => { composerInput.value = 'Draft with beta'; await sendMessage(); });
-    await page.waitForFunction(() => activeId && !activeStreams.has(activeId));
-    assert.equal(sentModels.at(-1), 'beta');
-    assert.equal(await page.evaluate(() => conversations.find(item => item.id === activeId).modelId), ids.beta);
+    await step('persist and reload', async () => {
+      await page.evaluate(async () => { saveConversations({ immediate: true }); await storeWriteChain; });
+      await page.reload();
+      await page.waitForFunction(() => storageReady && modelMenuOptions.filter(model => !model.connectKind).length === 3);
+      await page.evaluate(() => selectConversation('b'));
+      assert.equal(await page.locator('#chatModelSelect').textContent(), 'alpha');
+    }, 15000);
+    await step('background provider routing', async () => {
+      await page.evaluate(() => {
+        const convo = conversations.find(item => item.id === 'a');
+        const message = { role: 'user', content: 'Background send' };
+        convo.messages.push(message);
+        void runAssistantTurn(convo, { useAgent: false, text: message.content, skills: {}, dispatchedMessage: message });
+      });
+      await completedTurn('a', 1);
+      assertModel('Background send', 'beta');
+      assert.equal(await page.locator('#chatModelSelect').textContent(), 'alpha');
+    });
+    await step('mobile default reset', async () => {
+      await page.evaluate(() => selectConversation('a'));
+      await page.setViewportSize({ width: 360, height: 800 });
+      await page.locator('#chatModelSelect').click();
+      const resetFits = await page.locator('#btnModelUseDefault').evaluate(button => {
+        const menu = button.closest('.chat-model-menu').getBoundingClientRect();
+        const bounds = button.getBoundingClientRect();
+        return bounds.left >= menu.left && bounds.right <= menu.right;
+      });
+      assert.ok(resetFits, 'Use default should fit the narrow model menu');
+      await page.locator('#btnModelUseDefault').click();
+      await page.setViewportSize({ width: 1280, height: 800 });
+      assert.equal(await page.locator('#chatModelSelect').textContent(), 'gamma');
+    });
+    await step('draft manual choice and send', async () => {
+      await page.evaluate(() => startDraft());
+      await page.locator('#chatModelSelect').click();
+      await page.locator('#chatModelSearch').fill('beta');
+      await page.locator('[data-model-pick]').filter({ hasText: 'beta' }).click();
+      await page.evaluate(async () => { composerInput.value = 'Draft with beta'; await sendMessage(); });
+      await completedTurn(null, 1);
+      assertModel('Draft with beta', 'beta');
+      assert.equal(await page.evaluate(() => conversations.find(item => item.id === activeId).modelId), ids.beta);
+    });
     const sourceId = await page.evaluate(() => activeId);
-    await page.evaluate(async () => { composerInput.value = 'Branch with beta'; await sendMessage({ branch: true }); });
-    await page.waitForFunction(() => activeId && !activeStreams.has(activeId));
-    assert.notEqual(await page.evaluate(() => activeId), sourceId);
-    assert.equal(await page.evaluate(() => conversations.find(item => item.id === activeId).modelId), ids.beta);
-    await page.evaluate(() => startDraft());
-    assert.equal(await page.locator('#chatModelSelect').textContent(), 'gamma');
-    assert.deepEqual(errors, []);
+    await step('branch inherits manual model', async () => {
+      await page.evaluate(async () => { composerInput.value = 'Branch with beta'; await sendMessage({ branch: true }); });
+      await completedTurn(null, 2);
+      assertModel('Branch with beta', 'beta');
+      assert.notEqual(await page.evaluate(() => activeId), sourceId);
+      assert.equal(await page.evaluate(() => conversations.find(item => item.id === activeId).modelId), ids.beta);
+      await page.evaluate(() => startDraft());
+      assert.equal(await page.locator('#chatModelSelect').textContent(), 'gamma');
+      assert.deepEqual(errors, []);
+    });
+  } catch (error) {
+    const snapshot = page && !page.isClosed() ? await Promise.race([
+      page.evaluate(() => ({ activeId, storageReady, pendingComposerSend: !!pendingComposerSend,
+        outboundStarting: [...outboundStarting.keys()], streams: [...activeStreams.keys()],
+        chats: conversations.map(convo => ({ id: convo.id, modelId: convo.modelId, messages: convo.messages.map(message => ({ role: message.role, content: message.content })) })),
+      })).catch(() => null),
+      delay(1000).then(() => 'snapshot timed out'),
+    ]) : null;
+    context.diagnostic(JSON.stringify({ phase, timings, completions, snapshot, server: logs.slice(-3000) }));
+    throw error;
   } finally {
     if (browser) await browser.close();
     await stopApp(child);

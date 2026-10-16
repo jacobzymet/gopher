@@ -33,6 +33,7 @@ async function withSidebar(run, { viewport, fast = true, convo = {}, ...settings
       'const selectedConversationIds = new Set();',
       'const convoBusyAnimationStartedAt = new Map(); const titleTypeTimers = new Map();',
       'const isConvoBusy = () => false;',
+      observeFirstCycleEnd.toString(),
       'const notificationIsUnread = (convo) => !!convo.unread;',
       'const isBotsConvo = (convo) => !!convo.botId;',
       "const getBot = () => ({ handle: 'research' });",
@@ -60,36 +61,54 @@ async function withSidebar(run, { viewport, fast = true, convo = {}, ...settings
   }
 }
 
-// Observe the actual first cycle. Seeking or pausing can hide stale compositor endpoints.
-async function assertFirstCycleEnd(page) {
-  await page.waitForFunction(() => {
+// Record inside the page so a delayed test-driver round trip cannot miss the
+// first-cycle endpoint. Seeking or pausing could hide stale compositor endpoints.
+function observeFirstCycleEnd() {
+  const observation = { matched: false, finished: false, last: null, frame: 0 };
+  const deadline = performance.now() + 6000;
+  const sample = () => {
     const title = document.querySelector('.convo-title');
     const text = title.firstElementChild;
     const animation = text.getAnimations().find((entry) => entry.animationName === 'convo-title-marquee');
-    if (!animation) return false;
-    const { delay, duration } = animation.effect.getTiming();
-    const range = document.createRange();
-    range.selectNodeContents(text);
-    const inset = title.getBoundingClientRect().right - range.getBoundingClientRect().right;
-    const scale = title.getBoundingClientRect().width / parseFloat(getComputedStyle(title).width);
-    const padding = parseFloat(getComputedStyle(text).paddingInlineEnd) * scale;
-    return animation.currentTime >= delay + duration * 0.86 &&
-      animation.currentTime < delay + duration && Math.abs(inset - padding) < 1;
-  }, null, { timeout: 6000, polling: 'raf' }).catch(async (error) => {
-    error.message += '\n' + JSON.stringify(await page.locator('.convo-title-text').evaluate((text) => {
+    if (animation && animation.currentTime !== null) {
+      const { delay, duration } = animation.effect.getTiming();
       const range = document.createRange();
       range.selectNodeContents(text);
-      return {
-        clip: text.parentElement.getBoundingClientRect().width,
-        text: range.getBoundingClientRect().width,
-        inset: text.parentElement.getBoundingClientRect().right - range.getBoundingClientRect().right,
+      const titleRect = title.getBoundingClientRect();
+      const inset = titleRect.right - range.getBoundingClientRect().right;
+      const scale = titleRect.width / parseFloat(getComputedStyle(title).width);
+      const padding = parseFloat(getComputedStyle(text).paddingInlineEnd) * scale;
+      observation.last = {
+        time: animation.currentTime, delay, duration, inset, padding,
+        clip: titleRect.width, text: range.getBoundingClientRect().width,
         transform: getComputedStyle(text).transform,
         hovered: text.closest('.convo-item').matches(':hover'),
-        animations: text.getAnimations().map((entry) => ({ name: entry.animationName, time: entry.currentTime })),
       };
-    }));
-    throw error;
+      observation.matched = animation.currentTime >= delay + duration * 0.86 &&
+        animation.currentTime < delay + duration && Math.abs(inset - padding) < 1;
+      observation.finished = observation.matched || animation.currentTime >= delay + duration;
+    }
+    observation.finished ||= performance.now() >= deadline;
+    if (!observation.finished) observation.frame = requestAnimationFrame(sample);
+  };
+  observation.frame = requestAnimationFrame(sample);
+  return observation;
+}
+
+async function assertFirstCycleEnd(page) {
+  const observation = await page.evaluateHandle(() => {
+    const observation = window.marqueeFirstCycleObservation || observeFirstCycleEnd();
+    delete window.marqueeFirstCycleObservation;
+    return observation;
   });
+  try {
+    await page.waitForFunction((observation) => observation.finished, observation, { timeout: 6000, polling: 'raf' });
+    const result = await observation.jsonValue();
+    assert.ok(result.matched, 'the actual first cycle must reveal the complete title: ' + JSON.stringify(result.last));
+  } finally {
+    await observation.evaluate((observation) => cancelAnimationFrame(observation.frame));
+    await observation.dispose();
+  }
 }
 
 async function assertRenderedTail(page) {
@@ -169,7 +188,28 @@ test('live width, text, and font changes remain correct during the first cycle',
       text.style.fontWeight = '700';
       document.documentElement.dataset.fontScale = 'large';
       document.documentElement.style.setProperty('--sidebar-w', '220px');
+      window.marqueeFirstCycleObservation = observeFirstCycleEnd();
     });
+    await assertFirstCycleEnd(page);
+  });
+});
+
+test('first-cycle measurements survive a delayed test-driver observation', browserOptions, async () => {
+  await withSidebar(async (page) => {
+    await page.locator('.convo-item').evaluate((item) => {
+      item.addEventListener('mouseenter', () => {
+        window.marqueeFirstCycleObservation = observeFirstCycleEnd();
+      }, { once: true });
+    });
+    await page.locator('.convo-title').hover();
+    // Read only after the first cycle has elapsed, reproducing a busy CI driver
+    // without seeking, pausing, or accepting a later animation cycle.
+    await page.waitForFunction(() => {
+      const animation = document.querySelector('.convo-title-text').getAnimations()[0];
+      if (!animation) return false;
+      const { delay, duration } = animation.effect.getTiming();
+      return animation.currentTime >= delay + duration;
+    }, null, { timeout: 6000, polling: 'raf' });
     await assertFirstCycleEnd(page);
   });
 });

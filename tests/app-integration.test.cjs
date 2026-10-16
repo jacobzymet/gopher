@@ -2,7 +2,7 @@ const { appTestsEnabled, spawnApp, stopApp, removeAppData } = require('./helpers
 // Set GOPHER_E2E=1 to test the TypeScript CLI. Every test uses isolated data.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { mkdtempSync, readFileSync, writeFileSync, rmSync } = require('node:fs');
+const { mkdtempSync, readFileSync, writeFileSync, rmSync, realpathSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join, resolve } = require('node:path');
 const { spawn } = require('node:child_process');
@@ -50,8 +50,8 @@ test('ephemeral bind reports its actual port and relative config keeps data besi
     };
     const info = await call('/api/data');
     assert.equal(info.status, 200);
-    assert.equal(resolve(info.body.data_dir), dir);
-    assert.equal(resolve(info.body.config_path), join(dir, 'config.toml'));
+    assert.equal(realpathSync(info.body.data_dir), realpathSync(dir));
+    assert.equal(realpathSync(info.body.config_path), realpathSync(join(dir, 'config.toml')));
     assert.equal((await call('/api/data/store', 'PUT', { conversations: [{ id: 'example', messages: [] }] })).status, 204);
     assert.equal((await call('/api/data/preferences', 'PUT', { name: 'Example' })).status, 200);
     assert.equal((await call('/api/skills', 'POST', { name: 'Example', content: 'Test instructions.' })).status, 200);
