@@ -157,8 +157,11 @@ function renderDiagnosticTimings(entries, traceId) {
   if (!id) { output.textContent = 'Enable logging, save, and send a prompt to measure the delay.'; return; }
   const trace = entries.filter(entry => entry.trace_id === id);
   const stages = [
+    ['store.wait.started', 'Saving started'], ['store.wait.finished', 'Saving finished'],
     ['chat.request.dispatch', 'Request dispatched'], ['provider.prepare.finished', 'Provider ready'],
+    ['retrieval.prepare.finished', 'Chat retrieval ready'],
     ['provider.request', 'Upstream request'], ['provider.headers', 'Upstream headers'],
+    ['provider.stalled', 'Upstream stalled'], ['provider.error', 'Upstream error'],
     ['provider.first_byte', 'Upstream first byte'], ['server.first_reasoning_token', 'Server first reasoning'],
     ['server.first_content_token', 'Server first content'], ['browser.first_reasoning_token', 'Browser first reasoning'],
     ['browser.first_content_token', 'Browser first content'],

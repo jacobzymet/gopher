@@ -270,6 +270,7 @@ fn timing_event(event: &str) -> bool {
         || event.starts_with("cancel.wait.")
         || event.starts_with("store.wait.")
         || event.starts_with("provider.prepare.")
+        || event.starts_with("retrieval.prepare.")
         || event.starts_with("server.first_")
         || event.starts_with("browser.first_")
         || matches!(
@@ -280,6 +281,8 @@ fn timing_event(event: &str) -> bool {
                 | "provider.request"
                 | "provider.headers"
                 | "provider.first_byte"
+                | "provider.stalled"
+                | "provider.error"
                 | "stream.finished"
                 | "stream.cancelled"
         )

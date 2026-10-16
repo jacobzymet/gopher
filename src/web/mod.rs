@@ -1062,7 +1062,9 @@ async fn chat_completions(
         if request.skills.chat_retrieval
             && let Some(id) = conversation_id.as_deref()
         {
+            crate::diagnostics::record("retrieval.prepare.started", || serde_json::json!({}));
             request.skills.chat_history = agent::chats::ChatHistory::open(app.clone(), id);
+            crate::diagnostics::record("retrieval.prepare.finished", || serde_json::json!({}));
         }
         request
     });

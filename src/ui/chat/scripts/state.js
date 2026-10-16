@@ -1238,6 +1238,7 @@ let saveSettingsTimer = null;
 let settingsWriteChain = Promise.resolve();
 let storeWriteChain = Promise.resolve();
 let pendingStoreWrite = null;
+let activeStoreWrite = null;
 let storeWriteRunning = false;
 let storageWriteEpoch = 0;
 let persistenceWarningAt = 0;
@@ -1255,8 +1256,7 @@ function reportPersistenceFailure(path, error) {
  * far past the browser's 64 KiB keepalive quota, and over-quota requests are
  * rejected before they ever reach the server.
  */
-async function putJsonWithRetry(path, payload, { attempts = 3, valid = () => true, timeoutMs = 15000 } = {}) {
-  const body = JSON.stringify(payload);
+async function putJsonWithRetry(path, payload, { attempts = 3, valid = () => true, timeoutMs = 15000, body = JSON.stringify(payload) } = {}) {
   let lastError = null;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     if (!valid()) return false;
@@ -1381,18 +1381,28 @@ function requireUnlockedData() {
 
 function enqueueStoreWrite(snapshot) {
   const epoch = storageWriteEpoch;
+  // Capture immutable bytes now: queued snapshots otherwise share live messages.
+  const body = JSON.stringify(snapshot);
   storeWriteChain = new Promise((resolve) => {
-    if (pendingStoreWrite?.epoch === epoch) {
+    if (!pendingStoreWrite && activeStoreWrite?.epoch === epoch && activeStoreWrite.body === body) {
+      // Dispatch and retrieval setup often save the exact same chat snapshot.
+      activeStoreWrite.waiters.push(resolve);
+    } else if (pendingStoreWrite?.epoch === epoch) {
       // Only the latest complete snapshot matters. Resolve superseded callers
       // when that replacement is durable, including the pre-send retrieval wait.
-      pendingStoreWrite.snapshot = snapshot;
+      pendingStoreWrite.body = body;
       pendingStoreWrite.waiters.push(resolve);
     } else {
       pendingStoreWrite?.waiters.forEach((done) => done(false));
-      pendingStoreWrite = { snapshot, epoch, waiters: [resolve] };
+      pendingStoreWrite = { body, epoch, waiters: [resolve] };
     }
   });
-  if (!storeWriteRunning) void drainStoreWrites();
+  if (!storeWriteRunning) {
+    storeWriteRunning = true;
+    // Queue insertion, removal, and message dispatch share one synchronous turn.
+    // Persist its final snapshot instead of starting an obsolete write midway.
+    queueMicrotask(() => { void drainStoreWrites(); });
+  }
   return storeWriteChain;
 }
 
@@ -1402,17 +1412,21 @@ async function drainStoreWrites() {
     while (pendingStoreWrite) {
       const write = pendingStoreWrite;
       pendingStoreWrite = null;
+      activeStoreWrite = write;
       let saved = false;
       try {
-        saved = await putJsonWithRetry('/api/data/store', write.snapshot, {
+        saved = await putJsonWithRetry('/api/data/store', null, {
+          body: write.body,
           valid: () => write.epoch === storageWriteEpoch && !diskEncryptionLocked(),
         });
       } catch (error) {
         reportPersistenceFailure('/api/data/store', error);
       }
+      activeStoreWrite = null;
       write.waiters.forEach((done) => done(saved));
     }
   } finally {
+    activeStoreWrite = null;
     storeWriteRunning = false;
   }
 }

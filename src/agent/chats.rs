@@ -26,14 +26,7 @@ impl ChatHistory {
             if !retrieval_enabled(&guard.load_chat_preferences().ok()?) {
                 return None;
             }
-            let store = guard.load_chat_store().ok()?;
-            let profile_id = if store.get("profiles").is_some() {
-                Some(store.get("activeProfileId")?.as_str()?.to_owned())
-            } else {
-                None
-            };
-            scope(&store, profile_id.as_deref(), conversation_id)?;
-            profile_id
+            guard.chat_history_profile(conversation_id)?
         };
         Some(Arc::new(Self {
             app,

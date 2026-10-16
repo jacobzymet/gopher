@@ -958,8 +958,10 @@ async fn run_agent_loop(
             }
         } else if !pending_list.is_empty() {
             format!("Required: {}", pending_list.join(", "))
+        } else if stall_retries > 0 {
+            "Retrying model connection…".to_string()
         } else if tool_rounds == 0 && empty_retries == 0 {
-            "Processing…".to_string()
+            "Waiting for model…".to_string()
         } else {
             "Continuing…".to_string()
         };

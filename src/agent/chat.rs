@@ -194,7 +194,13 @@ pub(crate) async fn open_llm_sse(
 
     let response = timeout(STREAM_STALL_TIMEOUT, request.send())
         .await
-        .map_err(|_| StreamFail::Stalled)?
+        .map_err(|_| {
+            crate::diagnostics::record(
+                "provider.stalled",
+                || serde_json::json!({"stage": "headers"}),
+            );
+            StreamFail::Stalled
+        })?
         .map_err(|error| StreamFail::Other(error.to_string()))?;
     crate::diagnostics::record("provider.headers", || {
         serde_json::json!({

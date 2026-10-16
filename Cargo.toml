@@ -76,3 +76,11 @@ glib = { path = "vendor/glib" }
 lto = "thin"
 codegen-units = 1
 strip = true
+
+# Local encrypted archives and diagnostics must stay responsive in cargo run.
+# Keep debug symbols/checks, but optimize the serialization and crypto loops too.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 2

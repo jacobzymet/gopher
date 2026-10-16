@@ -22,6 +22,43 @@ pub type WarmTarget = (
     bool,
 );
 
+/// Only opaque scope IDs are cached; retrieval still reloads messages per tool call.
+#[derive(Debug)]
+struct ChatScopeIndex {
+    stamp: (u64, std::time::SystemTime),
+    profile_id: Option<String>,
+    conversation_ids: std::collections::HashSet<String>,
+}
+
+impl ChatScopeIndex {
+    fn stamp(root: &std::path::Path) -> Option<(u64, std::time::SystemTime)> {
+        let meta = std::fs::symlink_metadata(store::chats_path(root)).ok()?;
+        Some((meta.len(), meta.modified().ok()?))
+    }
+
+    fn new(root: &std::path::Path, value: &serde_json::Value) -> Option<Self> {
+        let (profile_id, profile) = if let Some(profiles) = value["profiles"].as_array() {
+            let id = value["activeProfileId"].as_str()?;
+            (
+                Some(id.to_owned()),
+                profiles.iter().find(|p| p["id"].as_str() == Some(id))?,
+            )
+        } else {
+            (None, value)
+        };
+        Some(Self {
+            stamp: Self::stamp(root).unwrap_or((0, std::time::UNIX_EPOCH)),
+            profile_id,
+            conversation_ids: profile["conversations"]
+                .as_array()?
+                .iter()
+                .filter(|chat| chat["incognito"].as_bool() != Some(true))
+                .filter_map(|chat| chat["id"].as_str().map(str::to_owned))
+                .collect(),
+        })
+    }
+}
+
 #[derive(Debug)]
 pub struct App {
     pub config: Config,
@@ -34,6 +71,7 @@ pub struct App {
     diagnostics_io: std::sync::Arc<std::sync::Mutex<()>>,
     /// Session key for disk encryption at rest. Cleared on lock / process exit.
     disk_key: Option<crypto::DiskKey>,
+    chat_scope_index: std::sync::Mutex<Option<ChatScopeIndex>>,
     /// Prevent concurrent processes from interleaving protected-data writes.
     _data_lock: crate::secure_fs::DataLock,
 }
@@ -66,6 +104,7 @@ impl App {
             diagnostics: std::sync::Arc::new(crate::diagnostics::Diagnostics::default()),
             diagnostics_io: std::sync::Arc::new(std::sync::Mutex::new(())),
             disk_key: None,
+            chat_scope_index: std::sync::Mutex::new(None),
             _data_lock: data_lock,
         };
         // Also sanitizes plaintext credentials left by older provider save paths.
@@ -692,11 +731,49 @@ impl App {
     }
 
     pub fn load_chat_store(&self) -> Result<serde_json::Value, String> {
-        store::load_chats(&self.data_dir(), self.disk_key()).map_err(Self::map_store_err)
+        let root = self.data_dir();
+        let value = store::load_chats(&root, self.disk_key()).map_err(Self::map_store_err)?;
+        *self
+            .chat_scope_index
+            .lock()
+            .map_err(|_| "Chat scope lock poisoned")? = ChatScopeIndex::new(&root, &value);
+        Ok(value)
     }
 
     pub fn save_chat_store(&self, value: serde_json::Value) -> Result<(), String> {
-        store::save_chats(&self.data_dir(), value, self.disk_key()).map_err(Self::map_store_err)
+        let root = self.data_dir();
+        let mut index = ChatScopeIndex::new(&root, &value);
+        store::save_chats(&root, value, self.disk_key()).map_err(Self::map_store_err)?;
+        if let Some(index) = index.as_mut() {
+            index.stamp = ChatScopeIndex::stamp(&root).ok_or("Could not inspect saved chats")?;
+        }
+        *self
+            .chat_scope_index
+            .lock()
+            .map_err(|_| "Chat scope lock poisoned")? = index;
+        Ok(())
+    }
+
+    pub(crate) fn chat_history_profile(&self, conversation_id: &str) -> Option<Option<String>> {
+        if self.encryption_enabled() && !self.encryption_unlocked() {
+            return None;
+        }
+        let stamp = ChatScopeIndex::stamp(&self.data_dir())?;
+        let stale = self
+            .chat_scope_index
+            .lock()
+            .ok()?
+            .as_ref()
+            .is_none_or(|index| index.stamp != stamp);
+        if stale {
+            self.load_chat_store().ok()?;
+        }
+        let index = self.chat_scope_index.lock().ok()?;
+        let index = index.as_ref()?;
+        index
+            .conversation_ids
+            .contains(conversation_id)
+            .then(|| index.profile_id.clone())
     }
 
     pub fn load_chat_preferences(&self) -> Result<serde_json::Value, String> {
@@ -929,6 +1006,10 @@ impl App {
     }
 
     pub fn lock_disk_encryption(&mut self) {
+        *self
+            .chat_scope_index
+            .get_mut()
+            .unwrap_or_else(|e| e.into_inner()) = None;
         let _ = self.flush_diagnostics();
         self.diagnostics.suspend();
         self.disk_key = None; // DiskKey zeroizes on drop
@@ -1046,6 +1127,10 @@ impl App {
         snapshot: Snapshot,
         key: crypto::DiskKey,
     ) -> Result<(), String> {
+        *self
+            .chat_scope_index
+            .get_mut()
+            .unwrap_or_else(|e| e.into_inner()) = None;
         let diagnostics_io = self.diagnostics_io.clone();
         let _write = diagnostics_io
             .lock()
@@ -1183,6 +1268,48 @@ mod tests {
         let saved = std::fs::read_to_string(config_path).unwrap();
         assert!(!saved.contains("browser"));
         assert!(saved.contains("disk") || !saved.contains("storage"));
+    }
+
+    #[test]
+    fn retrieval_scope_index_tracks_committed_saves_external_changes_and_lock() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut app = test_app(temp.path());
+        let store = serde_json::json!({"activeProfileId":"work", "profiles":[
+            {"id":"work", "conversations":[{"id":"current"}, {"id":"ghost", "incognito":true}]},
+            {"id":"personal", "conversations":[{"id":"private"}]}
+        ]});
+        app.save_chat_store(store.clone()).unwrap();
+        assert!(app.chat_scope_index.lock().unwrap().is_some());
+        assert_eq!(
+            app.chat_history_profile("current"),
+            Some(Some("work".into()))
+        );
+        assert_eq!(app.chat_history_profile("ghost"), None);
+        assert_eq!(app.chat_history_profile("private"), None);
+
+        assert!(app.save_chat_store(serde_json::json!(false)).is_err());
+        assert_eq!(
+            app.chat_history_profile("current"),
+            Some(Some("work".into()))
+        );
+
+        // A filesystem change invalidates the index before binding a new turn.
+        let mut changed = store.clone();
+        changed["activeProfileId"] = serde_json::json!("personal");
+        store::save_chats(temp.path(), changed, None).unwrap();
+        assert_eq!(app.chat_history_profile("current"), None);
+        assert_eq!(
+            app.chat_history_profile("private"),
+            Some(Some("personal".into()))
+        );
+
+        app.enable_disk_encryption(TEST_PASSPHRASE, TEST_PASSPHRASE)
+            .unwrap();
+        app.load_chat_store().unwrap();
+        assert!(app.chat_scope_index.lock().unwrap().is_some());
+        app.lock_disk_encryption();
+        assert!(app.chat_scope_index.lock().unwrap().is_none());
+        assert_eq!(app.chat_history_profile("private"), None);
     }
 
     #[test]
