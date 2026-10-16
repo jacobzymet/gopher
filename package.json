@@ -11,7 +11,7 @@
   "scripts": {
     "dev": "npm run build && tsx watch server/index.ts --browser",
     "start": "node dist/server/index.js",
-    "predesktop": "node node_modules/electron/install.js",
+    "predesktop": "npm run build && node node_modules/electron/install.js",
     "desktop": "electron .",
     "build": "tsx scripts/build.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit",
