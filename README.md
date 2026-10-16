@@ -39,6 +39,14 @@ The default URL is `http://gopher.localhost:3930`. `http://127.0.0.1:3930` also 
 
 The lockfile pins dependencies and explicitly approves native dependency installation scripts. `npm run desktop` installs Electron's binary when needed; when launching the Electron CLI directly, first run `node node_modules/electron/install.js`. `fs-ext` must compile on Unix for exclusive data locks, even though npm classifies it as optional. `node-pty` also compiles when no prebuilt binary matches your platform and Node.js version; Windows then requires Python 3 and Visual Studio C++ Build Tools.
 
+Linux desktop sessions require Chromium's namespace sandbox. On Ubuntu 24.04 or
+later with restricted unprivileged user namespaces, an administrator must permit
+`userns` for the installed Electron executable through an AppArmor profile. See
+[Ubuntu's executable-specific profile guidance](https://documentation.ubuntu.com/release-notes/24.04/#unprivileged-user-namespace-restrictions).
+The executable is `node_modules/electron/dist/electron` inside the source checkout
+or active release directory; update the profile when its path changes. Production
+launches keep sandboxing enabled.
+
 | Option | Behavior |
 | --- | --- |
 | `--browser` | Open the default browser |

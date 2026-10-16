@@ -60,11 +60,14 @@ export interface CommandResult { session_id: string; command: string; cwd:string
 export class TerminalManager {
   private terminals = new Map<string, LiveTerminal>();
   private commands = new Map<string, CommandSession>();
+  private lifecycleEpoch = 0;
   constructor(private options:{idleLifetimeMs?:number}={}){}
   async open(workspace: string, cols?: number, rows?: number): Promise<{ok: boolean; id: string; cwd: string; title: string}> {
+    const epoch = this.lifecycleEpoch;
     if (this.terminals.size >= 16) throw new Error('Close an existing terminal before opening another');
     const ws = await Workspace.open(workspace); const spec = shell(); const { spawn: spawnPty } = await import('node-pty');
     await ensureDarwinPtyHelpers();
+    if (epoch !== this.lifecycleEpoch) throw new Error('Terminal opening was cancelled because the session changed.');
     const pty = spawnPty(spec.file, spec.args, { name: 'xterm-256color', cols: size(cols, 100), rows: size(rows, 28), cwd: ws.root, env: { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' } as Record<string, string>, useConpty: true });
     const id = `terminal_${randomUUID()}`; const title = spec.file.split(/[\\/]/).at(-1) || 'Terminal'; const terminal: LiveTerminal = { id, cwd: ws.root, title, pty, replay: '', sockets: new Set(), exited: false }; this.terminals.set(id, terminal);
     pty.onData(data => { terminal.replay = (terminal.replay + data).slice(-MAX_OUTPUT); for (const socket of terminal.sockets) if (socket.readyState === 1) socket.send(Buffer.from(data)); });
@@ -163,6 +166,7 @@ export class TerminalManager {
   }
   async closeOwner(owner: string): Promise<void> { await Promise.all([...this.commands.values()].filter(session => session.owner === owner).map(session => this.kill(session))); }
   async closeAll(): Promise<void> {
+    this.lifecycleEpoch++;
     const sessions = [...this.commands.values()];
     const results = await Promise.allSettled([...this.terminals.keys()].map(id => this.close(id)).concat(sessions.map(async session => { clearTimeout(session.expiry); await this.kill(session); this.commands.delete(session.id); })));
     const failures = results.filter(result => result.status === 'rejected');
