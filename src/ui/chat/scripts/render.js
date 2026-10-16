@@ -2830,7 +2830,10 @@ function createConvoItem(convo, { nested = false } = {}) {
   item.className = 'convo-item' + (convo.id === activeId && mainView === 'chat' ? ' is-active' : '');
   if (convo.incognito) item.classList.add('is-incognito');
   if (convo.pinned) item.classList.add('is-pinned');
-  if (notificationIsUnread(convo)) item.classList.add('has-unread');
+  if (notificationIsUnread(convo)) {
+    item.classList.add('has-unread');
+    item.setAttribute('aria-description', 'Unread response');
+  }
   item.dataset.convoId = convo.id;
   if (conversationSelectionMode) {
     const selected = selectedConversationIds.has(convo.id);
@@ -2873,12 +2876,6 @@ function createConvoItem(convo, { nested = false } = {}) {
         '<path d="M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z"/>' +
       '</svg>';
     item.appendChild(mark);
-  }
-  if (notificationIsUnread(convo)) {
-    const unread = document.createElement('span');
-    unread.className = 'convo-unread-dot';
-    unread.setAttribute('aria-label', 'Unread response');
-    item.appendChild(unread);
   }
   const title = document.createElement('span');
   title.className = 'convo-title';
