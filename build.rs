@@ -81,6 +81,7 @@ const CHAT_STYLE_FILES: &[&str] = &[
     "src/ui/chat/styles/bots.css",
     "src/ui/chat/styles/terminal.css",
     "src/ui/chat/styles/diagnostics.css",
+    "src/ui/chat/styles/workspace.css",
 ];
 
 const CHAT_SCRIPT_FILES: &[&str] = &[
@@ -91,6 +92,7 @@ const CHAT_SCRIPT_FILES: &[&str] = &[
     "src/ui/chat/scripts/render.js",
     "src/ui/chat/scripts/providers.js",
     "src/ui/chat/scripts/bots.js",
+    "src/ui/chat/scripts/workspace.js",
     "src/ui/chat/scripts/runtime.js",
     "src/ui/chat/scripts/terminal.js",
 ];

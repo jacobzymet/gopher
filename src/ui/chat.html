@@ -151,6 +151,9 @@
             </button>
           </div>
           <div class="topbar-icon-actions">
+            <button type="button" class="sidebar-account-icon" id="btnFindInChat" aria-label="Find in this chat" aria-expanded="false" aria-controls="threadFind" title="Find in this chat">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg>
+            </button>
             <button type="button" class="sidebar-account-icon btn-privacy-mode" id="btnPrivacyMode" aria-label="Turn on privacy mode" aria-pressed="false" title="Turn on privacy mode">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 10.7a2 2 0 0 0 2.7 2.7"/><path d="M9.9 4.2A10.9 10.9 0 0 1 12 4c5.5 0 9.5 5.2 10 8-.2 1.1-1 2.7-2.3 4.1"/><path d="M6.2 6.2C4.2 7.7 2.6 10.1 2 12c.5 2.8 4.5 8 10 8 1.5 0 2.9-.4 4.1-1.1"/></svg>
             </button>
@@ -166,6 +169,18 @@
           </div>
         </div>
       </header>
+      <div class="thread-find is-hidden" id="threadFind" role="search" aria-label="Find in this chat">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg>
+        <input type="search" id="threadFindInput" placeholder="Find in this chat…" aria-label="Find in this chat" aria-describedby="threadFindCount" autocomplete="off" spellcheck="false">
+        <span class="thread-find-count" id="threadFindCount" role="status" aria-live="polite" aria-atomic="true"></span>
+        <button type="button" class="btn btn-ghost" id="btnFindPrevious" aria-label="Previous match" title="Previous match (Shift+Enter)" disabled>↑</button>
+        <button type="button" class="btn btn-ghost" id="btnFindNext" aria-label="Next match" title="Next match (Enter)" disabled>↓</button>
+        <button type="button" class="btn btn-ghost" id="btnFindClose" aria-label="Close find" title="Close (Esc)">×</button>
+      </div>
+      <div class="workspace-connection is-hidden" id="workspaceConnection" role="status" aria-live="polite">
+        <span>Connection to Gopher lost. Your unsent text is still here.</span>
+        <button type="button" class="btn btn-outline" id="btnRetryConnection">Reconnect</button>
+      </div>
       <div class="local-data-error is-hidden" id="localDataError" role="alert">
         <p><strong>Saved chats and settings could not be loaded.</strong> <span id="localDataErrorDetail"></span></p>
         <button type="button" class="btn btn-outline" id="btnRetryLocalData">Retry loading</button>
@@ -220,6 +235,7 @@
                     <div class="composer-attachments is-hidden" id="composerAttachments" aria-live="polite"></div>
                     <textarea
                       id="composerInput"
+                      aria-label="Message"
                       class="composer-textarea"
                       placeholder="How can I help you today? Type @ to mention"
                       rows="1"
@@ -1182,8 +1198,8 @@
                   <button type="button" class="btn btn-danger-ghost" id="btnClearProjects">Clear projects</button>
                 </div>
                 <div class="settings-data-card">
-                  <strong>Clear chats, loops, and projects</strong>
-                  <p>Deletes all chats, loops, and projects from the active profile. It does not change other profiles.</p>
+                  <strong>Clear chats, loops, projects, and drafts</strong>
+                  <p>Deletes all chats, loops, projects, and unsent drafts from the active profile. It does not change other profiles.</p>
                   <button type="button" class="btn btn-danger-ghost" id="btnClearAllData">Clear everything</button>
                 </div>
               </div>
@@ -1237,15 +1253,21 @@
     </div>
   </div>
 
-  <div id="searchModal" class="dialog-backdrop is-hidden" role="dialog" aria-modal="true" aria-label="Search chats and projects">
+  <div id="searchModal" class="dialog-backdrop is-hidden" role="dialog" aria-modal="true" aria-label="Search and quick actions">
     <div class="dialog search-dialog">
       <div class="search-dialog-head">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-        <input class="search-dialog-input" id="searchModalInput" type="search" aria-label="Search chats and projects" aria-describedby="searchModalHint" placeholder="Search chats and projects…" autocomplete="off" spellcheck="false">
+        <input class="search-dialog-input" id="searchModalInput" type="search" role="combobox" aria-expanded="true" aria-autocomplete="list" aria-controls="searchModalResults" aria-label="Search chats, projects, and actions" aria-describedby="searchModalHint" placeholder="Search everything, or > for actions…" autocomplete="off" spellcheck="false">
         <span class="search-dialog-kbd" aria-hidden="true">Esc</span>
       </div>
-      <div class="search-dialog-results" id="searchModalResults"></div>
-      <p class="search-dialog-hint" id="searchModalHint">↑ ↓ to navigate · Enter to open · Esc to close</p>
+      <div class="search-filters" role="group" aria-label="Search scope">
+        <button type="button" class="search-filter" data-search-scope="all" aria-pressed="true">Everything</button>
+        <button type="button" class="search-filter" data-search-scope="chats" aria-pressed="false">Chats</button>
+        <button type="button" class="search-filter" data-search-scope="projects" aria-pressed="false">Projects</button>
+        <button type="button" class="search-filter" data-search-scope="actions" aria-pressed="false">Actions</button>
+      </div>
+      <div class="search-dialog-results" id="searchModalResults" role="listbox" aria-label="Search results"></div>
+      <p class="search-dialog-hint" id="searchModalHint"><span>↑ ↓ navigate · Enter open · Esc close</span><span>Use <kbd>"quotes"</kbd> for a phrase</span></p>
     </div>
   </div>
 

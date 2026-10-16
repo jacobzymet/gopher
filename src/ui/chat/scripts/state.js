@@ -463,6 +463,7 @@ function backdropFocusableElements(el) {
 }
 
 function handleBackdropKeydown(event) {
+  if (event.isComposing || event.keyCode === 229) return;
   const modal = backdropFocusStack.at(-1)?.el;
   if (!modal || event.defaultPrevented) return;
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k'
@@ -1091,6 +1092,8 @@ function normalizeProfile(raw, { contextPresent = null } = {}) {
       Array.isArray(source.conversations) ? source.conversations.map(normalizeConversation) : []
     ),
     bots: Array.isArray(source.bots) ? source.bots.map(normalizeBot) : [],
+    composerDrafts: source.composerDrafts && typeof source.composerDrafts === 'object'
+      && !Array.isArray(source.composerDrafts) ? { ...source.composerDrafts } : {},
     _contextPresent: hasContext,
   };
 }
@@ -1154,6 +1157,7 @@ function profileStoreRecord(profile) {
       .filter((convo) => !convo.incognito)
       .map(conversationStoreRecord),
     bots: active ? bots : profile.bots,
+    composerDrafts: typeof composerDraftsForStore === 'function' ? composerDraftsForStore(profile) : {},
   };
 }
 
@@ -1346,6 +1350,7 @@ function persistOutboundQueues() {
 }
 
 function storePayload() {
+  if (typeof captureComposerDraft === 'function') captureComposerDraft();
   syncActiveProfileFromMemory();
   return {
     version: 3,
@@ -1549,6 +1554,7 @@ function switchProfile(profileId) {
     saveSettings(readSettingsForm(), { immediate: true });
   }
 
+  if (typeof leaveComposerDraft === 'function') leaveComposerDraft();
   syncActiveProfileFromMemory();
   activeProfileId = target.id;
   bindActiveProfile(target);
@@ -1578,6 +1584,14 @@ function switchProfile(profileId) {
 /** Best-effort flush when a tab is backgrounded; normal user actions save earlier. */
 function flushPendingWrites() {
   if (!storageReady || diskEncryptionLocked()) return;
+  if (typeof captureComposerDraft === 'function') {
+    captureComposerDraft();
+    if (composerDraftTimer) {
+      clearTimeout(composerDraftTimer);
+      composerDraftTimer = null;
+      saveStore({ immediate: false });
+    }
+  }
   if (saveStoreTimer) {
     clearTimeout(saveStoreTimer);
     saveStoreTimer = null;
@@ -2467,6 +2481,7 @@ function refreshUiFromMemoryStore() {
 }
 
 function clearMemoryAfterLock() {
+  if (typeof clearComposerDraftMemory === 'function') clearComposerDraftMemory();
   if (typeof clearDiagnosticsMemory === 'function') clearDiagnosticsMemory();
   storageReady = false;
   if (typeof cancelOcrWorkers === 'function') cancelOcrWorkers();

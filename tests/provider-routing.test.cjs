@@ -51,7 +51,7 @@ test('chat and title requests use the selected provider even when another provid
     page.on('pageerror', error => errors.push(error.message));
     await page.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
     await page.goto(origin);
-    await page.waitForFunction(() => storageReady && !latestState.network.remote_catalog_pending && latestState.network.remote_models.some(model => model.provider_id === 'chosen' && model.ready));
+    await page.waitForFunction(() => storageReady && latestState?.network && !latestState.network.remote_catalog_pending && latestState.network.remote_models.some(model => model.provider_id === 'chosen' && model.ready));
     await page.evaluate(async () => {
       const chosen = latestState.network.remote_models.find(model => model.provider_id === 'chosen');
       await saveSettings({ ...settings, selectedChatModel: chosen.id, chatRetrieval: false }, { immediate: true });

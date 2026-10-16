@@ -170,7 +170,9 @@ function updateSendEnabled() {
   const submittingEdit = editingLive && editingRow.dataset.editSubmitting === 'true';
   const botsDraft = typeof isBotsSurface === 'function' && isBotsSurface() && !activeId;
   const modelReady = selectedModelIsReady();
+  const connectionReady = typeof workspaceDisconnected === 'undefined' || !workspaceDisconnected;
   const canCompose = storageReady && !diskEncryptionLocked()
+    && connectionReady
     && serverReady
     && modelReady
     && !botsDraft
@@ -185,8 +187,9 @@ function updateSendEnabled() {
     : editingLive ? 'Send edit and restart response'
     : isConvoBusy(activeId) ? 'Queue message' : 'Send message';
   btnSend.classList.toggle('is-queueing', !editingLive && isConvoBusy(activeId));
-  btnSend.title = modelReady ? sendLabel : waitingLabel;
-  btnSend.setAttribute('aria-label', modelReady ? sendLabel : waitingLabel);
+  const label = !connectionReady ? 'Waiting for Gopher to reconnect' : modelReady ? sendLabel : waitingLabel;
+  btnSend.title = label;
+  btnSend.setAttribute('aria-label', label);
   if (btnBranch) {
     const botsConvo = typeof isBotsConvo === 'function'
       && isBotsConvo(conversations.find((item) => item.id === activeId));
@@ -1092,6 +1095,7 @@ function updateInferenceState(data) {
   if (serverReady && typeof resumePendingConversationTitles === 'function') {
     resumePendingConversationTitles();
   }
+  if (typeof renderWelcomeTools === 'function') renderWelcomeTools();
 }
 
 let encryptionStateSync = null;
@@ -1143,14 +1147,18 @@ async function pollState() {
   try {
     const requestedAt = performance.now();
     const response = await fetch('/api/state', { signal: controller.signal });
-    if (!response.ok) return;
+    if (!response.ok) {
+      if (epoch === storageWriteEpoch && typeof noteWorkspaceConnection === 'function') noteWorkspaceConnection(false);
+      return;
+    }
     const data = await response.json();
     if (epoch !== storageWriteEpoch) return;
+    if (typeof noteWorkspaceConnection === 'function') noteWorkspaceConnection(true);
     syncExternalEncryptionState(data);
     updateInferenceState(data);
     await resumeLiveTurns(data.live_turns, requestedAt);
   } catch {
-    // control server briefly unreachable — retry on the next tick
+    if (epoch === storageWriteEpoch && typeof noteWorkspaceConnection === 'function') noteWorkspaceConnection(false);
   } finally {
     clearTimeout(timer);
     statePollInFlight = false;
@@ -1278,6 +1286,7 @@ async function sendMessage({ branch = false } = {}) {
   const storedAttachments = storedAttachmentsFromPrepared(prepared);
   const apiText = buildUserApiContent(text, prepared, replyQuote, replyTarget?.speakerHandle);
 
+  if ((branch || source || !isBotsSurface()) && typeof discardSentComposerDraft === 'function') discardSentComposerDraft();
   let convo = branch
     ? null
     : conversations.find((item) => item.id === activeId);
@@ -1346,6 +1355,8 @@ async function sendMessage({ branch = false } = {}) {
   renderComposerMentions();
   renderComposerModes();
   closeMentionMenu();
+
+  if (typeof currentComposerDraftContext === 'function') composerDraftContext = currentComposerDraftContext();
 
   const outbound = {
     id: newId('q'),
@@ -3807,12 +3818,18 @@ sidebarMobileMq.addEventListener?.('change', () => {
 const searchModal = document.getElementById('searchModal');
 const searchModalInput = document.getElementById('searchModalInput');
 const searchModalResults = document.getElementById('searchModalResults');
+let searchScope = 'all';
+let searchRenderTimer = null;
 let searchActiveIndex = 0;
 let searchResultItems = [];
 
 function closeSearchModal() {
   if (!searchModal) return;
+  clearTimeout(searchRenderTimer);
+  searchRenderTimer = null;
   closeBackdrop(searchModal);
+  searchModalResults?.replaceChildren();
+  searchModalInput?.removeAttribute('aria-activedescendant');
   if (searchModalInput) searchModalInput.value = '';
   searchActiveIndex = 0;
   searchResultItems = [];
@@ -3820,126 +3837,135 @@ function closeSearchModal() {
 
 function openSearchModal() {
   if (!searchModal || !requireUnlockedData()) return;
+  searchModal.classList.toggle('privacy-mode', isPrivacyModeOn());
   closeSettings();
   openBackdrop(searchModal);
   if (searchModalInput) {
     searchModalInput.value = '';
     queueMicrotask(() => searchModalInput.focus());
   }
+  searchScope = 'all';
+  document.querySelectorAll('[data-search-scope]').forEach((button) => {
+    button.setAttribute('aria-pressed', button.dataset.searchScope === searchScope ? 'true' : 'false');
+  });
   renderSearchResults('');
 }
 
 function renderSearchResults(query) {
   if (!searchModalResults) return;
-  const q = String(query || '').trim().toLowerCase();
-  const matchedProjects = (typeof isBotsSurface === 'function' && isBotsSurface())
-    ? []
-    : projects.filter((project) => {
-    if (!q) return true;
-    const hay = [project.name, project.instructions, project.memory]
-      .filter(Boolean)
-      .join('\n')
-      .toLowerCase();
-    return hay.includes(q);
-  });
-  const pool = typeof conversationsOnSurface === 'function' ? conversationsOnSurface() : conversations;
-  const matchedConvos = bySidebarOrder(pool).filter((convo) => {
-    if (!q) return true;
-    const projectName = getProject(convo.projectId)?.name || '';
-    const hay = [
-      convo.title,
-      projectName,
-      ...(convo.messages || []).slice(0, 6).map((m) => m.content || ''),
-    ]
-      .join('\n')
-      .toLowerCase();
-    return hay.includes(q);
-  });
-
-  searchModalResults.innerHTML = '';
+  const raw = String(query || '').trim();
+  const actionsOnly = raw.startsWith('>') || searchScope === 'actions';
+  const q = raw.replace(/^>\s*/, '');
+  const terms = searchTerms(q);
+  const matches = actionsOnly ? [] : searchWorkspace(q, searchScope);
+  const actions = (actionsOnly || (!q && searchScope === 'all'))
+    ? workspaceActions().filter((action) => terms.every((term) =>
+      (action.title + ' ' + action.meta).toLocaleLowerCase().includes(term))) : [];
+  searchModalResults.replaceChildren();
   searchResultItems = [];
-  if (matchedProjects.length === 0 && matchedConvos.length === 0) {
+  searchModalInput.removeAttribute('aria-activedescendant');
+  searchActiveIndex = 0;
+  if (!matches.length && !actions.length) {
     const empty = document.createElement('p');
     empty.className = 'search-dialog-empty';
-    empty.textContent = q
-      ? 'No matches. Try a different name or phrase.'
-      : 'No chats or projects yet. Start a chat to find it here.';
+    empty.textContent = q ? 'No matches. Try fewer words or a different phrase.' : 'Your saved chats and projects will appear here.';
     empty.setAttribute('role', 'status');
     searchModalResults.appendChild(empty);
     return;
   }
-
-  const pushItem = (kind, title, meta, onPick) => {
+  const group = (label, detail) => {
+    const heading = document.createElement('div');
+    heading.className = 'search-dialog-group';
+    heading.setAttribute('role', 'presentation');
+    heading.textContent = label;
+    const count = document.createElement('span');
+    count.textContent = detail;
+    heading.appendChild(count);
+    searchModalResults.appendChild(heading);
+  };
+  const pushItem = (kind, title, meta, onPick, shortcut = '') => {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'search-dialog-item';
     btn.dataset.kind = kind;
-    btn.innerHTML =
-      '<span class="search-dialog-item-title"></span>' +
-      '<span class="search-dialog-item-meta"></span>';
-    btn.querySelector('.search-dialog-item-title').textContent = title;
-    btn.querySelector('.search-dialog-item-meta').textContent = meta;
-    btn.addEventListener('click', () => {
-      closeSearchModal();
-      onPick();
+    btn.id = 'workspace-result-' + searchResultItems.length;
+    btn.setAttribute('role', 'option');
+    btn.setAttribute('aria-selected', 'false');
+    btn.tabIndex = -1;
+    btn.innerHTML = '<span class="search-dialog-item-title">' + highlightedSearchHtml(title, terms) + '</span>'
+      + '<span class="search-dialog-item-meta">' + highlightedSearchHtml(meta, terms) + '</span>'
+      + '<span class="search-item-icon" aria-hidden="true">' + (kind === 'action' ? '↗' : kind === 'project' ? '▱' : '↵') + '</span>';
+    if (kind !== 'action') {
+      applyPrivacyMosaic(btn.querySelector('.search-dialog-item-title'), 'search-title:' + btn.id);
+      applyPrivacyMosaic(btn.querySelector('.search-dialog-item-meta'), 'search-meta:' + btn.id);
+    }
+    if (shortcut) btn.setAttribute('aria-keyshortcuts', shortcut.replace('Mod', modifierLabel === '⌘' ? 'Meta' : 'Control'));
+    btn.addEventListener('pointermove', () => {
+      const index = searchResultItems.indexOf(btn);
+      if (index !== searchActiveIndex) { searchActiveIndex = index; syncSearchActiveItem(false); }
     });
+    btn.addEventListener('click', () => { closeSearchModal(); onPick(); });
     searchModalResults.appendChild(btn);
     searchResultItems.push(btn);
   };
-
-  if (matchedProjects.length) {
-    const label = document.createElement('div');
-    label.className = 'search-dialog-group';
-    label.textContent = 'Projects';
-    searchModalResults.appendChild(label);
-    for (const project of matchedProjects.slice(0, 12)) {
-      const n = conversationsForProject(project.id).length;
-      pushItem(
-        'project',
-        project.name || 'Untitled project',
-        n + (n === 1 ? ' chat' : ' chats'),
-        () => openProject(project.id)
-      );
+  if (matches.length) {
+    group(q ? 'Results' : 'Recent work', matches.length > 60 ? 'Showing 60 of ' + matches.length : String(matches.length));
+    for (const result of matches.slice(0, 60)) {
+      pushItem(result.kind, result.title, result.meta, () => {
+        if (result.kind === 'project') openProject(result.id);
+        else {
+          selectConversation(result.id);
+          if (result.messageIndex != null) scrollToChatSource(result.messageIndex);
+        }
+      });
     }
   }
-  if (matchedConvos.length) {
-    const label = document.createElement('div');
-    label.className = 'search-dialog-group';
-    label.textContent = 'Chats';
-    searchModalResults.appendChild(label);
-    for (const convo of matchedConvos.slice(0, 24)) {
-      const project = getProject(convo.projectId);
-      const preview = (convo.messages || [])
-        .find((m) => m.role === 'user')
-        ?.content
-        ?.replace(/\s+/g, ' ')
-        .trim() || 'Empty chat';
-      pushItem(
-        'chat',
-        convo.title || 'New chat',
-        (project ? project.name + ' · ' : '') + preview.slice(0, 80),
-        () => selectConversation(convo.id)
-      );
-    }
+  if (actions.length) {
+    group('Quick actions', actionsOnly ? '' : 'Type > to filter actions');
+    for (const action of actions) pushItem('action', action.title,
+      action.meta + (action.shortcut ? ' · ' + shortcutLabel(action.shortcut) : ''), action.run, action.shortcut);
   }
-  searchActiveIndex = 0;
   syncSearchActiveItem();
 }
 
-function syncSearchActiveItem() {
+function syncSearchActiveItem(scroll = true) {
   searchResultItems.forEach((el, index) => {
     el.classList.toggle('is-active', index === searchActiveIndex);
+    el.setAttribute('aria-selected', index === searchActiveIndex ? 'true' : 'false');
   });
   const active = searchResultItems[searchActiveIndex];
-  if (active) active.scrollIntoView({ block: 'nearest' });
+  if (active) {
+    searchModalInput.setAttribute('aria-activedescendant', active.id);
+    if (scroll) active.scrollIntoView({ block: 'nearest' });
+  } else searchModalInput.removeAttribute('aria-activedescendant');
 }
 
 document.getElementById('btnRetryLocalData')?.addEventListener('click', () => window.location.reload());
 document.getElementById('btnSearchChats')?.addEventListener('click', openSearchModal);
 searchModalInput?.addEventListener('input', () => {
-  renderSearchResults(searchModalInput.value);
+  clearTimeout(searchRenderTimer);
+  searchRenderTimer = setTimeout(() => {
+    searchRenderTimer = null;
+    renderSearchResults(searchModalInput.value);
+  }, 100);
+});
+document.querySelectorAll('[data-search-scope]').forEach((button) => {
+  button.addEventListener('click', () => {
+    clearTimeout(searchRenderTimer);
+    searchRenderTimer = null;
+    searchScope = button.dataset.searchScope;
+    document.querySelectorAll('[data-search-scope]').forEach((item) => item.setAttribute('aria-pressed', item === button ? 'true' : 'false'));
+    renderSearchResults(searchModalInput.value);
+    searchModalInput.focus();
+  });
 });
 searchModalInput?.addEventListener('keydown', (event) => {
+  if (isComposingKey(event)) return;
+  if (searchRenderTimer && ['Enter', 'ArrowDown', 'ArrowUp'].includes(event.key)) {
+    clearTimeout(searchRenderTimer);
+    searchRenderTimer = null;
+    renderSearchResults(searchModalInput.value);
+  }
   if (event.key === 'ArrowDown') {
     event.preventDefault();
     if (!searchResultItems.length) return;
@@ -4376,6 +4402,9 @@ document.getElementById('btnUnlockModalDismiss')?.addEventListener('click', () =
 });
 document.getElementById('btnLockEncryption')?.addEventListener('click', async () => {
   try {
+    captureComposerDraft();
+    saveStore({ immediate: true });
+    await storeWriteChain;
     await postEncryption('/api/data/encryption/lock', {});
     clearMemoryAfterLock();
   } catch (error) {
@@ -4707,6 +4736,7 @@ composerInput.addEventListener('blur', () => {
   }, 120);
 });
 composerInput.addEventListener('keydown', (event) => {
+  if (event.isComposing || event.keyCode === 229) return;
   mentionInput = composerInput;
   if (handleMentionKeydown(event)) return;
 

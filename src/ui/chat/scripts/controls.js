@@ -43,7 +43,8 @@ function refreshSettingsDataSummary() {
   if (clearChats) clearChats.disabled = chatCount === 0;
   if (clearLoops) clearLoops.disabled = loopCount === 0;
   if (clearProjects) clearProjects.disabled = projectCount === 0;
-  if (clearAll) clearAll.disabled = chatCount === 0 && loopCount === 0 && projectCount === 0;
+  const hasDrafts = typeof hasComposerDrafts === 'function' && hasComposerDrafts();
+  if (clearAll) clearAll.disabled = chatCount === 0 && loopCount === 0 && projectCount === 0 && !hasDrafts;
 }
 
 const outboundStarting = new Set();
@@ -832,6 +833,7 @@ function beginQueuedMessageEdit(row) {
     }, 120);
   });
   input.addEventListener('keydown', (event) => {
+    if (event.isComposing || event.keyCode === 229) return;
     if (handleMentionKeydown(event)) return;
     if (event.key === 'Escape') {
       event.preventDefault();
@@ -1002,6 +1004,7 @@ function clearAllChats() {
   if (!confirm('Delete all ' + n + ' chat' + (n === 1 ? '' : 's') + '? This cannot be undone.')) return;
   const keep = conversations.filter((convo) => typeof isBotsConvo === 'function' && isBotsConvo(convo));
   const dropIds = new Set(chats.map((convo) => convo.id));
+  if (typeof removeComposerDrafts === 'function') removeComposerDrafts({ conversationIds: [...dropIds], surface: 'chat' });
   for (const id of dropIds) {
     abortStream(id);
     outboundQueues.delete(id);
@@ -1031,6 +1034,7 @@ function clearAllLoops() {
   const n = loops.length;
   if (!confirm('Delete all ' + n + ' loop' + (n === 1 ? '' : 's') + '? This cannot be undone.')) return;
   const dropIds = new Set(loops.map((convo) => convo.id));
+  if (typeof removeComposerDrafts === 'function') removeComposerDrafts({ conversationIds: [...dropIds], surface: 'bots' });
   for (const id of dropIds) {
     abortStream(id);
     outboundQueues.delete(id);
@@ -1059,9 +1063,11 @@ function clearAllProjects() {
   if (projects.length === 0) return;
   const n = projects.length;
   if (!confirm('Delete all ' + n + ' project' + (n === 1 ? '' : 's') + '? Chats move back to Recents.')) return;
+  if (typeof removeComposerDrafts === 'function') removeComposerDrafts({ projectIds: projects.map((project) => project.id) });
   conversations.forEach((convo) => { convo.projectId = null; });
   projects = [];
   activeProjectId = null;
+  if (!activeId && typeof restoreComposerDraft === 'function') restoreComposerDraft();
   saveStore();
   renderSidebar();
   if (mainView === 'projects') renderProjectsPage();
@@ -1075,8 +1081,10 @@ function clearAllProjects() {
 
 function clearAllChatsAndProjects() {
   if (!requireUnlockedData()) return;
-  if (conversations.length === 0 && projects.length === 0) return;
-  if (!confirm('Delete all chats, loops, and projects in this profile? This cannot be undone.')) return;
+  if (conversations.length === 0 && projects.length === 0
+      && !(typeof hasComposerDrafts === 'function' && hasComposerDrafts())) return;
+  if (!confirm('Delete all chats, loops, projects, and drafts in this profile? This cannot be undone.')) return;
+  if (typeof removeComposerDrafts === 'function') removeComposerDrafts({ all: true });
   const dropIds = new Set(conversations.map((convo) => convo.id));
   for (const id of dropIds) {
     abortStream(id);

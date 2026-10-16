@@ -77,6 +77,15 @@ The default launch opens a native desktop window and starts a loopback-only cont
 
 Default URL: `http://gopher.localhost:3930`. `/settings` redirects to **Settings → Providers**. The optional browser-control tool requires Chrome or Edge.
 
+## Everyday tools
+
+- **Ctrl+K** (⌘K on macOS) searches titles and the full text of saved chats, Loops, and projects in the current profile. Results include matching excerpts and open the relevant message. Use quotes for an exact phrase, filter by Chats or Projects, or type `>` for quick actions.
+- **Ctrl+F** (⌘F) finds text in the open conversation, including passages with inline formatting. Enter / Shift+Enter moves between matches; Escape closes the search.
+- Unsent text, capability mentions, reply quotes, and new-chat model/folder choices restore separately for each chat and project. Drafts use the same storage and encryption as chats. Ghost drafts and pending attachment files stay in memory only; files need to be reattached after reload.
+- The conversation menu offers **Export as Markdown**. Exports include messages, reply quotes, and attachment names. Tool payloads, provider configuration, and attachment bytes are excluded.
+- **Ctrl+Shift+O** (⌘⇧O) starts a chat; **Ctrl+,** (⌘,) opens Settings. The welcome screen offers prompt starters and a direct model setup action.
+- Repeated connection failures show a reconnect notice while preserving the composer. Sending resumes when Gopher is reachable again.
+
 ## Web search
 
 Configure search under **Settings → Agent Capabilities → Web search**:

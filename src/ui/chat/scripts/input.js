@@ -1387,6 +1387,7 @@ function insertMention(item) {
 }
 
 function handleMentionKeydown(event) {
+  if (event.isComposing || event.keyCode === 229) return false;
   if (!mentionState) return false;
   if (event.key === 'ArrowDown') {
     event.preventDefault();

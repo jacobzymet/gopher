@@ -2430,6 +2430,7 @@ function syncProjectChrome() {
     modelHintEl.classList.add('is-hidden');
   }
   if (typeof renderTraceMembers === 'function') renderTraceMembers();
+  if (typeof renderWelcomeTools === 'function') renderWelcomeTools();
 }
 
 function isIncognitoContext() {
@@ -2685,6 +2686,7 @@ async function bulkDeleteSelectedConversations() {
   if (!ok) return;
 
   const deleting = new Set(ids);
+  if (typeof removeComposerDrafts === 'function') removeComposerDrafts({ conversationIds: ids });
   const deletingEdit = editingQueueId
     && ids.some((id) => getOutboundQueue(id).some((item) => item.id === editingQueueId));
   ids.forEach((id) => {
@@ -2994,6 +2996,11 @@ function openConversationMenu(anchor, convo, row) {
   menu.appendChild(convoMenuButton('Rename', renameIcon, () => {
     closeConvoMenu();
     beginSidebarTitleEdit(convo, row);
+  }));
+  const exportIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M5 16v5h14v-5"/></svg>';
+  menu.appendChild(convoMenuButton('Export as Markdown', exportIcon, () => {
+    closeConvoMenu();
+    exportConversationMarkdown(convo.id);
   }));
 
   const botsConvo = typeof isBotsConvo === 'function' && isBotsConvo(convo);
@@ -3403,6 +3410,7 @@ function projectCardBlurb(project) {
 }
 
 function showProjectsView() {
+  if (typeof closeThreadFind === 'function') closeThreadFind({ restoreFocus: false });
   mainView = 'projects';
   cancelMessageEdit();
   closeConvoMenu();
@@ -3596,6 +3604,7 @@ function deleteProject(projectId) {
   const project = getProject(projectId);
   if (!project) return;
   if (!confirm('Delete project "' + project.name + '"? Chats move back to Recents.')) return;
+  if (typeof removeComposerDrafts === 'function') removeComposerDrafts({ projectIds: [projectId] });
   conversations.forEach((convo) => {
     if (convo.projectId === projectId) convo.projectId = null;
   });
@@ -3615,6 +3624,7 @@ function deleteProject(projectId) {
 function openProject(projectId, { incognito = false } = {}) {
   const project = getProject(projectId);
   if (!project) return;
+  if (typeof leaveComposerDraft === 'function') leaveComposerDraft();
   activeProjectId = projectId;
   cancelMessageEdit();
   activeId = null;
@@ -3627,6 +3637,7 @@ function openProject(projectId, { incognito = false } = {}) {
   renderSidebar();
   syncUrlFromState();
   closeMobileSidebar();
+  if (typeof restoreComposerDraft === 'function') restoreComposerDraft();
   composerInput.focus();
 }
 
@@ -4607,6 +4618,7 @@ function beginMessageEdit(row) {
     }, 120);
   });
   input.addEventListener('keydown', (event) => {
+    if (event.isComposing || event.keyCode === 229) return;
     if (handleMentionKeydown(event)) return;
     if (event.key === 'Escape') {
       event.preventDefault();
@@ -5265,6 +5277,7 @@ function renderSidebar() {
 function selectConversation(id) {
   const convo = conversations.find((item) => item.id === id);
   if (!convo) return;
+  if (typeof leaveComposerDraft === 'function') leaveComposerDraft();
   markConversationNotificationRead(convo);
   if (typeof convoSurfaceOf === 'function') {
     const surface = convoSurfaceOf(convo);
@@ -5298,6 +5311,7 @@ function selectConversation(id) {
   syncContextUsage(convo);
   syncUrlFromState();
   closeMobileSidebar();
+  if (typeof restoreComposerDraft === 'function') restoreComposerDraft();
   composerInput.focus();
   if (typeof bindTerminalToSession === 'function') bindTerminalToSession();
   if (typeof renderComposerModes === 'function') renderComposerModes();
@@ -5307,6 +5321,7 @@ function selectConversation(id) {
 
 /** Return to the draft state — no conversation object until a message is sent. */
 function startDraft({ incognito = false } = {}) {
+  if (typeof leaveComposerDraft === 'function') leaveComposerDraft();
   if (typeof isBotsSurface === 'function' && isBotsSurface()) incognito = false;
   cancelMessageEdit({ resumeQueue: false });
   clearPendingReplyQuote();
@@ -5335,6 +5350,7 @@ function startDraft({ incognito = false } = {}) {
   setTraceSidebarOpen(false);
   syncUrlFromState();
   closeMobileSidebar();
+  if (typeof restoreComposerDraft === 'function') restoreComposerDraft();
   composerInput.focus();
   if (typeof bindTerminalToSession === 'function') bindTerminalToSession();
 }
@@ -5346,6 +5362,7 @@ async function deleteConversation(id) {
     confirmLabel: 'Delete',
   });
   if (!ok) return;
+  if (typeof removeComposerDrafts === 'function') removeComposerDrafts({ conversationIds: [id] });
   abortStream(id);
   activeStreams.delete(id);
   const deletingEdit = editingQueueId
