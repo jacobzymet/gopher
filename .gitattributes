@@ -2,6 +2,7 @@
 client/chat.html -text -whitespace
 client/chat/styles/* -text -whitespace
 client/vendor/** -text -whitespace
+tests/fixtures/vendor-render-baseline.css -text -whitespace
 
 # Keep installers POSIX/PowerShell-safe across Windows checkouts.
 install-linux.sh text eol=lf

@@ -5,13 +5,16 @@ import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { resolve, dirname } from 'node:path';
 import { runInNewContext } from 'node:vm';
+import { releaseElectronExecutable } from '../desktop/runtime.js';
 
 async function desktop() {
   const entry = resolve('dist/desktop/main.cjs'); const require = createRequire(entry);
+  const relaunches: Array<{ execPath?: string; args?: string[] }> = [];
   const app = Object.assign(new EventEmitter(), {
     getAppPath: () => resolve('.'), getPath: () => resolve('output/desktop-test'),
     setPath: () => {}, requestSingleInstanceLock: () => true,
     whenReady: () => Promise.resolve(), quit: () => { quits++; },
+    relaunch: (options: { execPath?: string; args?: string[] }) => relaunches.push(options),
   });
   let quits = 0, resolveStarted!: () => void;
   const started = new Promise<void>(resolve => { resolveStarted = resolve; });
@@ -42,7 +45,7 @@ async function desktop() {
     setTimeout, clearTimeout, URL, Buffer,
   });
   await started;
-  return { app, child, sent, errors, windows, quits: () => quits };
+  return { app, child, sent, errors, windows, relaunches, quits: () => quits };
 }
 
 test('desktop opens an existing headless server and survives its startup probe exiting', { timeout: 10000 }, async () => {
@@ -70,4 +73,18 @@ test('desktop focus restores a minimized window and acknowledges that it exists'
   assert.equal(window.restored, true); assert.equal(window.shown, true); assert.equal(window.focused, true);
   assert.equal(d.sent.at(-1).value, true);
   d.child.emit('exit', 1); assert.equal(d.quits(), 1); assert.equal(d.errors.length, 1);
+});
+
+test('desktop updates relaunch the new release Electron runtime with the current configuration and bind', { timeout: 10000 }, async () => {
+  const d = await desktop();
+  const checkout = resolve('output/verified new release');
+  const configPath = resolve('output/private instance/config.toml');
+  const bind = '[::1]:3931';
+  d.child.emit('message', { type: 'native-request', id: 'restart', action: 'restart', value: JSON.stringify({ checkout, configPath, bind }) });
+  assert.equal(d.relaunches.length, 1);
+  assert.equal(d.relaunches[0].execPath, releaseElectronExecutable(checkout));
+  assert.notEqual(d.relaunches[0].execPath, process.execPath);
+  assert.deepEqual(Array.from(d.relaunches[0].args || []), [checkout, '--update-restart', `--config=${configPath}`, `--bind=${bind}`]);
+  assert.deepEqual(JSON.parse(JSON.stringify(d.sent.at(-1))), { type: 'native-response', id: 'restart', value: true });
+  assert.equal(d.quits(), 1);
 });

@@ -2,6 +2,8 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 import type { WebSocket } from 'ws';
 import type { IPty } from 'node-pty';
 import { Workspace } from './tools/filesystem.js';
@@ -28,6 +30,24 @@ async function stopUnixGroup(pid: number, exited: () => boolean): Promise<void> 
   if (!await until(exited, TERMINATE_EXIT_MS)) throw new Error('The terminal process did not exit after forced termination. Retry stopping the session before continuing.');
 }
 function shell(): { file: string; args: string[] } { return process.platform === 'win32' ? { file: process.env.GOPHER_SHELL || 'powershell.exe', args: ['-NoLogo', '-NoProfile'] } : { file: process.env.SHELL || '/bin/sh', args: ['-l'] }; }
+/** Restore executable permissions on copied macOS PTY helpers. */
+export async function ensureDarwinPtyHelpers(packageRoot?: string): Promise<void> {
+  if (process.platform !== 'darwin') return;
+  const root = packageRoot || dirname(createRequire(import.meta.url).resolve('node-pty/package.json'));
+  let found = false;
+  for (const directory of ['build/Release', 'build/Debug', `prebuilds/darwin-${process.arch}`]) {
+    const helper = join(root, directory, 'spawn-helper');
+    let stat;
+    try { stat = await fs.lstat(helper); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue; throw error; }
+    if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('The installed macOS terminal helper is not a regular file. Reinstall Gopher dependencies.');
+    found = true;
+    if ((stat.mode & 0o111) !== 0o111) {
+      try { await fs.chmod(helper, (stat.mode & 0o7777) | 0o111); }
+      catch { throw new Error('The macOS terminal helper is not executable and its permissions could not be repaired. Reinstall Gopher dependencies in a writable folder.'); }
+    }
+  }
+  if (!found) throw new Error('The installed macOS terminal helper is missing. Reinstall Gopher dependencies.');
+}
 function size(value: number | undefined, fallback: number): number { return Math.max(2, Math.min(500, Number(value) || fallback)); }
 export function blockReason(command: string): string | null {
   const lower = command.toLowerCase().replace(/\s+/g, ' ');
@@ -44,6 +64,7 @@ export class TerminalManager {
   async open(workspace: string, cols?: number, rows?: number): Promise<{ok: boolean; id: string; cwd: string; title: string}> {
     if (this.terminals.size >= 16) throw new Error('Close an existing terminal before opening another');
     const ws = await Workspace.open(workspace); const spec = shell(); const { spawn: spawnPty } = await import('node-pty');
+    await ensureDarwinPtyHelpers();
     const pty = spawnPty(spec.file, spec.args, { name: 'xterm-256color', cols: size(cols, 100), rows: size(rows, 28), cwd: ws.root, env: { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' } as Record<string, string>, useConpty: true });
     const id = `terminal_${randomUUID()}`; const title = spec.file.split(/[\\/]/).at(-1) || 'Terminal'; const terminal: LiveTerminal = { id, cwd: ws.root, title, pty, replay: '', sockets: new Set(), exited: false }; this.terminals.set(id, terminal);
     pty.onData(data => { terminal.replay = (terminal.replay + data).slice(-MAX_OUTPUT); for (const socket of terminal.sockets) if (socket.readyState === 1) socket.send(Buffer.from(data)); });

@@ -396,9 +396,9 @@ export class AppStorage {
     const next = normalizeConfig(structuredClone(config));
     return this.serial(async () => { this.requireUnlocked(); await this.persistConfigInternal(next); this.config = next; });
   }
-  private async skillsInternal(key = this.key, encrypted = this.encrypted): Promise<UserSkill[]> {
+  private async skillsInternal(key = this.key, encrypted = this.encrypted, useMemory = true): Promise<UserSkill[]> {
     if (encrypted && !key) throw locked();
-    if (this.inMemory()) return structuredClone(this.memory.skills);
+    if (useMemory && this.inMemory()) return structuredClone(this.memory.skills);
     const directory = join(this.root, 'chat-skills');
     const snapshot = await readJson(join(directory, 'skills.json'));
     const decode = (value: unknown, aad: string) => {
@@ -614,9 +614,14 @@ export class AppStorage {
         let providers: unknown;
         if (legacy && !(await inspect(join(this.root, 'provider-tokens.json')))) providers = this.providerPayload();
         else providers = await this.decodeFile('provider-tokens.json', AAD.providers, null, key, true);
+        const useLiveData = this.unlocked;
         let skills: UserSkill[];
-        try { skills = await this.skillsInternal(key, true); } catch (error) { if (!legacy) throw error; skills = await this.skillsInternal(null, false); }
-        const snapshot: Snapshot = { chats: normalizeStore(await this.decodeFile('chats.json', AAD.chats, null, key, true)), preferences: objectValue(await this.decodeFile('preferences.json', AAD.preferences, null, key, true)), provider_tokens: providers, skills, diagnostics: this.diagnostics.stored() };
+        try { skills = await this.skillsInternal(key, true, useLiveData); } catch (error) { if (!legacy) throw error; skills = await this.skillsInternal(null, false, useLiveData); }
+        // An unlocked memory session owns the current edits. A locked session has
+        // cleared that volatile state and must recover the authenticated disk copy.
+        const chats = useLiveData ? await this.chatsInternal() : normalizeStore(await this.decodeFile('chats.json', AAD.chats, null, key, true));
+        const preferences = useLiveData ? await this.preferencesInternal() : objectValue(await this.decodeFile('preferences.json', AAD.preferences, null, key, true));
+        const snapshot: Snapshot = { chats, preferences, provider_tokens: providers, skills, diagnostics: this.diagnostics.stored() };
         const meta = legacy ? { ...this.meta, version: 2, verifier: encryptBytes(key, Buffer.from('gopher-ok'), AAD.verifier) } : this.meta;
         await this.stage('disable', meta, key, snapshot); this.legacyProviders = null;
       } catch (error) { key.fill(0); throw error; }

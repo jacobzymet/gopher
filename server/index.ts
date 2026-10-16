@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
 import { resolve, join, extname, dirname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { once } from 'node:events';
@@ -16,6 +17,7 @@ import { openExternal, pickWorkspace, focus } from './system.js';
 import { checkUpdates, applyUpdate, buildVersion } from './updates.js';
 import { frontendPrompts } from './prompts.js';
 import { DiagnosticTrace, diagnosticContext, record } from './diagnostics.js';
+import { parseCliArgs } from './cli.js';
 
 type Body = Record<string, any>;
 export class HttpError extends Error { constructor(readonly status: number, message: string, readonly code?: string) { super(message); } }
@@ -371,10 +373,10 @@ export async function createApp(options: ServerOptions = {}) {
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  if (args.includes('--version') || args.includes('-v')) { console.log(buildVersion()); return; }
-  if (args.includes('--help') || args.includes('-h')) { console.log('Gopher — local AI workspace\n\n--headless  Run the local server\n--browser   Open in your browser\n--config PATH  Configuration file\n--bind ADDR    Loopback address (default 127.0.0.1:3930)'); return; }
-  const flag = (name: string) => { const inline = args.find(arg => arg.startsWith(name + '=')); if (inline) return inline.slice(name.length + 1); const at = args.indexOf(name); return at >= 0 ? args[at + 1] : undefined; };
-  const configPath = flag('--config') || defaultConfigPath(); const bindOverride = flag('--bind');
+  const cli = parseCliArgs(args);
+  if (cli.version) { console.log(buildVersion()); return; }
+  if (cli.help) { console.log('Gopher — local AI workspace\n\n--headless  Run the local server\n--browser   Open in your browser\n--config PATH  Configuration file\n--bind ADDR    Loopback address (default 127.0.0.1:3930)'); return; }
+  const configPath = cli.configPath || defaultConfigPath(); const bindOverride = cli.bind;
   let startupConfig = defaultConfig();
   try { startupConfig = parseConfig(await readFile(configPath, 'utf8')); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
   const bind = resolveBind(startupConfig, bindOverride);
@@ -414,4 +416,4 @@ async function main(): Promise<void> {
   process.on('SIGINT', shutdown); process.on('SIGTERM', shutdown); process.on('disconnect', shutdown);
   process.on('message', message => { if (message && typeof message === 'object' && 'type' in message && message.type === 'shutdown') shutdown(); });
 }
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch(error => { console.error(error.message || error); process.exitCode = 1; });
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch(error => { console.error(error.message || error); process.exitCode = 1; });

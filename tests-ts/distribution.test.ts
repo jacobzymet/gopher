@@ -24,7 +24,9 @@ test('the built distribution serves every runtime asset and runs an agent withou
   });
   await new Promise<void>(resolve => model.listen(0, '127.0.0.1', resolve));
   const modelPort = (model.address() as { port: number }).port;
-  const child = spawn(process.execPath, [join(deployed, 'server/index.js'), '--headless', '--config', join(directory, 'data/config.toml'), '--bind', '127.0.0.1:0'], { cwd: directory, stdio: ['ignore', 'pipe', 'pipe', 'ipc'], windowsHide: true });
+  const alias = join(directory, 'app-alias');
+  await symlink(deployed, alias, process.platform === 'win32' ? 'junction' : 'dir');
+  const child = spawn(process.execPath, [join(alias, 'server/index.js'), '--headless', '--config', join(directory, 'data/config.toml'), '--bind', '127.0.0.1:0'], { cwd: directory, stdio: ['ignore', 'pipe', 'pipe', 'ipc'], windowsHide: true });
   let logs = ''; child.stdout?.on('data', data => { logs += data; }); child.stderr?.on('data', data => { logs += data; });
   const exited = new Promise<void>(resolve => child.once('exit', () => resolve()));
   try {

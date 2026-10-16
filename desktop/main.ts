@@ -3,7 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { serverRuntime } from './runtime.js';
+import { serverRuntime, releaseElectronExecutable } from './runtime.js';
 
 let window: BrowserWindow | null = null;
 let server: ChildProcess | null = null;
@@ -78,7 +78,7 @@ async function boot(): Promise<void> {
         server?.send({ type: 'native-response', id: message.id, value: true });
         if (message.value) {
           const restart = JSON.parse(message.value) as { checkout: string; configPath?: string; bind?: string };
-          app.relaunch({ execPath: process.execPath, args: [restart.checkout, '--update-restart', ...(restart.configPath ? [`--config=${restart.configPath}`] : []), ...(restart.bind ? [`--bind=${restart.bind}`] : [])] });
+          app.relaunch({ execPath: releaseElectronExecutable(restart.checkout), args: [restart.checkout, '--update-restart', ...(restart.configPath ? [`--config=${restart.configPath}`] : []), ...(restart.bind ? [`--bind=${restart.bind}`] : [])] });
         }
         else app.relaunch();
         app.quit(); return;

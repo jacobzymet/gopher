@@ -1,6 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { serverRuntime } from '../desktop/runtime.js';
+import { join } from 'node:path';
+import { serverRuntime, releaseElectronExecutable } from '../desktop/runtime.js';
+
+test('updated desktop releases select their own platform Electron executable', () => {
+  const checkout = join('releases', 'verified update');
+  assert.equal(releaseElectronExecutable(checkout, 'win32'), join(checkout, 'node_modules/electron/dist/electron.exe'));
+  assert.equal(releaseElectronExecutable(checkout, 'darwin'), join(checkout, 'node_modules/electron/dist/Electron.app/Contents/MacOS/Electron'));
+  assert.equal(releaseElectronExecutable(checkout, 'linux'), join(checkout, 'node_modules/electron/dist/electron'));
+});
 
 test('the desktop server uses real system Node instead of Electron native-addon ABI', async () => {
   const actual = await serverRuntime({ ...process.env, GOPHER_NODE_EXECUTABLE: process.execPath });

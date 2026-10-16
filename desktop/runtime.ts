@@ -1,7 +1,11 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { join } from 'node:path';
 
 const execute = promisify(execFile);
+export function releaseElectronExecutable(checkout: string, platform: NodeJS.Platform = process.platform): string {
+  return join(checkout, 'node_modules/electron/dist', platform === 'win32' ? 'electron.exe' : platform === 'darwin' ? 'Electron.app/Contents/MacOS/Electron' : 'electron');
+}
 export interface RuntimeInfo { executable: string; node: string; electron?: string }
 export type RuntimeProbe = (candidate: string, environment: NodeJS.ProcessEnv) => Promise<RuntimeInfo>;
 

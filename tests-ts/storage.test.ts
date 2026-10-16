@@ -190,6 +190,57 @@ test('memory mode is volatile and returning to disk persists current edits', asy
   } finally { await f.cleanup(); }
 });
 
+test('disabling encryption persists current memory chats, preferences and skills across restart', async () => {
+  const f = await fixture();
+  try {
+    let storage = await f.open();
+    await storage.saveChats([{ id: 'disk-before' }]);
+    await storage.savePreferences({ marker: 'disk-before' });
+    const skill = await storage.createSkill({ name: 'Workflow', content: 'Disk before' });
+    await storage.enableEncryption('memory-passphrase');
+    await storage.setStorageMode('memory');
+    const chats = normalizeStore([{ id: 'live-memory-edit', messages: [{ content: 'Preserve this edit' }] }]);
+    const preferences = { marker: 'live-memory-preferences', diagnosticsEnabled: false };
+    await storage.saveChats(chats);
+    await storage.savePreferences(preferences);
+    const updatedSkill = await storage.updateSkill(skill.id, { content: 'Live memory edit' });
+    await storage.disableEncryption('memory-passphrase');
+    assert.equal(storage.storageMode, 'disk'); assert.equal(storage.encrypted, false);
+    assert.deepEqual(await storage.loadChats(), chats);
+    assert.deepEqual(await storage.loadPreferences(), preferences);
+    assert.deepEqual(await storage.listSkills(), [updatedSkill]);
+    await storage.close(); storage = await f.open();
+    assert.equal(storage.storageMode, 'disk'); assert.equal(storage.encrypted, false);
+    assert.deepEqual(await storage.loadChats(), chats);
+    assert.deepEqual(await storage.loadPreferences(), preferences);
+    assert.deepEqual(await storage.listSkills(), [updatedSkill]);
+  } finally { await f.cleanup(); }
+});
+
+test('disabling encryption while memory mode is locked recovers the protected disk snapshot', async () => {
+  const f = await fixture();
+  try {
+    const storage = await f.open();
+    const chats = normalizeStore([{ id: 'protected-disk' }]);
+    const preferences = { marker: 'protected-disk' };
+    await storage.saveChats(chats); await storage.savePreferences(preferences);
+    const skill = await storage.createSkill({ name: 'Workflow', content: 'Protected disk' });
+    await storage.enableEncryption('memory-passphrase');
+    await storage.setStorageMode('memory');
+    await storage.saveChats([{ id: 'volatile-edit' }]);
+    await storage.savePreferences({ marker: 'volatile-edit' });
+    await storage.updateSkill(skill.id, { content: 'Volatile edit' });
+    await storage.lock();
+    await assert.rejects(storage.disableEncryption('wrong-passphrase'), /Incorrect passphrase/);
+    assert.equal(storage.encrypted, true); assert.equal(storage.transitionPending, false);
+    await storage.disableEncryption('memory-passphrase');
+    assert.equal(storage.storageMode, 'disk'); assert.equal(storage.encrypted, false);
+    assert.deepEqual(await storage.loadChats(), chats);
+    assert.deepEqual(await storage.loadPreferences(), preferences);
+    assert.deepEqual(await storage.listSkills(), [skill]);
+  } finally { await f.cleanup(); }
+});
+
 test('skill import, limits, editing and deletion retain source metadata safely', async () => {
   const f = await fixture();
   try {
