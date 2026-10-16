@@ -195,6 +195,7 @@ test('real Logs tab locates provider delay, redacts credentials, and persists on
       await refreshDiagnostics();
     });
     await page.locator('#diagnosticsSearch').fill('fixture.history');
+    await page.waitForFunction(() => document.querySelectorAll('.diagnostic-entry').length === 500);
     assert.equal(await page.locator('.diagnostic-entry').count(), 500);
     await page.getByRole('button', { name: 'Show 100 earlier entries', exact: true }).click();
     assert.equal(await page.locator('.diagnostic-entry').count(), 600);

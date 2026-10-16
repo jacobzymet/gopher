@@ -30,6 +30,8 @@ pub struct App {
     pub remote_health: HealthCache,
     pub remote_catalog: CatalogCache,
     pub diagnostics: std::sync::Arc<crate::diagnostics::Diagnostics>,
+    /// Serializes log-file writes with clearing, locking, and encryption transitions.
+    diagnostics_io: std::sync::Arc<std::sync::Mutex<()>>,
     /// Session key for disk encryption at rest. Cleared on lock / process exit.
     disk_key: Option<crypto::DiskKey>,
     /// Prevent concurrent processes from interleaving protected-data writes.
@@ -62,6 +64,7 @@ impl App {
             remote_health: HealthCache::default(),
             remote_catalog: CatalogCache::default(),
             diagnostics: std::sync::Arc::new(crate::diagnostics::Diagnostics::default()),
+            diagnostics_io: std::sync::Arc::new(std::sync::Mutex::new(())),
             disk_key: None,
             _data_lock: data_lock,
         };
@@ -731,6 +734,14 @@ impl App {
     }
 
     pub fn flush_diagnostics(&self) -> Result<(), String> {
+        let _write = self
+            .diagnostics_io
+            .lock()
+            .map_err(|_| "Diagnostics lock poisoned")?;
+        self.flush_diagnostics_locked()
+    }
+
+    fn flush_diagnostics_locked(&self) -> Result<(), String> {
         let Some(key) = self.disk_key.as_ref() else {
             return Ok(());
         };
@@ -746,11 +757,53 @@ impl App {
         Ok(())
     }
 
+    pub(crate) fn flush_diagnostics_background(app: &std::sync::Mutex<Self>) -> Result<(), String> {
+        Self::flush_diagnostics_background_with(app, |root, value, key| {
+            store::save_diagnostics(root, value, key).map_err(Self::map_store_err)
+        })
+    }
+
+    fn flush_diagnostics_background_with(
+        app: &std::sync::Mutex<Self>,
+        persist: impl FnOnce(
+            &std::path::Path,
+            &serde_json::Value,
+            &crypto::DiskKey,
+        ) -> Result<(), String>,
+    ) -> Result<(), String> {
+        let app = app.lock().map_err(|_| "App lock poisoned")?;
+        let io = app.diagnostics_io.clone();
+        let _write = io.lock().map_err(|_| "Diagnostics lock poisoned")?;
+        // Acquire the file gate before copying the key. Locking/clearing and
+        // encryption transitions wait on this same gate, so the copied key and
+        // plaintext snapshot are dropped before those operations can finish.
+        let Some(key) = app.disk_key.clone() else {
+            return Ok(());
+        };
+        let diagnostics = app.diagnostics.clone();
+        let root = app.data_dir();
+        let pending = diagnostics.pending();
+        drop(app);
+        let Some((revision, value)) = pending else {
+            return Ok(());
+        };
+        if let Err(error) = persist(&root, &value, &key) {
+            diagnostics.error(error.clone());
+            return Err(error);
+        }
+        diagnostics.saved(revision);
+        Ok(())
+    }
+
     pub fn clear_diagnostics(&self) -> Result<(), String> {
+        let _write = self
+            .diagnostics_io
+            .lock()
+            .map_err(|_| "Diagnostics lock poisoned")?;
         // Explicit clearing also repairs a damaged log file without touching chats.
         store::clear_diagnostics(&self.data_dir()).map_err(|error| format!("{error:#}"))?;
         self.diagnostics.clear();
-        self.flush_diagnostics()
+        self.flush_diagnostics_locked()
     }
 
     fn derive_and_verify_key(
@@ -993,6 +1046,10 @@ impl App {
         snapshot: Snapshot,
         key: crypto::DiskKey,
     ) -> Result<(), String> {
+        let diagnostics_io = self.diagnostics_io.clone();
+        let _write = diagnostics_io
+            .lock()
+            .map_err(|_| "Diagnostics lock poisoned")?;
         let root = self.data_dir();
         let diagnostics = snapshot.diagnostics.clone();
         let result = (|| -> Result<(), String> {
@@ -1126,6 +1183,99 @@ mod tests {
         let saved = std::fs::read_to_string(config_path).unwrap();
         assert!(!saved.contains("browser"));
         assert!(saved.contains("disk") || !saved.contains("storage"));
+    }
+
+    #[test]
+    fn background_diagnostics_release_app_lock_and_finish_before_security_operations() {
+        use std::sync::{Arc, Mutex, mpsc};
+        use std::time::Duration;
+
+        for operation in ["lock", "clear", "disable"] {
+            let temp = tempfile::tempdir().unwrap();
+            let mut instance = test_app(temp.path());
+            instance
+                .enable_disk_encryption(TEST_PASSPHRASE, TEST_PASSPHRASE)
+                .unwrap();
+            instance.diagnostics.configure(true);
+            let trace = crate::diagnostics::Trace::new(
+                instance.diagnostics.clone(),
+                "trace".into(),
+                "chat".into(),
+            );
+            trace.record(
+                "test.prompt",
+                serde_json::json!({"text": "private diagnostic prompt"}),
+            );
+            let app = Arc::new(Mutex::new(instance));
+            let (writing_tx, writing_rx) = mpsc::channel();
+            let (release_tx, release_rx) = mpsc::channel();
+            let writer_app = app.clone();
+            let writer = std::thread::spawn(move || {
+                App::flush_diagnostics_background_with(&writer_app, |root, value, key| {
+                    writing_tx.send(()).unwrap();
+                    release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+                    store::save_diagnostics(root, value, key).map_err(App::map_store_err)
+                })
+                .unwrap();
+            });
+            writing_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            assert!(
+                app.try_lock().is_ok(),
+                "disk I/O must not hold the app lock"
+            );
+            let (entered_tx, entered_rx) = mpsc::channel();
+            let (done_tx, done_rx) = mpsc::channel();
+            let operation_app = app.clone();
+            let security = std::thread::spawn(move || {
+                let mut app = operation_app.lock().unwrap();
+                entered_tx.send(()).unwrap();
+                match operation {
+                    "lock" => app.lock_disk_encryption(),
+                    "clear" => app.clear_diagnostics().unwrap(),
+                    "disable" => app.disable_disk_encryption(TEST_PASSPHRASE).unwrap(),
+                    _ => unreachable!(),
+                }
+                done_tx.send(()).unwrap();
+            });
+            entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            assert!(
+                matches!(
+                    done_rx.recv_timeout(Duration::from_millis(50)),
+                    Err(mpsc::RecvTimeoutError::Timeout)
+                ),
+                "{operation} must wait for the existing writer"
+            );
+            release_tx.send(()).unwrap();
+            writer.join().unwrap();
+            done_rx.recv_timeout(Duration::from_secs(10)).unwrap();
+            security.join().unwrap();
+            let app = app.lock().unwrap();
+            match operation {
+                "lock" => {
+                    assert!(app.disk_key.is_none());
+                    assert!(
+                        app.diagnostics.stored()["entries"]
+                            .as_array()
+                            .unwrap()
+                            .is_empty()
+                    );
+                }
+                "clear" => {
+                    assert!(
+                        store::load_diagnostics(temp.path(), app.disk_key.as_ref().unwrap())
+                            .unwrap()["entries"]
+                            .as_array()
+                            .unwrap()
+                            .is_empty()
+                    )
+                }
+                "disable" => {
+                    assert!(!app.encryption_enabled());
+                    assert!(!store::diagnostics_path(temp.path()).exists());
+                }
+                _ => unreachable!(),
+            }
+        }
     }
 
     #[test]

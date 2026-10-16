@@ -2082,9 +2082,11 @@ async function runAssistantTurn(convo, {
   try {
     // New chats must be persisted before the server binds their retrieval scope.
     if (turnSkills.chat_retrieval && typeof saveStore === 'function') {
+      setStreamThinkingLabel(stream, 'Saving chat…');
       if (typeof diagnosticMark === 'function') diagnosticMark('store.wait.started', {}, diagnosticContext);
       saveStore({ immediate: true });
       if (typeof storeWriteChain !== 'undefined') await storeWriteChain;
+      if (!stream.cancelled && activeStreams.get(convo.id) === stream) setStreamThinkingLabel(stream, 'Connecting to model…');
       if (typeof diagnosticMark === 'function') diagnosticMark('store.wait.finished', {}, diagnosticContext);
     }
     for (let attempt = 0; attempt < 2; attempt += 1) {

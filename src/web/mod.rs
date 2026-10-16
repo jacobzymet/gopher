@@ -396,16 +396,15 @@ pub async fn serve(app: SharedApp, listener: TcpListener) -> anyhow::Result<()> 
     );
     let flush_app = Arc::downgrade(&app);
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(2));
         loop {
-            interval.tick().await;
+            // Leave a quiet interval after each write; slow encrypted flushes
+            // must not create a permanently overdue interval-timer backlog.
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             let Some(app) = flush_app.upgrade() else {
                 break;
             };
             let _ = tokio::task::spawn_blocking(move || {
-                if let Ok(app) = app.lock() {
-                    let _ = app.flush_diagnostics();
-                }
+                let _ = App::flush_diagnostics_background(&app);
             })
             .await;
         }

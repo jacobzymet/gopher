@@ -103,6 +103,22 @@ test('drafts restore text, capabilities, reply context, model, workspace, and se
   assert.equal(Object.hasOwn(stored['new:chat:'], 'attachments'), false);
 });
 
+test('unchanged drafts and temporary drafts never schedule another full archive save', () => {
+  const h = harness();
+  h.restoreComposerDraft();
+  assert.equal(h.captureComposerDraft(), false);
+  h.composerInput.value = 'Changed draft';
+  assert.equal(h.captureComposerDraft(), true);
+  assert.equal(h.captureComposerDraft(), false);
+  h.composerInput.value = '';
+  assert.equal(h.captureComposerDraft(), true);
+  assert.equal(h.captureComposerDraft(), false);
+  h.draftIncognito = true;
+  h.restoreComposerDraft();
+  h.composerInput.value = 'Ghost secret';
+  assert.equal(h.captureComposerDraft(), false);
+});
+
 test('normal, ghost, project, and profile drafts stay separate; ghost text never enters the store', () => {
   const h = harness();
   h.restoreComposerDraft();

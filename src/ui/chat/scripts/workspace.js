@@ -44,13 +44,13 @@ function composerDraftMemoryKey(context) {
 
 function captureComposerDraft() {
   const context = composerDraftContext;
-  if (!context || diskEncryptionLocked()) return;
+  if (!context || diskEncryptionLocked()) return false;
   const profile = profiles.find((item) => item.id === context.profileId);
-  if (!profile) return;
+  if (!profile) return false;
   // A deleted chat or project must not leave a recoverable draft behind.
   const chatId = context.key.startsWith('chat:') ? context.key.slice(5) : null;
   if (chatId && !(profile.id === activeProfileId ? conversations : profile.conversations)
-    .some((convo) => convo.id === chatId)) return;
+    .some((convo) => convo.id === chatId)) return false;
   const draft = normalizeComposerDraft({
     text: composerInput.value, mentions: [...composerMentionIds],
     quote: pendingReplyQuote, replyTarget: pendingReplyTarget,
@@ -59,20 +59,23 @@ function captureComposerDraft() {
   });
   const memoryKey = composerDraftMemoryKey(context);
   transientComposerDrafts.set(memoryKey, { draft, attachments: pendingAttachments.slice() });
-  if (context.incognito) return;
+  if (context.incognito) return false;
   if (!profile.composerDrafts) profile.composerDrafts = {};
+  const previous = normalizeComposerDraft(profile.composerDrafts[context.key]);
+  if (JSON.stringify(previous) === JSON.stringify(draft)) return false;
   if (draft) profile.composerDrafts[context.key] = draft;
   else delete profile.composerDrafts[context.key];
+  return true;
 }
 
 function leaveComposerDraft() {
   if (typeof stopVoiceInput === 'function') stopVoiceInput({ silent: true });
-  captureComposerDraft();
+  const changed = captureComposerDraft();
   clearTimeout(composerDraftTimer);
   composerDraftTimer = null;
   composerDraftContext = null;
   pendingAttachments = [];
-  saveStore({ immediate: false });
+  if (changed) saveStore({ immediate: false });
   closeThreadFind({ restoreFocus: false });
 }
 
@@ -120,8 +123,7 @@ function scheduleComposerDraftSave() {
   if (!composerDraftContext || diskEncryptionLocked()) return;
   composerDraftTimer = setTimeout(() => {
     composerDraftTimer = null;
-    captureComposerDraft();
-    saveStore({ immediate: false });
+    if (captureComposerDraft()) saveStore({ immediate: false });
   }, 600);
 }
 
@@ -458,13 +460,6 @@ function isComposingKey(event) {
 
 composerInput.addEventListener('input', scheduleComposerDraftSave);
 composerCard.addEventListener('click', () => queueMicrotask(scheduleComposerDraftSave));
-window.addEventListener('pagehide', () => { captureComposerDraft(); saveStore({ immediate: true }); });
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') {
-    captureComposerDraft();
-    saveStore({ immediate: true });
-  }
-});
 document.getElementById('btnFindInChat')?.addEventListener('click', () => {
   if (threadFindIsOpen()) closeThreadFind();
   else openThreadFind();

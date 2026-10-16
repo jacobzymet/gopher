@@ -43,7 +43,7 @@ function declaration(file, name) {
 test('locking removes drafts, attachments, rendered content, images, and terminal state', () => {
   const cleared = [];
   const state = vm.createContext({
-    storageWriteEpoch: 0, saveStoreTimer: 1, saveSettingsTimer: 2, clearTimeout() {},
+    storageWriteEpoch: 0, pendingStoreWrite: null, saveStoreTimer: 1, saveSettingsTimer: 2, clearTimeout() {},
     activeStreams: new Map([['chat', {}]]), outboundQueues: new Map([['chat', []]]),
     stickByConvo: new Map(), composerMentionIds: new Set(['research']),
     composerInput: { value: 'private draft' }, activeId: 'chat', latestState: { private: true },

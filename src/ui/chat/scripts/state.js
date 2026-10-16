@@ -1237,6 +1237,8 @@ let saveStoreTimer = null;
 let saveSettingsTimer = null;
 let settingsWriteChain = Promise.resolve();
 let storeWriteChain = Promise.resolve();
+let pendingStoreWrite = null;
+let storeWriteRunning = false;
 let storageWriteEpoch = 0;
 let persistenceWarningAt = 0;
 
@@ -1379,12 +1381,40 @@ function requireUnlockedData() {
 
 function enqueueStoreWrite(snapshot) {
   const epoch = storageWriteEpoch;
-  storeWriteChain = storeWriteChain
-    .catch(() => {})
-    .then(() => putJsonWithRetry('/api/data/store', snapshot, {
-      valid: () => epoch === storageWriteEpoch && !diskEncryptionLocked(),
-    }));
+  storeWriteChain = new Promise((resolve) => {
+    if (pendingStoreWrite?.epoch === epoch) {
+      // Only the latest complete snapshot matters. Resolve superseded callers
+      // when that replacement is durable, including the pre-send retrieval wait.
+      pendingStoreWrite.snapshot = snapshot;
+      pendingStoreWrite.waiters.push(resolve);
+    } else {
+      pendingStoreWrite?.waiters.forEach((done) => done(false));
+      pendingStoreWrite = { snapshot, epoch, waiters: [resolve] };
+    }
+  });
+  if (!storeWriteRunning) void drainStoreWrites();
   return storeWriteChain;
+}
+
+async function drainStoreWrites() {
+  storeWriteRunning = true;
+  try {
+    while (pendingStoreWrite) {
+      const write = pendingStoreWrite;
+      pendingStoreWrite = null;
+      let saved = false;
+      try {
+        saved = await putJsonWithRetry('/api/data/store', write.snapshot, {
+          valid: () => write.epoch === storageWriteEpoch && !diskEncryptionLocked(),
+        });
+      } catch (error) {
+        reportPersistenceFailure('/api/data/store', error);
+      }
+      write.waiters.forEach((done) => done(saved));
+    }
+  } finally {
+    storeWriteRunning = false;
+  }
 }
 
 function saveStore({ immediate = true } = {}) {
@@ -1585,12 +1615,10 @@ function switchProfile(profileId) {
 function flushPendingWrites() {
   if (!storageReady || diskEncryptionLocked()) return;
   if (typeof captureComposerDraft === 'function') {
-    captureComposerDraft();
-    if (composerDraftTimer) {
-      clearTimeout(composerDraftTimer);
-      composerDraftTimer = null;
-      saveStore({ immediate: false });
-    }
+    const changed = captureComposerDraft();
+    clearTimeout(composerDraftTimer);
+    composerDraftTimer = null;
+    if (changed) saveStore({ immediate: false });
   }
   if (saveStoreTimer) {
     clearTimeout(saveStoreTimer);
@@ -2486,6 +2514,8 @@ function clearMemoryAfterLock() {
   storageReady = false;
   if (typeof cancelOcrWorkers === 'function') cancelOcrWorkers();
   storageWriteEpoch += 1;
+  pendingStoreWrite?.waiters.forEach((done) => done(false));
+  pendingStoreWrite = null;
   clearTimeout(saveStoreTimer);
   saveStoreTimer = null;
   clearTimeout(saveSettingsTimer);

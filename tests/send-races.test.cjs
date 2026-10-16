@@ -145,7 +145,7 @@ function conflictHarness() {
     getOutboundQueue: () => queue, saveConversations() {}, renderOutboundQueue() {}, updateComposerHint() {},
     renderThread() { events.push('render'); },
     attachLiveTurn: async () => events.push('attach'),
-    driveAssistantSse: async () => { events.push('sse'); },
+    driveAssistantSse: async () => { events.push('sse'); }, setStreamThinkingLabel() {},
     needsGeneratedTitle: () => false,
     generateConversationTitle() {},
     contextualModelError: (text) => text,
