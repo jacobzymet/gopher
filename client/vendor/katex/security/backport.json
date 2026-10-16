@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "version": "0.16.22+gopher-security.1",
+  "upstreamRelease": {
+    "name": "katex",
+    "version": "0.16.22",
+    "tarball": "https://registry.npmjs.org/katex/-/katex-0.16.22.tgz",
+    "integrity": "sha512-XCHRdUw4lf3SKBaJe4EvgqIuWwkPSo9XoeO8GjQW94Bp7TWv9hNhzZjZ+OH9yf1UmLygb7DIT5GSFQiyt16zYg==",
+    "license": "MIT"
+  },
+  "upstreamCommit": "0adf7e77db6915d991803b29699f82b1ccf8d4f4",
+  "upstreamPatchSha256": "119769f1c3ca286c5b13ccd210ae882293b408fb28a327f61797d9fa827bab13",
+  "advisory": "https://github.com/KaTeX/KaTeX/security/advisories/GHSA-238p-pmpm-9mq7",
+  "cve": "CVE-2026-103923",
+  "sourceEntry": "package/dist/katex.js",
+  "inputSha256": "8f1f4fb1080439c012bb8fddf424fa253e9144ab4cdd7dc0eae0e92cd04a5e33",
+  "patchedSha256": "7867da0a32610566a4927063e56f95cc08039749fd4ab428048d5729343c62c9",
+  "outputSha256": "55b43d173be4bf6919652d07ae6ca3d32aac2c1755bfbb8c826fc2f270c8675d",
+  "esbuildVersion": "0.28.2",
+  "target": "es2018",
+  "banner": "/*! KaTeX 0.16.22+gopher-security.1 | MIT | GHSA-238p-pmpm-9mq7 backport 0adf7e77db6915d991803b29699f82b1ccf8d4f4 */",
+  "patches": [
+    {
+      "path": "Settings.getDefaultValue",
+      "before": "  if (schema.default) {\n    return schema.default;\n  }",
+      "after": "  if (Object.prototype.hasOwnProperty.call(schema, \"default\") && schema.default !== undefined) {\n    return schema.default;\n  }"
+    },
+    {
+      "path": "Settings.constructor",
+      "before": "        this[prop] = options[prop] !== undefined ? schema.processor ? schema.processor(options[prop]) : options[prop] : getDefaultValue(schema);",
+      "after": "        const optionValue = Object.prototype.hasOwnProperty.call(options, prop) ? options[prop] : undefined;\n        const processor = Object.prototype.hasOwnProperty.call(schema, \"processor\") ? schema.processor : undefined;\n        this[prop] = optionValue !== undefined ? processor ? processor(optionValue) : optionValue : getDefaultValue(schema);"
+    },
+    {
+      "path": "Namespace.get",
+      "before": "    if (this.current.hasOwnProperty(name)) {\n      return this.current[name];\n    } else {\n      return this.builtins[name];\n    }",
+      "after": "    if (Object.prototype.hasOwnProperty.call(this.current, name)) {\n      return this.current[name];\n    } else if (Object.prototype.hasOwnProperty.call(this.builtins, name)) {\n      return this.builtins[name];\n    } else {\n      return undefined;\n    }"
+    },
+    {
+      "path": "Namespace.set",
+      "before": "      if (top && !top.hasOwnProperty(name)) {\n        top[name] = this.current[name];\n      }",
+      "after": "      if (top && !Object.prototype.hasOwnProperty.call(top, name)) {\n        top[name] = Object.prototype.hasOwnProperty.call(this.current, name) ? this.current[name] : undefined;\n      }"
+    },
+    {
+      "path": "version identification",
+      "before": "const version = \"0.16.22\";",
+      "after": "const version = \"0.16.22+gopher-security.1\";"
+    }
+  ]
+}

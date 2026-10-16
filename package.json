@@ -1,0 +1,47 @@
+{
+  "name": "gopher",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "A local TypeScript AI workspace with private chats, projects and agents.",
+  "main": "dist/desktop/main.cjs",
+  "engines": {
+    "node": ">=24.7"
+  },
+  "scripts": {
+    "dev": "npm run build && tsx watch server/index.ts --browser",
+    "start": "node dist/server/index.js",
+    "predesktop": "node node_modules/electron/install.js",
+    "desktop": "electron .",
+    "build": "tsx scripts/build.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit",
+    "test": "tsx --test tests-ts/*.test.ts",
+    "test:ui": "tsx scripts/test-ui.ts",
+    "prompts:budget": "tsx scripts/prompt-budget.ts"
+  },
+  "dependencies": {
+    "node-pty": "^1.1.0",
+    "pdf-parse": "^2.4.0",
+    "playwright-core": "^1.58.0",
+    "smol-toml": "^1.6.0",
+    "undici": "^7.0.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/ws": "^8.18.0",
+    "electron": "44.3.0",
+    "esbuild": "^0.28.0",
+    "tsx": "^4.23.0",
+    "typescript": "^5.9.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "node-pty@1.1.0": true,
+    "electron@44.3.0": true,
+    "fs-ext@2.1.1": true
+  },
+  "optionalDependencies": {
+    "fs-ext": "^2.1.1"
+  }
+}

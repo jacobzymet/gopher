@@ -1,11 +1,11 @@
+const { readUiScript } = require('./helpers/ui-source.cjs');
 // Run without compiling the app: node --test tests/model-refresh.test.cjs
 const assert = require('node:assert/strict');
-const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { test } = require('node:test');
 const vm = require('node:vm');
 
-const source = readFileSync(join(__dirname, '../src/ui/chat/scripts/providers.js'), 'utf8')
+const source = readUiScript("providers")
   .replace(/\r\n/g, '\n');
 
 function harness(providers, probe) {

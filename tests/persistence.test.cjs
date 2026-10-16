@@ -1,11 +1,11 @@
+const { readUiScript } = require('./helpers/ui-source.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const vm = require('node:vm');
 
 function harness(fetch) {
-  const source = readFileSync(join(__dirname, '../src/ui/chat/scripts/state.js'), 'utf8').replace(/\r\n/g, '\n');
+  const source = readUiScript("state").replace(/\r\n/g, '\n');
   const state = vm.createContext({
     fetch, AbortController, setTimeout, clearTimeout, queueMicrotask,
     reportPersistenceFailure() {},

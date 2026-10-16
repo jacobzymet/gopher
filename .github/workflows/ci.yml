@@ -1,102 +1,46 @@
-name: CI
-
+name: TypeScript CI
 on:
   push:
-    branches: [master]
+    branches: [master, 'codex/**']
   pull_request:
     branches: [master]
-
 permissions:
   contents: read
-
-env:
-  CARGO_TERM_COLOR: always
-
 jobs:
-  clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
-        with:
-          toolchain: stable
-          components: clippy
-
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-
-      - name: Install WebKitGTK
-        run: |
-          sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            pkg-config \
-            libglib2.0-dev \
-            libgtk-3-dev \
-            libwebkit2gtk-4.1-dev
-
-      - name: Clippy
-        run: cargo clippy --all-targets --locked -- -D warnings
-
-  test:
-    name: Test
+  verify:
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@v4
         with:
-          toolchain: stable
-
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-
-      - name: Install WebKitGTK
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: node node_modules/electron/install.js
+      - run: npm run typecheck
+      - run: npm run build
+      - run: node node_modules/playwright-core/cli.js install chromium
+        if: runner.os != 'Linux'
+      - run: node node_modules/playwright-core/cli.js install --with-deps chromium
+        if: runner.os == 'Linux'
+      - run: npm test
+      - run: npm run test:ui
+        env:
+          GOPHER_E2E: '1'
+      - name: Native desktop smoke (Linux virtual display)
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            pkg-config \
-            libglib2.0-dev \
-            libgtk-3-dev \
-            libwebkit2gtk-4.1-dev
-
-      - name: Test
-        run: cargo test --all-targets --locked
-
-      - name: Build integration test executable
-        run: cargo build --locked
-
-      - name: UI and source installer regression tests
-        env:
-          GOPHER_TEST_BINARY: ${{ runner.os == 'Windows' && 'target/debug/gopher.exe' || 'target/debug/gopher' }}
-        run: node --test tests/*.test.cjs
-
-      - name: Windows source installer regression tests
-        if: runner.os == 'Windows'
-        shell: powershell
-        run: ./tests/source-installers.test.ps1
-
-      - name: Backported GLib iterator regression tests (optimized)
-        if: runner.os == 'Linux'
-        run: cargo test --manifest-path vendor/glib/Cargo.toml --release variant_str_iter
-
-  fmt:
-    name: Format
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # v1
-        with:
-          toolchain: stable
-          components: rustfmt
-
-      - name: rustfmt
-        run: cargo fmt --package gopher -- --check
+          xvfb-run --auto-servernum node node_modules/electron/cli.js --no-sandbox scripts/smoke-desktop.cjs
+          xvfb-run --auto-servernum node node_modules/electron/cli.js --no-sandbox scripts/smoke-desktop.cjs --reuse-server
+        timeout-minutes: 2
+      - name: Native desktop smoke
+        if: runner.os != 'Linux'
+        run: |
+          node node_modules/electron/cli.js scripts/smoke-desktop.cjs
+          node node_modules/electron/cli.js scripts/smoke-desktop.cjs --reuse-server
+        timeout-minutes: 2

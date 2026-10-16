@@ -2,7 +2,7 @@
 
 ## Local OCR runtime
 
-`src/ui/vendor/ocr` contains official npm distributions of Tesseract.js 6.0.1
+`client/vendor/ocr` contains official npm distributions of Tesseract.js 6.0.1
 and Tesseract.js-core 6.1.2 (Apache-2.0), plus English trained data from
 `@tesseract.js-data/eng` 1.0.0. That package declares MIT for its packaging;
 the upstream trained-data repository supplies Apache-2.0. Both engine license
@@ -11,25 +11,37 @@ Sources, exact versions, and verified npm SHA-512 integrity values are in
 `provenance.json`; asset SHA-256 values are in `sha256.json`.
 The `*.wasm.js` builds include their WASM payloads; no runtime CDN fetch is needed.
 
-## GLib security backport
-
-`vendor/glib` is glib 0.18.5, copyright the gtk-rs project developers, MIT.
-Its LICENSE and COPYRIGHT are retained. `SECURITY_PATCH.md` records the two-line
-upstream backport for RUSTSEC-2024-0429.
-
 ## DOMPurify
 
-The vendored HTML sanitizer is [DOMPurify 3.4.15](https://github.com/cure53/DOMPurify/releases/tag/3.4.15),
+The vendored HTML sanitizer is [DOMPurify 3.4.16](https://github.com/cure53/DOMPurify/releases/tag/3.4.16),
 copyright Cure53 and other contributors, distributed under the
-[Apache-2.0 or MPL-2.0 license](https://github.com/cure53/DOMPurify/blob/3.4.15/LICENSE).
-The upstream license banner is retained in `src/ui/vendor/purify.min.js`.
-Source: the tagged upstream `dist/purify.min.js`, retrieved 2026-09-07.
-SHA-256 of the downloaded file: `f263b05369e050fa175d4ecb9c9358eb4253602d510297adfb31df48b2f1c4d5`.
+[Apache-2.0 or MPL-2.0 license](https://github.com/cure53/DOMPurify/blob/3.4.16/LICENSE).
+The upstream license banner and full license are retained in
+`client/vendor/purify.min.js` and `client/vendor/DOMPurify-LICENSE`.
+The file is copied unchanged from the official npm archive after SHA-512
+integrity verification. Exact archive integrity and shipped SHA-256 hashes
+are recorded in `client/vendor/security-provenance.json`.
+
+## KaTeX
+
+Math rendering uses [KaTeX 0.16.22](https://github.com/KaTeX/KaTeX/releases/tag/v0.16.22),
+copyright Khan Academy and other contributors, under the MIT license retained
+in `client/vendor/katex/LICENSE`. The renderer identifies itself as
+`0.16.22+gopher-security.1`: a downstream security backport of upstream commit
+[`0adf7e77db6915d991803b29699f82b1ccf8d4f4`](https://github.com/KaTeX/KaTeX/commit/0adf7e77db6915d991803b29699f82b1ccf8d4f4)
+for [GHSA-238p-pmpm-9mq7 / CVE-2026-103923](https://github.com/KaTeX/KaTeX/security/advisories/GHSA-238p-pmpm-9mq7).
+
+Only own-property security checks and the identifying version string change.
+The original renderer's CSS, fonts, layout algorithms and generated math
+markup are retained. The patched readable distribution, exact patch record,
+upstream source integrity and reproducible build instructions are in
+`client/vendor/katex/security`. Vendored asset hashes are recorded in
+`client/vendor/security-provenance.json`.
 
 ## thinking-orbs
 
 The dotted thought-orb animations in
-[`src/ui/orb.js`](src/ui/orb.js) are adapted from
+[`client/orb.ts`](client/orb.ts) are adapted from
 [thinking-orbs](https://github.com/Jakubantalik/thinking-orbs)
 ([demo](https://orbs.jakubantalik.com)), ported to plain canvas for the
 Gopher chat UI.
@@ -61,7 +73,7 @@ SOFTWARE.
 ## highlight.js
 
 Syntax highlighting for fenced code blocks in chat uses
-[`src/ui/vendor/highlight.min.js`](src/ui/vendor/highlight.min.js)
+[`client/vendor/highlight.min.js`](client/vendor/highlight.min.js)
 ([highlight.js](https://highlightjs.org/) v11.11.1).
 
 ```

@@ -1,10 +1,10 @@
+const { readUiScript } = require('./helpers/ui-source.cjs');
 const assert = require('node:assert/strict');
-const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { test } = require('node:test');
 const vm = require('node:vm');
 
-const source = readFileSync(join(__dirname, '../src/ui/chat/scripts/runtime.js'), 'utf8').replace(/\r\n/g, '\n');
+const source = readUiScript("runtime").replace(/\r\n/g, '\n');
 const context = vm.createContext({});
 vm.runInContext(source.match(/^async function readStreamChunk\([\s\S]*?^\}$/m)[0], context);
 

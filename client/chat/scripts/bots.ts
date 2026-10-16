@@ -1,0 +1,2154 @@
+const BOT_HANDLE_RE = /^[a-z][a-z0-9_]{1,31}$/;
+const BOT_MENTION_RE = /@([a-z][a-z0-9_]{1,31}|everyone|user)\b/gi;
+const BOT_COMPACT_CHARS = 28000;
+const BOT_COMPACT_KEEP = 10;
+const LOOP_AGENT_MIN = 2;
+const LOOP_AGENT_MAX = 8;
+const LOOP_ROLE_PRESETS = [
+  { handle: 'solver', stage: 'explore', description: 'Propose a solution. Be concrete and show your work.' },
+  { handle: 'critic', stage: 'challenge', description: 'Find errors, gaps, and weaker assumptions in the solution.' },
+  { handle: 'verifier', stage: 'challenge', description: 'Independently check the result. Confirm or reject with evidence.' },
+  { handle: 'analyst', stage: 'explore', description: 'Break the problem into parts and name what would change the answer.' },
+  { handle: 'skeptic', stage: 'challenge', description: 'Ask what would have to be true for this to be wrong.' },
+  { handle: 'synthesizer', stage: 'answer', description: 'Merge the strongest points into one answer the room can stand behind.' },
+  { handle: 'redteam', stage: 'challenge', description: 'Try to break the current answer. Prefer a counterexample over vibes.' },
+  { handle: 'auditor', stage: 'challenge', description: 'Check units, edge cases, citations, and whether the claim is actually supported.' },
+];
+const LOOP_REVIEW_ROLE_RE = /\b(critic|verifier|skeptic|red\s*team|redteam|auditor|review|check|challenge|risk)\b/i;
+const LOOP_ANSWER_ROLE_RE = /\b(synthesi[sz]er|editor|decider|final answer|integrat)\b/i;
+/** Bumped on Stop so in-flight group hop loops exit instead of spawning more turns. */
+const botsOutboundEpoch: Map<string, number> = new Map();
+/** Refcount: a group stays busy between hops, not only while a stream is live. */
+const botsOutboundActive: Map<string, number> = new Map();
+
+function isBotsOutboundActive(convoId: string | null | undefined) {
+  return !!convoId && (botsOutboundActive.get(convoId) || 0) > 0;
+}
+
+function markBotsOutboundActive(convoId: string) {
+  if (!convoId) return;
+  botsOutboundActive.set(convoId, (botsOutboundActive.get(convoId) || 0) + 1);
+  if (typeof syncComposerStreamUi === 'function') syncComposerStreamUi();
+}
+
+function clearBotsOutboundActive(convoId: string) {
+  if (!convoId) return;
+  const next = (botsOutboundActive.get(convoId) || 0) - 1;
+  if (next <= 0) botsOutboundActive.delete(convoId);
+  else botsOutboundActive.set(convoId, next);
+  if (typeof syncComposerStreamUi === 'function') syncComposerStreamUi();
+}
+
+function bumpBotsOutboundEpoch(convoId: string | null | undefined) {
+  if (!convoId) return 0;
+  const next = (botsOutboundEpoch.get(convoId) || 0) + 1;
+  botsOutboundEpoch.set(convoId, next);
+  return next;
+}
+
+function botsOutboundEpochOf(convoId: string) {
+  return botsOutboundEpoch.get(convoId) || 0;
+}
+
+function stopAllBotsOutbound() {
+  for (const id of [...botsOutboundActive.keys()]) {
+    if (typeof markBotsOutboundStopped === 'function') markBotsOutboundStopped(id);
+    bumpBotsOutboundEpoch(id);
+  }
+}
+
+/** True when the model used the silent skip token (not a real reply). */
+function isSilentNoReply(text: string) {
+  let raw = String(text || '');
+  if (!raw.trim()) return false;
+  raw = raw.replace(/<(?:think|thinking)>[\s\S]*?<\/(?:think|thinking)>/gi, ' ');
+  raw = raw.replace(/<\/?(?:think|thinking)>/gi, ' ');
+  raw = raw.replace(/<[^>]+>/g, ' ');
+  raw = raw.replace(/[*_`~]+/g, '');
+  raw = raw.replace(/^\s*[-*•>]+\s*/gm, '');
+  raw = raw.replace(/["'“”‘’]/g, '');
+  raw = raw.replace(/\s+/g, ' ').trim();
+  return /^NO[_ -]?REPLY\.?$/i.test(raw);
+}
+
+function isBotsSurface() {
+  return appSurface === 'bots';
+}
+
+function paintLoopModelHint() {
+  if (!isBotsSurface() || !modelHintEl) return false;
+  modelHintEl.classList.remove('is-hidden');
+  const convo = conversations.find((item) => item.id === activeId);
+  const members = convo && typeof participantBots === 'function' ? participantBots(convo) : [];
+  if (!members.length) {
+    modelHintEl.textContent = 'Several models, one problem — they debate until the answer holds.';
+    return true;
+  }
+  const labels = members.map((bot) => {
+    const model = loopAgentModelLabel(bot);
+    return model ? ('@' + bot.handle + ' · ' + model) : ('@' + bot.handle);
+  });
+  modelHintEl.textContent = labels.length <= 3
+    ? labels.join('  ·  ')
+    : (members.length + ' agents, each with its own model');
+  return true;
+}
+
+function convoSurfaceOf(convo: Conversation | null | undefined) {
+  return convo && convo.surface === 'bots' ? 'bots' : 'chat';
+}
+
+function isBotsConvo(convo: Conversation | null | undefined): convo is BotsConversation {
+  return convoSurfaceOf(convo) === 'bots';
+}
+
+function isBotGroup(convo: Conversation | null | undefined): convo is BotsGroupConversation {
+  return !!(convo && convo.surface === 'bots' && convo.botKind === 'group');
+}
+
+function conversationsOnSurface(surface?: string) {
+  const want = surface || appSurface;
+  return conversations.filter((convo) => convoSurfaceOf(convo) === want);
+}
+
+function allLoopAgents() {
+  const found: Bot[] = [];
+  const seen = new Set();
+  (conversations || []).forEach((convo) => {
+    (Array.isArray(convo?.loopAgents) ? convo.loopAgents : []).forEach((bot) => {
+      if (!bot || !bot.id || seen.has(bot.id)) return;
+      seen.add(bot.id);
+      found.push(bot);
+    });
+  });
+  return found;
+}
+
+function getBot(id: string | null | undefined, convo?: Conversation | null) {
+  if (!id) return null;
+  const scoped = Array.isArray(convo?.loopAgents) ? convo.loopAgents : null;
+  if (scoped) {
+    const hit = scoped.find((bot) => bot.id === id);
+    if (hit) return hit;
+  }
+  const fromLoop = allLoopAgents().find((bot) => bot.id === id);
+  if (fromLoop) return fromLoop;
+  return bots.find((bot) => bot.id === id) || null;
+}
+
+function botByHandle(handle: string, convo?: Conversation | null) {
+  const key = String(handle || '').replace(/^@/, '').trim().toLowerCase();
+  if (!key) return null;
+  const scoped = convo ? participantBots(convo) : [];
+  const inRoom = scoped.find((bot) => bot.handle === key);
+  if (inRoom) return inRoom;
+  const fromLoop = allLoopAgents().find((bot) => bot.handle === key);
+  if (fromLoop) return fromLoop;
+  return bots.find((bot) => bot.handle === key) || null;
+}
+
+function normalizeHandle(raw: unknown) {
+  return String(raw || '')
+    .trim()
+    .replace(/^@+/, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 32);
+}
+
+function normalizeBot(bot?: Partial<Bot> | null | undefined): Bot {
+  const handle = normalizeHandle(bot && bot.handle);
+  const safeHandle = BOT_HANDLE_RE.test(handle)
+    ? handle
+    : ('bot_' + String((bot && bot.id) || 'x').replace(/[^a-z0-9]/gi, '').slice(0, 8).toLowerCase());
+  const avatarSeed = typeof bot?.avatarSeed === 'string' && bot.avatarSeed.trim()
+    ? bot.avatarSeed.trim().slice(0, 64)
+    : (safeHandle || 'bot');
+  return {
+    id: (bot && bot.id) || newId('b'),
+    handle: safeHandle || 'bot',
+    name: typeof bot?.name === 'string' && bot.name.trim() ? bot.name.trim() : ('@' + (safeHandle || 'bot')),
+    description: typeof bot?.description === 'string' ? bot.description : '',
+    memory: typeof bot?.memory === 'string' ? bot.memory : '',
+    avatarSeed,
+    model: typeof bot?.model === 'string' ? bot.model.trim() : '',
+    stage: ['auto', 'explore', 'challenge', 'answer'].includes(bot?.stage) ? bot.stage : 'auto',
+    sessionId: typeof bot?.sessionId === 'string' ? bot.sessionId : null,
+    createdAt: typeof bot?.createdAt === 'number' ? bot.createdAt : Date.now(),
+    updatedAt: typeof bot?.updatedAt === 'number' ? bot.updatedAt : Date.now(),
+  };
+}
+
+function hashAvatarSeed(seed: unknown) {
+  let h = 2166136261;
+  const text = String(seed || 'bot');
+  for (let i = 0; i < text.length; i += 1) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+/** Curated hues — varied, readable on light/dark paper. */
+const BOT_AVATAR_HUES = [18, 42, 72, 145, 175, 198, 222, 248, 312, 348];
+
+function botAvatarSeed(botOrSeed: string | Partial<Bot> | null | undefined) {
+  if (typeof botOrSeed === 'string') return botOrSeed.trim() || 'bot';
+  if (botOrSeed && typeof botOrSeed.avatarSeed === 'string' && botOrSeed.avatarSeed.trim()) {
+    return botOrSeed.avatarSeed.trim();
+  }
+  if (botOrSeed && botOrSeed.handle) return String(botOrSeed.handle);
+  return 'bot';
+}
+
+function buildBotAvatarSvg(seedInput: string | Partial<Bot> | null | undefined) {
+  const seed = botAvatarSeed(seedInput);
+  const h = hashAvatarSeed(seed);
+  const hue = BOT_AVATAR_HUES[h % BOT_AVATAR_HUES.length];
+  const hue2 = BOT_AVATAR_HUES[(h >>> 5) % BOT_AVATAR_HUES.length];
+  const bg = `oklch(0.78 0.11 ${hue})`;
+  const mid = `oklch(0.62 0.14 ${hue2})`;
+  const ink = `oklch(0.28 0.06 ${hue})`;
+  const letter = (seed.replace(/^@/, '').charAt(0) || '?').toUpperCase();
+  const cx = 18 + (h % 28);
+  const cy = 14 + ((h >>> 8) % 24);
+  const r = 10 + ((h >>> 12) % 14);
+  const x2 = 8 + ((h >>> 16) % 36);
+  const y2 = 30 + ((h >>> 20) % 18);
+  const r2 = 6 + ((h >>> 24) % 12);
+  const rot = (h >>> 3) % 360;
+  return (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-hidden="true">' +
+      '<rect width="64" height="64" rx="32" fill="' + bg + '"/>' +
+      '<g opacity="0.88">' +
+        '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="' + mid + '"/>' +
+        '<circle cx="' + x2 + '" cy="' + y2 + '" r="' + r2 + '" fill="' + ink + '" opacity="0.22"/>' +
+        '<rect x="28" y="8" width="22" height="22" rx="8" fill="' + ink + '" opacity="0.16" transform="rotate(' + rot + ' 39 19)"/>' +
+      '</g>' +
+      '<text x="32" y="38" text-anchor="middle" font-family="ui-sans-serif, system-ui, sans-serif" font-size="26" font-weight="700" fill="' + ink + '">' +
+        letter +
+      '</text>' +
+    '</svg>'
+  );
+}
+
+function createBotAvatarEl(botOrSeed: string | Partial<Bot> | null | undefined, { className = 'convo-avatar' } = {}) {
+  const el = (document.createElement('span') as HTMLElement);
+  el.className = className;
+  el.setAttribute('aria-hidden', 'true');
+  el.innerHTML = buildBotAvatarSvg(botOrSeed);
+  return el;
+}
+
+function createConvoAvatarEl(convo: Conversation) {
+  if (!isBotsConvo(convo)) return null;
+  if (isBotGroup(convo)) {
+    const members = participantBots(convo).slice(0, 2);
+    const stack = (document.createElement('span') as HTMLElement);
+    stack.className = 'convo-avatar convo-avatar-stack';
+    stack.setAttribute('aria-hidden', 'true');
+    if (!members.length) {
+      stack.appendChild(createBotAvatarEl(convo.title || convo.id || 'group', { className: 'convo-avatar-piece' }));
+    } else {
+      members.forEach((bot) => {
+        stack.appendChild(createBotAvatarEl(bot, { className: 'convo-avatar-piece' }));
+      });
+    }
+    return stack;
+  }
+  const bot = convo.botId ? getBot(convo.botId) : null;
+  return createBotAvatarEl(bot || { handle: 'bot' });
+}
+
+function participantBots(convo: Conversation | null | undefined): Bot[] {
+  if (!isBotsConvo(convo)) return [];
+  if (Array.isArray(convo.loopAgents) && convo.loopAgents.length) {
+    return convo.loopAgents.slice();
+  }
+  if (convo.botKind === 'dm' && convo.botId) {
+    const bot = getBot(convo.botId, convo);
+    return bot ? [bot] : [];
+  }
+  return (Array.isArray(convo.participantBotIds) ? convo.participantBotIds : [])
+    .map((id) => getBot(id, convo))
+    .filter(Boolean);
+}
+
+function ensureLoopAgents(convo: Conversation | null | undefined) {
+  if (!convo || !isBotsConvo(convo)) return [];
+  if (Array.isArray(convo.loopAgents) && convo.loopAgents.length) {
+    convo.participantBotIds = convo.loopAgents.map((bot) => bot.id);
+    return convo.loopAgents;
+  }
+  const members = participantBots(convo).map((bot) => normalizeBot({
+    ...bot,
+    model: bot.model || (typeof selectedChatModel === 'string' ? selectedChatModel : ''),
+  }));
+  convo.loopAgents = members;
+  convo.participantBotIds = members.map((bot) => bot.id);
+  return members;
+}
+
+function botDisplayHandle(bot: Bot) {
+  return bot ? '@' + bot.handle : '@bot';
+}
+
+function parseBotMentions(raw: unknown, convo: Conversation | null | undefined): BotMentionResult {
+  const result: BotMentionResult = { everyone: false, user: false, handles: [], botIds: [] };
+  const seen = new Set();
+  String(raw || '').replace(BOT_MENTION_RE, (_: string, token: string) => {
+    const key = String(token).toLowerCase();
+    if (key === 'everyone') result.everyone = true;
+    else if (key === 'user') result.user = true;
+    else if (!seen.has(key)) {
+      seen.add(key);
+      result.handles.push(key);
+      const bot = botByHandle(key, convo);
+      if (bot) result.botIds.push(bot.id);
+    }
+    return _;
+  });
+  return result;
+}
+
+function persistBotMemory(botId: string, memoryText: string, convo?: Conversation | null) {
+  const bot = getBot(botId, convo);
+  if (!bot) return false;
+  const next = String(memoryText || '');
+  if ((bot.memory || '') === next) return false;
+  bot.memory = next;
+  bot.updatedAt = Date.now();
+  saveStore();
+  return true;
+}
+
+function persistGroupMemory(convo: Conversation | null | undefined, memoryText: string) {
+  if (!convo) return false;
+  const next = String(memoryText || '');
+  if ((convo.groupMemory || '') === next) return false;
+  convo.groupMemory = next;
+  convo.updatedAt = Date.now();
+  saveStore();
+  return true;
+}
+
+function botSystemPromptParts(convo: Conversation, speakerBot: Bot | null | undefined) {
+  const P = window.GOPHER_PROMPTS || {};
+  const fill = window.fillPrompt || ((t) => t);
+  if (!speakerBot) return [];
+  const description = String(speakerBot.description || '').trim() || '(No description provided.)';
+  const parts = [
+    fill(P['chat.botIdentity'] || 'You are @{{handle}}. Purpose:\n{{description}}', {
+      handle: speakerBot.handle,
+      description,
+    }),
+    fill(P['chat.botMemory'] || 'Private memory:\n{{memory}}', {
+      memory: String(speakerBot.memory || '').trim() || '(empty)',
+    }),
+  ];
+  if (isBotGroup(convo)) {
+    const names = ['@user'].concat(participantBots(convo).map(botDisplayHandle));
+    parts.push(fill(P['chat.botGroup'] || 'Group chat with {{participants}}. Speak only as @{{handle}}.', {
+      participants: names.join(', '),
+      handle: speakerBot.handle,
+    }));
+    parts.push(fill(P['chat.botGroupMemory'] || 'Shared group notes:\n{{memory}}', {
+      memory: String(convo.groupMemory || '').trim() || '(empty)',
+    }));
+    if (convo.botsHeldBy) {
+      const holder = getBot(convo.botsHeldBy);
+      parts.push(fill(P['chat.botHold'] || 'Room is held by @{{handle}}. Specialists: NO_REPLY unless @user pings you.', {
+        handle: holder ? holder.handle : 'holder',
+      }));
+    }
+  } else if (convo.botKind === 'dm') {
+    const group = findLinkedGroup(convo);
+    const groupNote = group
+      ? ('Linked group: ' + (group.title || 'group') + ' (' + participantBots(group).map(botDisplayHandle).join(', ') + '). You can <bot_group_post> back there.')
+      : 'No linked group. <bot_group_post> is unavailable unless you opened this DM from a group.';
+    parts.push(fill(P['chat.botDm'] || 'Private DM with @user. {{group_note}} Speak as @{{handle}}.', {
+      handle: speakerBot.handle,
+      group_note: groupNote,
+    }));
+  }
+  return parts;
+}
+
+function labeledBotContent(message: ChatMessage, speakerBot: Bot | null | undefined) {
+  const text = typeof message.content === 'string' ? message.content : '';
+  if (message.compact) return '[Compacted earlier conversation]\n' + text;
+  if (message.role === 'user') return isBotGroup(conversations.find((c) => (c.messages || []).includes(message))) ? ('@user: ' + text) : text;
+  if (speakerBot && message.speakerId === speakerBot.id) return text;
+  const handle = message.speakerHandle || getBot(message.speakerId)?.handle || 'bot';
+  return '@' + handle + ': ' + text;
+}
+
+function botApiMessages(convo: Conversation, speakerBot: Bot | null | undefined, fallbackUserText: string | ApiContentPart[] | null, { messageLimit = null }: {messageLimit?: number | null} = {}): BotApiMessage[] {
+  const group = isBotGroup(convo);
+  const rows: BotApiMessage[] = [];
+  const allMessages = convo.messages || [];
+  const sourceMessages = Number.isFinite(messageLimit)
+    ? allMessages.slice(0, Math.max(0, Number(messageLimit)))
+    : allMessages;
+  sourceMessages.forEach((message) => {
+    if (!message || (message.role !== 'user' && message.role !== 'assistant')) return;
+    let content = String(message.content || '');
+    if (message.compact) content = '[Compacted earlier conversation]\n' + content;
+    else if (group) {
+      if (message.role === 'user') content = '@user: ' + content;
+      else if (!(speakerBot && message.speakerId === speakerBot.id)) {
+        content = '@' + (message.speakerHandle || getBot(message.speakerId, convo)?.handle || 'bot') + ': ' + content;
+      }
+    }
+    if (!content.trim()) return;
+    const mine = message.role === 'assistant' && speakerBot && message.speakerId === speakerBot.id;
+    rows.push({ role: mine ? 'assistant' : 'user', content });
+  });
+  const lastStored = sourceMessages.filter((message) => (
+    message && (message.role === 'user' || message.role === 'assistant')
+  )).pop();
+  if (fallbackUserText && lastStored && lastStored.role === 'user' && rows.length && rows[rows.length - 1].role === 'user') {
+    rows[rows.length - 1].content = group ? ('@user: ' + fallbackUserText) : fallbackUserText;
+  }
+  return rows;
+}
+
+function estimateConvoChars(convo: Conversation) {
+  return (convo.messages || []).reduce((sum, message) => sum + String(message.content || '').length, 0);
+}
+
+async function collectCompletionText(messages: BotApiMessage[], modelId: string) {
+  const remote = selectedRemoteModel(latestState, modelId);
+  if (!remote?.ready || !remote.model || (!remote.provider_id && !remote.base)) {
+    throw new Error('The selected Loop model is unavailable for compaction');
+  }
+  const body: Record<string, unknown> = { messages, agent: false, skills: {}, force_tools: [] };
+  body.remote_base = remote.base;
+  if (remote.provider_id) body.provider_id = remote.provider_id;
+  body.model = remote.model;
+  const response = await fetch('/api/chat/completions', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error('Compact request failed');
+  if (!response.body) return '';
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let text = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const chunks = buffer.split(/\r?\n\r?\n/);
+    buffer = chunks.pop() ?? '';
+    for (const raw of chunks) {
+      const parsed = parseSseEvent(raw);
+      if (!parsed || parsed.data === '' || parsed.data === '[DONE]') continue;
+      if (parsed.event === 'error') throw new Error(parsed.data);
+      try {
+        const json: { choices?: Array<{ delta?: { content?: unknown } }> } = JSON.parse(parsed.data);
+        const delta = json.choices && json.choices[0] && json.choices[0].delta && json.choices[0].delta.content;
+        if (typeof delta === 'string') text += delta;
+      } catch { /* ignore */ }
+    }
+  }
+  return text.trim();
+}
+
+function parseCompactJson(raw: string) {
+  const source = String(raw || '').trim();
+  const start = source.indexOf('{');
+  const end = source.lastIndexOf('}');
+  if (start < 0 || end <= start) return null;
+  try {
+    const parsed: { summary?: unknown; memory?: unknown } = JSON.parse(source.slice(start, end + 1));
+    return {
+      summary: String(parsed.summary || '').trim(),
+      memory: String(parsed.memory || '').trim(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function maybeCompactBotsConvo(convo: Conversation | null | undefined, speakerBot: Bot | null | undefined) {
+  if (!convo || convo.incognito || estimateConvoChars(convo) < BOT_COMPACT_CHARS) return;
+  if ((convo.messages || []).length <= BOT_COMPACT_KEEP + 2) return;
+  const writeEpoch = storageWriteEpoch;
+  const runEpoch = botsOutboundEpochOf(convo.id);
+  const snapshot = convo.messages.slice();
+  const dropCount = convo.messages.length - BOT_COMPACT_KEEP;
+  const dropped = convo.messages.slice(0, dropCount);
+  const kept = convo.messages.slice(dropCount);
+  const transcript = dropped.map((message) => {
+    const who = message.role === 'user'
+      ? '@user'
+      : ('@' + (message.speakerHandle || getBot(message.speakerId)?.handle || 'bot'));
+    return who + ': ' + String(message.content || '');
+  }).join('\n\n');
+  const P = window.GOPHER_PROMPTS || {};
+  const fill = window.fillPrompt || ((t) => t);
+  const group = isBotGroup(convo);
+  const template = group
+    ? (P['chat.botCompactGroup'] || 'Return JSON {"summary","memory"}. Current notes:\n{{memory}}')
+    : (P['chat.botCompact'] || 'Return JSON {"summary","memory"}. Current memory:\n{{memory}}');
+  try {
+    const raw = await collectCompletionText([
+      { role: 'system', content: fill(template, {
+        memory: group
+          ? (String(convo.groupMemory || '').trim() || '(empty)')
+          : (String(speakerBot?.memory || '').trim() || '(empty)'),
+      }) },
+      { role: 'user', content: transcript.slice(0, 24000) },
+    ], speakerBot?.model || conversationModelId(convo));
+    if (writeEpoch !== storageWriteEpoch || diskEncryptionLocked()
+      || runEpoch !== botsOutboundEpochOf(convo.id)
+      || !conversations.includes(convo)
+      || convo.messages.length !== snapshot.length
+      || snapshot.some((message, index) => convo.messages[index] !== message)) return;
+    const parsed = parseCompactJson(raw);
+    if (!parsed || !parsed.summary) return;
+    convo.messages = ([{
+      role: 'assistant',
+      content: parsed.summary,
+      compact: true,
+      speakerId: speakerBot ? speakerBot.id : null,
+      speakerHandle: speakerBot ? speakerBot.handle : null,
+    }] as ChatMessage[]).concat(kept);
+    if (group) persistGroupMemory(convo, parsed.memory || convo.groupMemory || '');
+    else if (speakerBot) persistBotMemory(speakerBot.id, parsed.memory || speakerBot.memory || '');
+    convo.updatedAt = Date.now();
+    saveStore({ immediate: true });
+  } catch (error) {
+    console.warn('Bot compact failed:', (error as Error | null)?.message || error);
+  }
+}
+
+function botsToPing(convo: Conversation, userText: string, { fromBotId = null, replyToSpeakerId = null }: BotPingOptions = {}) {
+  const members = participantBots(convo);
+  if (!members.length) return [];
+  const pings = parseBotMentions(userText, convo);
+  if (!isBotGroup(convo)) return members.slice(0, 1);
+  if (replyToSpeakerId && !fromBotId && members.some((bot) => bot.id === replyToSpeakerId)) {
+    const target = getBot(replyToSpeakerId, convo);
+    return target ? [target] : [];
+  }
+  const heldBy = convo.botsHeldBy || null;
+  if (heldBy && fromBotId) return [];
+  let ids: string[];
+  if (heldBy && !fromBotId) {
+    if (pings.everyone) ids = members.map((bot) => bot.id);
+    else if (pings.botIds.length) {
+      ids = pings.botIds.filter((id) => members.some((bot) => bot.id === id));
+    } else {
+      ids = [heldBy];
+    }
+  } else if (pings.everyone || (!pings.botIds.length && !fromBotId)) {
+    ids = members.map((bot) => bot.id);
+  } else {
+    ids = pings.botIds.filter((id) => members.some((bot) => bot.id === id));
+  }
+  if (fromBotId) ids = ids.filter((id) => id !== fromBotId);
+  return ids.map((id) => getBot(id, convo)).filter(Boolean);
+}
+
+function loopAgentStage(bot: Bot | null | undefined) {
+  if (['explore', 'challenge', 'answer'].includes(bot?.stage)) return bot.stage;
+  const role = [bot?.handle, bot?.description].filter(Boolean).join(' ');
+  if (LOOP_ANSWER_ROLE_RE.test(role)) return 'answer';
+  if (LOOP_REVIEW_ROLE_RE.test(role)) return 'challenge';
+  return 'explore';
+}
+
+function uniqueLoopAgents(list: Bot[]) {
+  const seen = new Set();
+  return (list || []).filter((bot) => {
+    if (!bot?.id || seen.has(bot.id)) return false;
+    seen.add(bot.id);
+    return true;
+  });
+}
+
+function buildLoopRunPhases(convo: Conversation, item: Partial<OutboundItem> = {}) {
+  const members = ensureLoopAgents(convo);
+  if (!members.length) return [];
+  const text = item.editText || item.displayText || '';
+  const mentions = parseBotMentions(text, convo);
+  const focused = !!(
+    item.fromBotId
+    || item.replyToSpeakerId
+    || (mentions.botIds.length && !mentions.everyone)
+  );
+  if (focused) {
+    const targets = botsToPing(convo, text, {
+      fromBotId: item.fromBotId || null,
+      replyToSpeakerId: item.replyToSpeakerId || null,
+    });
+    if (!targets.length) return [];
+    return [{
+      id: item.fromBotId ? 'handoff' : 'focus',
+      label: item.fromBotId ? 'Handoff' : 'Focused reply',
+      description: item.fromBotId
+        ? 'The requested agents pick up the handoff.'
+        : 'Only the agents you addressed respond.',
+      agentIds: uniqueLoopAgents(targets).map((bot) => bot.id),
+      completedAgentIds: [],
+    }];
+  }
+
+  let explorers = members.filter((bot) => loopAgentStage(bot) === 'explore');
+  let challengers = members.filter((bot) => loopAgentStage(bot) === 'challenge');
+  const answerers = members.filter((bot) => loopAgentStage(bot) === 'answer');
+  if (!explorers.length) explorers = members.slice(0, 1);
+  if (!challengers.length && members.length > 1) {
+    challengers = members.filter((bot) => bot.id !== explorers[0]?.id).slice(0, 1);
+  }
+  const finalAgent = answerers[0] || explorers[0] || members[0];
+  const phases = [{
+    id: 'explore',
+    label: 'Explore',
+    description: 'Independent takes from the same starting point.',
+    agentIds: uniqueLoopAgents(explorers).map((bot) => bot.id),
+    completedAgentIds: [],
+  }];
+  if (challengers.length) {
+    phases.push({
+      id: 'challenge',
+      label: 'Challenge',
+      description: 'Agents test the proposals and surface weak points.',
+      agentIds: uniqueLoopAgents(challengers).map((bot) => bot.id),
+      completedAgentIds: [],
+    });
+  }
+  phases.push({
+    id: 'answer',
+    label: 'Answer',
+    description: 'One agent turns the strongest work into a clear answer.',
+    agentIds: finalAgent ? [finalAgent.id] : [],
+    completedAgentIds: [],
+  });
+  return phases.filter((phase) => phase.agentIds.length);
+}
+
+function loopPhaseDirective(phase: LoopPhase, bot: Bot) {
+  const handle = botDisplayHandle(bot);
+  if (phase.id === 'explore') {
+    return [
+      'Loop stage: EXPLORE.',
+      'Give an independent, concrete take on the user’s problem from your assigned role.',
+      'You are intentionally seeing the shared starting point, not other opening takes. Do not recap or wait for other agents.',
+      'State the important assumptions, proposed answer, and evidence or checks that would make it trustworthy.',
+      'The app schedules the next agent; do not use @mentions to manage the sequence.',
+    ].join('\n');
+  }
+  if (phase.id === 'challenge') {
+    return [
+      'Loop stage: CHALLENGE.',
+      'Review the proposals already in the room. Focus on material errors, disagreements, missing evidence, and edge cases.',
+      'Name what survives scrutiny and what must change. Do not restate an earlier answer just to agree.',
+      'The app schedules the next agent; do not use @mentions to manage the sequence.',
+    ].join('\n');
+  }
+  if (phase.id === 'answer') {
+    return [
+      'Loop stage: ANSWER.',
+      'Act as the final editor. Resolve the challenges and give @user one cohesive, self-contained answer.',
+      'Lead with the conclusion. Do not narrate the agent workflow or ask another agent to continue.',
+      'If an important uncertainty remains, state it plainly and say what would resolve it.',
+    ].join('\n');
+  }
+  return [
+    'Loop stage: ' + phase.label.toUpperCase() + '.',
+    '@user specifically routed this turn to ' + handle + '. Respond directly and stay within your role.',
+    'The app controls the sequence; only request another specialist when it is essential.',
+  ].join('\n');
+}
+
+function startLoopRun(convo: Conversation, phases: LoopPhase[]) {
+  convo.loopRun = {
+    id: newId('loop'),
+    status: 'running',
+    phaseIndex: 0,
+    activeAgentId: null,
+    phases: phases.map((phase) => ({
+      ...phase,
+      agentIds: [...phase.agentIds],
+      completedAgentIds: [],
+    })),
+    startedAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+  saveStore();
+  renderLoopFlow(convo);
+  if (typeof isDesktopTraceLayout === 'function' && isDesktopTraceLayout()) {
+    setTraceSidebarOpen(true);
+  }
+  return convo.loopRun;
+}
+
+function setLoopRunPosition(convo: Conversation | null | undefined, phaseIndex: number, agentId: string | null = null) {
+  const run = convo?.loopRun;
+  if (!run) return;
+  run.phaseIndex = Math.min(run.phases.length - 1, Math.max(0, phaseIndex));
+  run.activeAgentId = agentId || null;
+  run.updatedAt = Date.now();
+  saveStore();
+  renderLoopFlow(convo);
+}
+
+function completeLoopRunAgent(convo: Conversation | null | undefined, phaseIndex: number, agentId: string) {
+  const run = convo?.loopRun;
+  const phase = run?.phases?.[phaseIndex];
+  if (!phase || !agentId) return;
+  if (!phase.completedAgentIds.includes(agentId)) phase.completedAgentIds.push(agentId);
+  run.activeAgentId = null;
+  run.updatedAt = Date.now();
+  saveStore();
+  renderLoopFlow(convo);
+}
+
+function finishLoopRun(convo: Conversation | null | undefined, status = 'complete') {
+  const run = convo?.loopRun;
+  if (!run) return;
+  run.status = status === 'complete' ? 'complete' : 'stopped';
+  run.activeAgentId = null;
+  if (run.status === 'complete') run.phaseIndex = Math.max(0, run.phases.length - 1);
+  run.updatedAt = Date.now();
+  saveStore({ immediate: true });
+  renderLoopFlow(convo);
+}
+
+function renderLoopFlow(convo: Conversation | null | undefined = conversations.find((item) => item.id === activeId)) {
+  const show = !!(convo && isBotsSurface() && isBotGroup(convo));
+  if (loopFlow) loopFlow.classList.toggle('is-hidden', !show);
+  if (topbarLoopPhase) topbarLoopPhase.classList.toggle('is-hidden', !show);
+  if (!show || !loopFlow || !loopFlowRail || !loopFlowCurrent || !loopFlowAgents) return;
+
+  const previewPhases = buildLoopRunPhases(convo, {});
+  const run = convo.loopRun;
+  const phases = run?.phases?.length ? run.phases : previewPhases;
+  if (!phases.length) return;
+  const rawRunning = run?.status === 'running';
+  const liveRunning = rawRunning && (
+    isBotsOutboundActive(convo.id)
+    || (typeof activeStreams !== 'undefined' && activeStreams.has(convo.id))
+  );
+  const interrupted = rawRunning && !liveRunning;
+  const phaseIndex = run
+    ? Math.min(phases.length - 1, Math.max(0, run.phaseIndex || 0))
+    : 0;
+  const phase = phases[phaseIndex];
+  const activeBot = run?.activeAgentId ? getBot(run.activeAgentId, convo) : null;
+  let title = run ? phase.label : 'Ready for a problem';
+  let detail = run ? phase.description : phases.map((item) => item.label).join(' → ');
+  let chromeState = 'ready';
+  if (liveRunning) {
+    chromeState = 'running';
+    if (activeBot) detail = botDisplayHandle(activeBot) + ' is working · ' + phase.description;
+  } else if (run?.status === 'complete') {
+    chromeState = 'complete';
+    title = 'Answer ready';
+    detail = 'The loop completed its review and synthesis.';
+  } else if (run?.status === 'stopped' || interrupted) {
+    chromeState = 'stopped';
+    title = interrupted ? 'Pass interrupted' : 'Loop stopped';
+    detail = 'Send a message to start a fresh pass.';
+  }
+
+  loopFlow.classList.toggle('is-running', chromeState === 'running');
+  loopFlowCount.textContent = run ? ((phaseIndex + 1) + ' of ' + phases.length) : (phases.length + ' stages');
+  loopFlowCurrent.replaceChildren();
+  const baton = (document.createElement('span') as HTMLElement);
+  baton.className = 'loop-flow-baton';
+  baton.setAttribute('aria-hidden', 'true');
+  // A deterministic 3×3 compute matrix: the non-linear phase order keeps the
+  // activity from reading like another generic spinner or presence pulse.
+  [0, 5, 2, 7, 3, 8, 1, 6, 4].forEach((phase) => {
+    const cell = (document.createElement('span') as HTMLElement);
+    cell.className = 'loop-flow-compute-cell';
+    cell.style.setProperty('--compute-phase', String(phase));
+    baton.appendChild(cell);
+  });
+  const copy = (document.createElement('span') as HTMLElement);
+  copy.className = 'loop-flow-current-copy';
+  const currentTitle = (document.createElement('strong') as HTMLElement);
+  currentTitle.className = 'loop-flow-current-title';
+  currentTitle.textContent = title;
+  const currentDetail = (document.createElement('span') as HTMLElement);
+  currentDetail.className = 'loop-flow-current-detail';
+  currentDetail.textContent = detail;
+  copy.append(currentTitle, currentDetail);
+  loopFlowCurrent.append(baton, copy);
+
+  loopFlowRail.style.setProperty('--loop-phase-count', String(phases.length));
+  loopFlowRail.replaceChildren();
+  phases.forEach((item, index) => {
+    const step = (document.createElement('li') as HTMLElement);
+    step.className = 'loop-flow-step';
+    const done = run?.status === 'complete' || index < phaseIndex;
+    if (done) step.classList.add('is-done');
+    else if (index === phaseIndex && run) step.classList.add('is-active');
+    const dot = (document.createElement('span') as HTMLElement);
+    dot.className = 'loop-flow-step-dot';
+    dot.setAttribute('aria-hidden', 'true');
+    const label = (document.createElement('span') as HTMLElement);
+    label.className = 'loop-flow-step-label';
+    label.textContent = item.label;
+    step.append(dot, label);
+    loopFlowRail.appendChild(step);
+  });
+
+  loopFlowAgents.replaceChildren();
+  const visiblePhase = phases[phaseIndex];
+  (visiblePhase.agentIds || []).forEach((agentId) => {
+    const bot = getBot(agentId, convo);
+    if (!bot) return;
+    const chip = (document.createElement('span') as HTMLElement);
+    chip.className = 'loop-flow-agent';
+    if (run?.activeAgentId === agentId && liveRunning) chip.classList.add('is-active');
+    if ((visiblePhase.completedAgentIds || []).includes(agentId) || run?.status === 'complete') {
+      chip.classList.add('is-done');
+    }
+    const avatar = createBotAvatarEl(bot, { className: 'loop-flow-agent-avatar' });
+    applyPrivacyMosaic(avatar, 'loop-flow-avatar:' + bot.id, { dense: true });
+    const name = (document.createElement('span') as HTMLElement);
+    name.textContent = botDisplayHandle(bot);
+    applyPrivacyMosaic(name, 'loop-flow-agent:' + bot.id);
+    const state = (document.createElement('span') as HTMLElement);
+    state.className = 'loop-flow-agent-state';
+    state.setAttribute('aria-hidden', 'true');
+    chip.append(avatar, name, state);
+    loopFlowAgents.appendChild(chip);
+  });
+
+  if (topbarLoopPhase) {
+    topbarLoopPhase.classList.toggle('is-complete', chromeState === 'complete');
+    topbarLoopPhase.classList.toggle('is-stopped', chromeState === 'stopped');
+    topbarLoopPhase.textContent = chromeState === 'complete'
+      ? 'Answer ready'
+      : chromeState === 'stopped'
+        ? 'Pass stopped'
+        : run
+          ? (phase.label + ' · ' + (phaseIndex + 1) + '/' + phases.length)
+          : 'Ready · ' + phases.length + ' stages';
+  }
+}
+
+function findLinkedGroup(convo: Conversation) {
+  if (!convo) return null;
+  if (convo.sideThreadOf) {
+    return conversations.find((item) => item.id === convo.sideThreadOf) || null;
+  }
+  if (!convo.botId) return null;
+  return conversations
+    .filter((item) => isBotGroup(item) && (item.participantBotIds || []).includes(convo.botId))
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0] || null;
+}
+
+function ensureBotDm(bot: Bot, { sideThreadOf = null }: {sideThreadOf?: string | null} = {}) {
+  if (!bot) return null;
+  let dm = conversations.find((item) => (
+    isBotsConvo(item) && item.botKind === 'dm' && item.botId === bot.id
+  ));
+  if (!dm) {
+    dm = createBotSession(bot);
+    bot.sessionId = dm.id;
+  }
+  if (sideThreadOf) dm.sideThreadOf = sideThreadOf;
+  return dm;
+}
+
+function appendBotSpokenMessage(convo: Conversation, speakerBot: Bot, text: string): ChatMessage {
+  const message: ChatMessage = {
+    role: 'assistant',
+    content: String(text || '').trim(),
+    speakerId: speakerBot.id,
+    speakerHandle: speakerBot.handle,
+  };
+  convo.messages.push(message);
+  convo.updatedAt = Date.now();
+  return message;
+}
+
+let pendingBotNavigation: string | null = null;
+
+function requestBotNavigation(convoId: string) {
+  if (convoId) pendingBotNavigation = convoId;
+}
+
+function flushBotNavigation() {
+  const id = pendingBotNavigation;
+  pendingBotNavigation = null;
+  if (!id || id === activeId) return;
+  selectConversation(id);
+}
+
+function persistGroupHold(convo: Conversation, botId: string | null) {
+  if (!convo) return;
+  const next = botId || null;
+  if ((convo.botsHeldBy || null) === next) return;
+  convo.botsHeldBy = next;
+  convo.updatedAt = Date.now();
+  saveStore();
+  if (activeId === convo.id) {
+    if (typeof syncProjectChrome === 'function') syncProjectChrome();
+    if (typeof updateComposerHint === 'function') updateComposerHint();
+  }
+}
+
+function defaultBotsTurn() {
+  return {
+    useAgent: !!settings.agentMode,
+    skills: {
+      web_search: !!settings.skillWebSearch,
+      web_search_provider: WEB_SEARCH_PROVIDERS.includes(settings.webSearchProvider)
+        ? settings.webSearchProvider
+        : 'auto',
+      web_search_searxng: typeof settings.webSearchSearxng === 'string'
+        ? settings.webSearchSearxng.trim()
+        : '',
+      web_search_parallel_api_key: typeof settings.webSearchParallelApiKey === 'string'
+        ? settings.webSearchParallelApiKey.trim()
+        : '',
+      web_search_parallel_mode: WEB_SEARCH_PARALLEL_MODES.includes(settings.webSearchParallelMode)
+        ? settings.webSearchParallelMode
+        : 'fast',
+      web_search_tinyfish_api_key: typeof settings.webSearchTinyfishApiKey === 'string'
+        ? settings.webSearchTinyfishApiKey.trim()
+        : '',
+      fetch_url: !!settings.skillFetchUrl,
+      approval_mode: settings.approvalMode === 'auto_safe' ? 'auto_safe' : 'manual',
+      filesystem: !!settings.skillFilesystem,
+      workspace_root: sessionWorkspaceRoot(),
+      terminal: !!settings.skillTerminal,
+      terminal_timeout_secs: Math.min(30, Math.max(5, Number(settings.terminalTimeoutSecs) || 30)),
+      browser: !!settings.skillBrowser,
+    },
+    deepResearch: false,
+    deepResearchOutput: 'long',
+    forceTools: [],
+  };
+}
+
+function applyBotActions(convo: Conversation, speakerBot: Bot | null, actions: BotActions) {
+  if (!convo || !speakerBot || !actions) return;
+  const hasAction = actions.hold || actions.resume || actions.dmUser || actions.groupPost;
+  if (!hasAction) return;
+
+  if (isBotGroup(convo)) {
+    if (actions.hold) persistGroupHold(convo, speakerBot.id);
+    if (actions.resume) persistGroupHold(convo, null);
+  }
+
+  if (actions.dmUser) {
+    const sourceGroup = isBotGroup(convo) ? convo : findLinkedGroup(convo);
+    const dm = ensureBotDm(speakerBot, { sideThreadOf: sourceGroup ? sourceGroup.id : null });
+    if (dm) {
+      appendBotSpokenMessage(dm, speakerBot, actions.dmUser);
+      dm.updatedAt = Date.now();
+      saveStore({ immediate: true });
+      if (typeof renderSidebar === 'function') renderSidebar();
+      requestBotNavigation(dm.id);
+    }
+  }
+
+  if (actions.groupPost) {
+    const group = isBotGroup(convo) ? convo : findLinkedGroup(convo);
+    if (group && isBotGroup(convo)) {
+      persistGroupHold(group, null);
+    } else if (group) {
+      persistGroupHold(group, null);
+      appendBotSpokenMessage(group, speakerBot, actions.groupPost);
+      group.updatedAt = Date.now();
+      saveStore({ immediate: true });
+      if (typeof renderSidebar === 'function') renderSidebar();
+      if (activeId === group.id && typeof renderThread === 'function') renderThread(group);
+      else requestBotNavigation(group.id);
+      const item = {
+        id: newId('q'),
+        editText: actions.groupPost,
+        displayText: actions.groupPost,
+        apiText: actions.groupPost,
+        fromBotId: speakerBot.id,
+        alreadyPosted: true,
+        turn: defaultBotsTurn(),
+      };
+      if (isConvoBusy(group.id)) {
+        queueBotsInject(group.id, item);
+      } else if (typeof runBotsOutbound === 'function') {
+        void runBotsOutbound(group, item, null, group.title);
+      }
+    }
+  }
+}
+
+/** Soft mid-turn injects while a bots hop is streaming (not a hard Stop). */
+const botsPendingInjects: Map<string, OutboundItem[]> = new Map();
+
+function queueBotsInject(convoId: string, item: OutboundItem) {
+  if (!convoId || !item) return;
+  const list = botsPendingInjects.get(convoId) || [];
+  list.push(item);
+  botsPendingInjects.set(convoId, list);
+}
+
+function drainBotsInjects(convoId: string) {
+  const list = botsPendingInjects.get(convoId) || [];
+  botsPendingInjects.delete(convoId);
+  return list;
+}
+
+function clearBotsInjects(convoId: string | null | undefined) {
+  if (convoId) botsPendingInjects.delete(convoId);
+}
+
+/**
+ * While a bot turn is live: steer into the agent loop when possible; otherwise
+ * soft-abort the current hop and inject the user message into the hop queue.
+ */
+function injectBotsOutbound(convo: Conversation, item: OutboundItem) {
+  if (!convo || !item) return false;
+  const stream = typeof activeStreams !== 'undefined' ? activeStreams.get(convo.id) : null;
+  if (stream && typeof canSteerLiveStream === 'function' && canSteerLiveStream(stream)) {
+    const text = typeof steerTextFromItem === 'function' ? steerTextFromItem(item) : '';
+    if (!text) return false;
+    if (!stream.pendingSteers) stream.pendingSteers = [];
+    const entry = { item, text, posted: false, applied: false };
+    stream.pendingSteers.push(entry);
+    if (typeof renderPendingSteerBubble === 'function') renderPendingSteerBubble(convo.id, entry);
+    if (typeof flushPendingSteers === 'function') void flushPendingSteers(stream);
+    return true;
+  }
+  queueBotsInject(convo.id, item);
+  if (typeof softAbortStream === 'function') softAbortStream(convo.id);
+  else if (typeof abortStream === 'function') {
+    abortStream(convo.id, { cancelServer: true, soft: true });
+  }
+  return true;
+}
+
+function appendBotsInjectMessage(convo: Conversation, item: OutboundItem) {
+  const userMessage: ChatMessage = {
+    role: 'user',
+    content: item.displayText || (item.attachments?.length ? '(attachment)' : ''),
+    steered: true,
+  };
+  if (item.attachments?.length) userMessage.attachments = item.attachments;
+  if (item.replyQuote) userMessage.replyQuote = item.replyQuote;
+  if (item.replyToSpeakerId) {
+    userMessage.replyToSpeakerId = item.replyToSpeakerId;
+    if (item.replyToSpeakerHandle) userMessage.replyToSpeakerHandle = item.replyToSpeakerHandle;
+  }
+  convo.messages.push(userMessage);
+  convo.updatedAt = Date.now();
+  saveConversations({ immediate: true });
+  return userMessage;
+}
+
+async function runBotsOutbound(convo: Conversation, item: OutboundItem, userMessage: ChatMessage | null, previousTitle: string) {
+  markBotsOutboundActive(convo.id);
+  // Edit-resubmit marks outboundStarting so the composer stays busy during abort.
+  // Hops must not see that flag or runAssistantTurn returns false immediately.
+  if (typeof clearOutboundStarting === 'function') clearOutboundStarting(convo.id);
+  let stopped = false;
+  let messageCountAtStart = convo.messages.length;
+  try {
+    clearBotsOutboundStopped(convo.id);
+    if (typeof clearLiveTurnUserCancel === 'function') clearLiveTurnUserCancel(convo.id);
+    const epoch = bumpBotsOutboundEpoch(convo.id);
+    const members = ensureLoopAgents(convo);
+    const primary = members[0] || null;
+    if (isBotsOutboundStopped(convo.id) || botsOutboundEpochOf(convo.id) !== epoch) {
+      stopped = true;
+    } else {
+      await maybeCompactBotsConvo(convo, primary);
+      if (isBotsOutboundStopped(convo.id) || botsOutboundEpochOf(convo.id) !== epoch) {
+        stopped = true;
+      }
+    }
+    if (!stopped) {
+      clearBotsInjects(convo.id);
+      messageCountAtStart = convo.messages.length;
+      const workItems = [{ item, userMessage, previousTitle }];
+
+      const collectInjectedWork = () => {
+        const prepared = [];
+        for (const inject of drainBotsInjects(convo.id)) {
+          const injected = inject.alreadyPosted ? null : appendBotsInjectMessage(convo, inject);
+          if (injected && activeId === convo.id) {
+            chatThread.appendChild(
+              buildBubble('user', injected.content, convo.messages.length - 1, injected, { animate: true })
+            );
+            scrollToBottom({ force: true });
+          }
+          prepared.push({
+            item: inject,
+            userMessage: injected,
+            previousTitle: convo.title,
+          });
+        }
+        if (prepared.length) workItems.unshift(...prepared);
+        return prepared.length > 0;
+      };
+
+      while (workItems.length && !stopped) {
+        const work = workItems.shift()!;
+        const phases = buildLoopRunPhases(convo, work.item);
+        if (!phases.length) continue;
+        const run = startLoopRun(convo, phases);
+        const frozenMessageLimit = convo.messages.length;
+        let turnNumber = 0;
+        let superseded = false;
+
+        for (let phaseIndex = 0; phaseIndex < phases.length; phaseIndex += 1) {
+          const phase = phases[phaseIndex];
+          setLoopRunPosition(convo, phaseIndex, null);
+          for (const agentId of phase.agentIds) {
+            if (isBotsOutboundStopped(convo.id) || botsOutboundEpochOf(convo.id) !== epoch) {
+              stopped = true;
+              break;
+            }
+            if (collectInjectedWork()) {
+              superseded = true;
+              break;
+            }
+            const bot = getBot(agentId, convo);
+            if (!bot) continue;
+            turnNumber += 1;
+            setLoopRunPosition(convo, phaseIndex, bot.id);
+            const ran = await runAssistantTurn(convo, {
+              useAgent: work.item.turn.useAgent,
+              text: work.item.apiText,
+              skills: work.item.turn.skills,
+              deepResearch: work.item.turn.deepResearch,
+              deepResearchOutput: work.item.turn.deepResearchOutput,
+              forceTools: work.item.turn.forceTools,
+              dispatchedMessage: turnNumber === 1 ? work.userMessage : null,
+              queueItem: turnNumber === 1 ? work.item : null,
+              previousTitle: work.previousTitle,
+              speakerBotId: bot.id,
+              skipQueue: true,
+              botMessageLimit: phase.id === 'explore' ? frozenMessageLimit : null,
+              loopTurnDirective: loopPhaseDirective(phase, bot),
+              loopPhase: {
+                runId: run.id,
+                id: phase.id,
+                label: phase.label,
+                index: phaseIndex + 1,
+                total: phases.length,
+              },
+            });
+            if (!ran) {
+              stopped = true;
+              break;
+            }
+            completeLoopRunAgent(convo, phaseIndex, bot.id);
+            if (isBotsOutboundStopped(convo.id) || botsOutboundEpochOf(convo.id) !== epoch) {
+              stopped = true;
+              break;
+            }
+            if (collectInjectedWork()) {
+              superseded = true;
+              break;
+            }
+          }
+          if (stopped || superseded) break;
+        }
+
+        if (stopped) {
+          finishLoopRun(convo, 'stopped');
+          break;
+        }
+        if (superseded) {
+          finishLoopRun(convo, 'stopped');
+          continue;
+        }
+        finishLoopRun(convo, 'complete');
+      }
+    }
+    if (stopped) {
+      purgeTrailingNoResponseMessages(convo, messageCountAtStart);
+      saveStore();
+    }
+  } finally {
+    if (stopped && convo.loopRun?.status === 'running') finishLoopRun(convo, 'stopped');
+    clearBotsOutboundActive(convo.id);
+    renderLoopFlow(convo);
+  }
+  if (!stopped) maybeSendNextQueued(convo.id);
+  if (activeId === convo.id) renderThread(convo);
+  if (typeof renderSidebar === 'function') renderSidebar();
+  if (typeof flushBotNavigation === 'function') flushBotNavigation();
+}
+
+function purgeTrailingNoResponseMessages(convo: Conversation | null | undefined, sinceIndex: number) {
+  if (!convo || !Array.isArray(convo.messages)) return;
+  const floor = Math.max(0, Number(sinceIndex) || 0);
+  while (convo.messages.length > floor) {
+    const last = convo.messages[convo.messages.length - 1];
+    const text = String(last?.content || '').trim();
+    if (last?.role === 'assistant' && (
+      text === 'No response.'
+      || last.error === 'No response.'
+      || (typeof isSilentNoReply === 'function' && isSilentNoReply(last.content))
+    )) {
+      convo.messages.pop();
+      continue;
+    }
+    break;
+  }
+}
+
+function extraMentionItems(query: string, excluded: Set<string>) {
+  if (!isBotsSurface()) return [];
+  const convo = conversations.find((item) => item.id === activeId);
+  const q = String(query || '').toLowerCase();
+  const items: MentionOption[] = [];
+  [
+    { id: 'everyone', label: 'everyone', description: 'Notify every agent here', inline: true, section: 'Room' },
+    { id: 'user', label: 'user', description: 'The human in this room', inline: true, section: 'Room' },
+  ].forEach((item) => {
+    if (item.label.startsWith(q) && !excluded.has(item.id)) items.push(item);
+  });
+  participantBots(convo).forEach((bot) => {
+    if (q && !bot.handle.startsWith(q)) return;
+    if (excluded.has(bot.handle)) return;
+    items.push({
+      id: bot.handle,
+      label: bot.handle,
+      description: loopAgentModelLabel(bot) || bot.description || 'Agent',
+      inline: true,
+      section: 'Agents',
+    });
+  });
+  return items;
+}
+
+function loopModelOptions() {
+  if (typeof modelMenuOptions !== 'undefined' && Array.isArray(modelMenuOptions) && modelMenuOptions.length) {
+    return modelMenuOptions;
+  }
+  const models = latestState?.network?.remote_models || [];
+  if (typeof catalogOptionFromRemote === 'function') return models.map(catalogOptionFromRemote);
+  return models.map((model) => ({
+    value: model.id,
+    label: model.model || model.label || model.id,
+    provider: String(model.provider_name || '').trim(),
+  }));
+}
+
+function loopAgentModelLabel(bot: Pick<Bot,"model"> | null | undefined) {
+  const id = typeof bot?.model === 'string' ? bot.model : '';
+  if (!id) return '';
+  const option = loopModelOptions().find((item) => item.value === id);
+  if (option) {
+    return option.provider ? (option.label + ' · ' + option.provider) : option.label;
+  }
+  return typeof modelIdLabel === 'function' ? (modelIdLabel(id) || id) : id;
+}
+
+function defaultLoopModelId(index: number) {
+  const options = loopModelOptions();
+  const preferred = [];
+  if (typeof recentModelIds !== 'undefined' && Array.isArray(recentModelIds)) preferred.push(...recentModelIds);
+  if (typeof pinnedModelIds !== 'undefined' && Array.isArray(pinnedModelIds)) preferred.push(...pinnedModelIds);
+  if (typeof selectedChatModel === 'string' && selectedChatModel) preferred.push(selectedChatModel);
+  const unique = [...new Set(preferred)].filter((id) => options.some((item) => item.value === id));
+  if (unique.length) return unique[index % unique.length];
+  if (options.length) return options[index % options.length].value;
+  return '';
+}
+
+function loopRolePreset(index: number) {
+  return LOOP_ROLE_PRESETS[index] || {
+    handle: 'agent' + (index + 1),
+    stage: 'explore',
+    description: 'Independent take on the same problem.',
+  };
+}
+
+function createLoopStageSelect(value: string, ariaLabel: string, className = '') {
+  const select = (document.createElement('select') as HTMLSelectElement);
+  select.className = ('loop-stage-select' + (className ? ' ' + className : '')).trim();
+  select.setAttribute('aria-label', ariaLabel);
+  [
+    ['auto', 'Auto stage'],
+    ['explore', 'Explore'],
+    ['challenge', 'Challenge'],
+    ['answer', 'Answer'],
+  ].forEach(([id, label]) => {
+    const option = (document.createElement('option') as HTMLOptionElement);
+    option.value = id;
+    option.textContent = label;
+    select.appendChild(option);
+  });
+  select.value = ['auto', 'explore', 'challenge', 'answer'].includes(value) ? value : 'auto';
+  return select;
+}
+
+function uniqueLoopHandle(used: Set<string>, raw: string, fallbackIndex: number) {
+  const base = BOT_HANDLE_RE.test(normalizeHandle(raw))
+    ? normalizeHandle(raw)
+    : normalizeHandle(loopRolePreset(fallbackIndex).handle);
+  let handle = base || ('agent' + (fallbackIndex + 1));
+  let n = 2;
+  while (used.has(handle)) {
+    handle = (base || 'agent').slice(0, 28) + n;
+    n += 1;
+  }
+  used.add(handle);
+  return handle;
+}
+
+function loopModelTriggerLabel(modelId: string | null | undefined) {
+  const options = loopModelOptions();
+  const current = String(modelId || '').trim();
+  if (!options.length) return 'No models yet';
+  const resolved = (typeof resolveSavedModelId === 'function'
+    ? resolveSavedModelId(current, options)
+    : current) || defaultLoopModelId(0);
+  const option = options.find((item) => item.value === resolved);
+  if (option) return option.label;
+  if (current) return (typeof modelIdLabel === 'function' ? modelIdLabel(current) : current) || 'Pick a model';
+  return 'Pick a model';
+}
+
+function paintLoopModelPickerButton(btn: HTMLElement, modelId: string) {
+  if (!btn) return;
+  const label = loopModelTriggerLabel(modelId);
+  const text = (btn.querySelector('.loop-model-picker-label') as HTMLElement);
+  if (text) text.textContent = label;
+  else btn.textContent = label;
+  const title = loopAgentModelLabel({ model: modelId }) || label;
+  if (typeof setIdentityTitle === 'function') setIdentityTitle(btn, title);
+  else btn.title = title;
+}
+
+function paintLoopModelPickerButtons() {
+  (document.querySelectorAll('.loop-model-picker') as NodeListOf<HTMLElement>).forEach((wrap) => {
+    const hidden = (wrap.querySelector('.loop-agent-model, .trace-member-model') as HTMLInputElement);
+    const btn = (wrap.querySelector('.loop-model-picker-btn') as HTMLButtonElement);
+    if (!hidden || !btn) return;
+    if (!hidden.value) hidden.value = defaultLoopModelId(0);
+    paintLoopModelPickerButton(btn, hidden.value);
+    btn.disabled = !loopModelOptions().length;
+  });
+}
+
+function createLoopModelPicker(initialId: string, { ariaLabel, className = '', hiddenClass, onPick }: LoopModelPickerOptions = {}) {
+  const wrap = (document.createElement('div') as HTMLElement);
+  wrap.className = ('loop-model-picker' + (className ? ' ' + className : '')).trim();
+  const btn = (document.createElement('button') as HTMLButtonElement);
+  btn.type = 'button';
+  btn.className = 'loop-model-picker-btn';
+  btn.setAttribute('aria-haspopup', 'listbox');
+  btn.setAttribute('aria-expanded', 'false');
+  btn.setAttribute('aria-label', ariaLabel || 'Model');
+  const label = (document.createElement('span') as HTMLElement);
+  label.className = 'loop-model-picker-label';
+  btn.appendChild(label);
+  const caret = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  caret.setAttribute('class', 'loop-model-picker-caret');
+  caret.setAttribute('viewBox', '0 0 24 24');
+  caret.setAttribute('fill', 'none');
+  caret.setAttribute('stroke', 'currentColor');
+  caret.setAttribute('stroke-width', '2.25');
+  caret.setAttribute('stroke-linecap', 'round');
+  caret.setAttribute('stroke-linejoin', 'round');
+  caret.setAttribute('aria-hidden', 'true');
+  const caretPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  caretPath.setAttribute('d', 'm6 9 6 6 6-6');
+  caret.appendChild(caretPath);
+  btn.appendChild(caret);
+  const hidden = (document.createElement('input') as HTMLInputElement);
+  hidden.type = 'hidden';
+  hidden.className = hiddenClass || 'loop-agent-model';
+  hidden.value = String(initialId || '').trim();
+  if (!hidden.value) hidden.value = defaultLoopModelId(0);
+  paintLoopModelPickerButton(btn, hidden.value);
+  btn.disabled = !loopModelOptions().length;
+  const openPicker = () => {
+    if (typeof openModelMenu !== 'function') return;
+    const open = typeof modelMenuIsOpen === 'function' && modelMenuIsOpen();
+    if (open && modelMenuContext && modelMenuContext.trigger === btn) {
+      closeModelMenu({ restoreFocus: true });
+      return;
+    }
+    openModelMenu({
+      anchor: wrap,
+      trigger: btn,
+      selectedId: hidden.value,
+      onPick: (value: string) => {
+        hidden.value = value;
+        paintLoopModelPickerButton(btn, value);
+        if (typeof onPick === 'function') onPick(value);
+      },
+    });
+  };
+  btn.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openPicker();
+  });
+  btn.addEventListener('keydown', (event) => {
+    if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') && typeof modelMenuIsOpen === 'function' && !modelMenuIsOpen()) {
+      event.preventDefault();
+      openPicker();
+      return;
+    }
+    if (typeof handleModelMenuKeydown === 'function') handleModelMenuKeydown(event);
+  });
+  wrap.appendChild(btn);
+  wrap.appendChild(hidden);
+  return wrap;
+}
+
+function createBotSession(bot: Bot, { group = false, title = '', participantIds = [], loopAgents = [] }: BotSessionOptions = {}): Conversation {
+  const agents = Array.isArray(loopAgents) && loopAgents.length
+    ? loopAgents.map(normalizeBot)
+    : [];
+  const ids = agents.length
+    ? agents.map((item) => item.id)
+    : participantIds.slice();
+  const convo = {
+    id: newId('c'),
+    title: title || botDisplayHandle(bot),
+    titleEdited: !group,
+    messages: [],
+    updatedAt: Date.now(),
+    projectId: null,
+    sortOrder: nextTopSortOrder(null),
+    incognito: false,
+    pinned: false,
+    pinnedAt: null,
+    surface: 'bots',
+    botKind: group ? 'group' : 'dm',
+    botId: group ? null : bot.id,
+    participantBotIds: group ? ids : (bot ? [bot.id] : []),
+    loopAgents: group ? agents : [],
+    groupMemory: '',
+    botsHeldBy: null,
+    loopRun: null,
+    sideThreadOf: null,
+    workspaceRoot: '',
+  };
+  conversations.push(convo);
+  return convo;
+}
+
+let editingGroupId: string | null = null;
+let loopDraftAgents: Bot[] = [];
+
+function setGroupModalError(msg: string) {
+  const err = (document.getElementById('groupModalError') as HTMLElement);
+  if (!err) return;
+  err.textContent = msg || '';
+  err.classList.toggle('is-hidden', !msg);
+}
+
+function syncLoopCountChrome() {
+  const label = (document.getElementById('loopCountLabel') as HTMLElement);
+  const down = (document.getElementById('btnLoopCountDown') as HTMLButtonElement);
+  const up = (document.getElementById('btnLoopCountUp') as HTMLButtonElement);
+  if (label) label.textContent = String(loopDraftAgents.length);
+  if (down) down.disabled = loopDraftAgents.length <= LOOP_AGENT_MIN;
+  if (up) up.disabled = loopDraftAgents.length >= LOOP_AGENT_MAX;
+}
+
+function readLoopAgentRows() {
+  const host = (document.getElementById('loopAgentRows') as HTMLElement);
+  if (!host) return loopDraftAgents;
+  const rows: HTMLElement[] = [...(host.querySelectorAll('.loop-agent-row') as NodeListOf<HTMLElement>)];
+  loopDraftAgents = rows.map((row, index) => {
+    const prev = loopDraftAgents[index] || {};
+    const handle = normalizeHandle((row.querySelector('.loop-agent-handle') as HTMLInputElement)?.value)
+      || prev.handle
+      || loopRolePreset(index).handle;
+    return normalizeBot({
+      ...prev,
+      id: prev.id || newId('b'),
+      handle,
+      name: '@' + handle,
+      description: String((row.querySelector('.loop-agent-role') as HTMLTextAreaElement)?.value || '').trim(),
+      model: String((row.querySelector('.loop-agent-model') as HTMLInputElement)?.value || '').trim(),
+      stage: String((row.querySelector('.loop-stage-select') as HTMLSelectElement)?.value || 'auto'),
+      avatarSeed: handle,
+    });
+  });
+  return loopDraftAgents;
+}
+
+function renderLoopAgentRows() {
+  const host = (document.getElementById('loopAgentRows') as HTMLElement);
+  if (!host) return;
+  if (typeof closeModelMenu === 'function' && typeof modelMenuIsOpen === 'function' && modelMenuIsOpen()) {
+    const anchor = typeof modelMenuAnchorEl === 'function' ? modelMenuAnchorEl() : null;
+    if (anchor && host.contains(anchor)) closeModelMenu();
+  }
+  host.innerHTML = '';
+  loopDraftAgents.forEach((agent, index) => {
+    const row = (document.createElement('div') as HTMLElement);
+    row.className = 'loop-agent-row';
+    row.appendChild(createBotAvatarEl(agent, { className: 'loop-agent-avatar' }));
+    const body = (document.createElement('div') as HTMLElement);
+    body.className = 'loop-agent-body';
+    const top = (document.createElement('div') as HTMLElement);
+    top.className = 'loop-agent-top';
+    const prefix = (document.createElement('label') as HTMLElement);
+    prefix.className = 'field-prefix loop-agent-handle-wrap';
+    const at = (document.createElement('span') as HTMLElement);
+    at.textContent = '@';
+    const handle = (document.createElement('input') as HTMLInputElement);
+    handle.className = 'field-input loop-agent-handle';
+    handle.type = 'text';
+    handle.maxLength = 32;
+    handle.autocomplete = 'off';
+    handle.spellcheck = false;
+    handle.placeholder = loopRolePreset(index).handle;
+    handle.value = agent.handle || '';
+    handle.setAttribute('aria-label', 'Agent ' + (index + 1) + ' handle');
+    prefix.appendChild(at);
+    prefix.appendChild(handle);
+    const model = createLoopModelPicker(agent.model, {
+      ariaLabel: 'Agent ' + (index + 1) + ' model',
+      hiddenClass: 'loop-agent-model',
+      onPick: (value) => {
+        agent.model = value;
+      },
+    });
+    const stage = createLoopStageSelect(
+      agent.stage || loopRolePreset(index).stage || 'auto',
+      'Stage for agent ' + (index + 1)
+    );
+    top.appendChild(prefix);
+    top.appendChild(model);
+    top.appendChild(stage);
+    const role = (document.createElement('textarea') as HTMLTextAreaElement);
+    role.className = 'field-textarea loop-agent-role';
+    role.rows = 2;
+    role.maxLength = 400;
+    role.placeholder = loopRolePreset(index).description;
+    role.value = agent.description || '';
+    role.setAttribute('aria-label', 'Agent ' + (index + 1) + ' description');
+    body.appendChild(top);
+    body.appendChild(role);
+    row.appendChild(body);
+    if (loopDraftAgents.length > LOOP_AGENT_MIN) {
+      const remove = (document.createElement('button') as HTMLButtonElement);
+      remove.type = 'button';
+      remove.className = 'btn btn-ghost btn-icon loop-agent-remove';
+      remove.setAttribute('aria-label', 'Remove @' + (agent.handle || 'agent'));
+      remove.textContent = '×';
+      remove.addEventListener('click', () => {
+        readLoopAgentRows();
+        if (loopDraftAgents.length <= LOOP_AGENT_MIN) return;
+        loopDraftAgents.splice(index, 1);
+        renderLoopAgentRows();
+        syncLoopCountChrome();
+      });
+      row.appendChild(remove);
+    }
+    host.appendChild(row);
+  });
+  syncLoopCountChrome();
+}
+
+function setLoopDraftCount(next: number) {
+  readLoopAgentRows();
+  const count = Math.min(LOOP_AGENT_MAX, Math.max(LOOP_AGENT_MIN, Number(next) || LOOP_AGENT_MIN));
+  while (loopDraftAgents.length < count) {
+    const index = loopDraftAgents.length;
+    const preset = loopRolePreset(index);
+    const used = new Set(loopDraftAgents.map((agent) => agent.handle));
+    const handle = uniqueLoopHandle(used, preset.handle, index);
+    loopDraftAgents.push(normalizeBot({
+      id: newId('b'),
+      handle,
+      name: '@' + handle,
+      description: preset.description,
+      stage: preset.stage,
+      model: defaultLoopModelId(index),
+      avatarSeed: handle,
+    }));
+  }
+  if (loopDraftAgents.length > count) loopDraftAgents = loopDraftAgents.slice(0, count);
+  renderLoopAgentRows();
+}
+
+function openGroupDialog(convo: Conversation | null | undefined) {
+  editingGroupId = convo ? convo.id : null;
+  const modal = (document.getElementById('groupModal') as HTMLElement);
+  const title = (document.getElementById('groupModalTitle') as HTMLElement);
+  const name = (document.getElementById('groupName') as HTMLInputElement);
+  const save = (document.getElementById('btnGroupSave') as HTMLButtonElement);
+  if (!modal) return;
+  if (title) title.textContent = convo ? 'Edit loop' : 'New loop';
+  if (save) save.textContent = convo ? 'Save loop' : 'Create loop';
+  if (name) name.value = convo ? (convo.title || '') : '';
+  setGroupModalError('');
+  if (convo) {
+    const members = ensureLoopAgents(convo);
+    loopDraftAgents = members.map((bot) => normalizeBot({ ...bot }));
+    if (loopDraftAgents.length < LOOP_AGENT_MIN) setLoopDraftCount(LOOP_AGENT_MIN);
+    else renderLoopAgentRows();
+  } else {
+    loopDraftAgents = [];
+    const host = (document.getElementById('loopAgentRows') as HTMLElement);
+    if (host) host.innerHTML = '';
+    setLoopDraftCount(3);
+  }
+  openBackdrop(modal);
+  queueMicrotask(() => name && name.focus());
+}
+
+function closeGroupDialog() {
+  if (typeof closeModelMenu === 'function') closeModelMenu();
+  closeBackdrop((document.getElementById('groupModal') as HTMLElement));
+  editingGroupId = null;
+  loopDraftAgents = [];
+}
+
+function saveGroupFromDialog() {
+  if (!requireUnlockedData()) return;
+  readLoopAgentRows();
+  if (loopDraftAgents.length < LOOP_AGENT_MIN) {
+    setGroupModalError('A loop needs at least two agents.');
+    return;
+  }
+  const seenHandles = new Set();
+  const agents = [];
+  for (let i = 0; i < loopDraftAgents.length; i += 1) {
+    const draft = loopDraftAgents[i];
+    const handle = normalizeHandle(draft.handle);
+    if (!BOT_HANDLE_RE.test(handle)) {
+      setGroupModalError('Handles start with a letter — try solver or critic.');
+      return;
+    }
+    if (seenHandles.has(handle)) {
+      setGroupModalError('Each agent needs a unique @handle.');
+      return;
+    }
+    seenHandles.add(handle);
+    if (!String(draft.model || '').trim()) {
+      setGroupModalError('Pick a model for @' + handle + '.');
+      return;
+    }
+    agents.push(normalizeBot({
+      ...draft,
+      handle,
+      name: '@' + handle,
+      avatarSeed: handle,
+    }));
+  }
+  const title = String((document.getElementById('groupName') as HTMLInputElement)?.value || '').trim()
+    || agents.map((bot) => botDisplayHandle(bot)).join(', ');
+  if (editingGroupId) {
+    const convo = conversations.find((item) => item.id === editingGroupId);
+    if (convo) {
+      convo.title = title;
+      convo.titleEdited = true;
+      convo.botKind = 'group';
+      convo.loopAgents = agents;
+      convo.participantBotIds = agents.map((bot) => bot.id);
+      if (convo.botsHeldBy && !convo.participantBotIds.includes(convo.botsHeldBy)) convo.botsHeldBy = null;
+      convo.updatedAt = Date.now();
+      saveStore({ immediate: true });
+    }
+    closeGroupDialog();
+    renderSidebar();
+    if (typeof syncProjectChrome === 'function') syncProjectChrome();
+    return;
+  }
+  const convo = createBotSession(agents[0], {
+    group: true,
+    title,
+    loopAgents: agents,
+  });
+  saveStore({ immediate: true });
+  closeGroupDialog();
+  selectConversation(convo.id);
+}
+
+function persistAgentFields(convo: Conversation | null | undefined, botId: string, fields: Partial<Bot>) {
+  if (!convo || !botId || !fields) return;
+  ensureLoopAgents(convo);
+  const agent = (convo.loopAgents || []).find((bot) => bot.id === botId);
+  if (!agent) return;
+  let changed = false;
+  if (Object.prototype.hasOwnProperty.call(fields, 'model')) {
+    const next = String(fields.model || '').trim();
+    if (agent.model !== next) {
+      agent.model = next;
+      changed = true;
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(fields, 'description')) {
+    const next = String(fields.description || '');
+    if (agent.description !== next) {
+      agent.description = next;
+      changed = true;
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(fields, 'stage')) {
+    const next = ['auto', 'explore', 'challenge', 'answer'].includes(fields.stage)
+      ? fields.stage
+      : 'auto';
+    if (agent.stage !== next) {
+      agent.stage = next;
+      changed = true;
+    }
+  }
+  if (!changed) return;
+  agent.updatedAt = Date.now();
+  convo.updatedAt = Date.now();
+  saveStore({ immediate: true });
+  if (typeof renderSidebar === 'function') renderSidebar();
+  if (typeof paintLoopModelHint === 'function') paintLoopModelHint();
+  renderLoopFlow(convo);
+}
+
+function persistAgentModel(convo: Conversation | null | undefined, botId: string, modelId: string) {
+  persistAgentFields(convo, botId, { model: modelId });
+}
+
+function persistAgentDescription(convo: Conversation | null | undefined, botId: string, description: string) {
+  persistAgentFields(convo, botId, { description });
+}
+
+function persistAgentStage(convo: Conversation | null | undefined, botId: string, stage: string) {
+  persistAgentFields(convo, botId, { stage });
+}
+
+async function deleteBotAndSession(botId: string) {
+  const bot = getBot(botId);
+  if (!bot) return;
+  const ok = await confirmDanger({
+    title: 'Delete ' + botDisplayHandle(bot) + ' and its session?',
+    body: 'This cannot be undone.',
+    confirmLabel: 'Delete',
+  });
+  if (!ok) return;
+  abortStream(bot.sessionId);
+  conversations = conversations.filter((convo) => convo.id !== bot.sessionId);
+  conversations.forEach((convo) => {
+    if (Array.isArray(convo.loopAgents)) {
+      convo.loopAgents = convo.loopAgents.filter((item) => item.id !== botId);
+    }
+    if (!Array.isArray(convo.participantBotIds)) return;
+    convo.participantBotIds = convo.participantBotIds.filter((id) => id !== botId);
+  });
+  bots = bots.filter((item) => item.id !== botId);
+  saveStore({ immediate: true });
+  if (activeId === bot.sessionId) startDraft();
+  else {
+    renderSidebar();
+    if (typeof syncProjectChrome === 'function') syncProjectChrome();
+  }
+}
+
+function persistAppSurface(next: string | undefined) {
+  const surface = next === 'bots' ? 'bots' : 'chat';
+  appSurface = surface;
+  (document.getElementById('chatShell') as HTMLElement)?.setAttribute('data-surface', surface);
+  if (typeof paintWordmarkSurface === 'function') paintWordmarkSurface(surface);
+  if (storageReady && settings.appSurface !== surface) {
+    saveSettings({ ...settings, appSurface: surface }, { immediate: false });
+  }
+}
+
+function applyAppSurface(next: string | undefined, { skipRoute = false } = {}) {
+  persistAppSurface(next);
+  const surface = appSurface;
+  if (surface === 'bots' && mainView === 'projects') {
+    mainView = 'chat';
+    (document.getElementById('projectsView') as HTMLElement)?.classList.add('is-hidden');
+  }
+  if (surface === 'bots') activeProjectId = null;
+  const convo = conversations.find((item) => item.id === activeId);
+  if (!convo || convoSurfaceOf(convo) !== surface) startDraft();
+  syncProjectChrome();
+  renderSidebar();
+  if (typeof syncComposerThinkVisibility === 'function') {
+    syncComposerThinkVisibility(
+      typeof selectedRemoteModel === 'function' ? selectedRemoteModel(latestState) : null
+    );
+  }
+  if (!skipRoute) syncUrlFromState({ replace: true });
+}
+
+function restoreAppSurface() {
+  persistAppSurface(settings.appSurface === 'bots' ? 'bots' : 'chat');
+}
+
+function persistGroupParticipants(convo: Conversation, ids: string[]) {
+  ensureLoopAgents(convo);
+  const keep = new Set(ids);
+  convo.loopAgents = (convo.loopAgents || []).filter((bot) => keep.has(bot.id));
+  convo.participantBotIds = convo.loopAgents.map((bot) => bot.id);
+  if (convo.botsHeldBy && !ids.includes(convo.botsHeldBy)) convo.botsHeldBy = null;
+  convo.updatedAt = Date.now();
+  saveStore({ immediate: true });
+  renderSidebar();
+  if (typeof syncProjectChrome === 'function') syncProjectChrome();
+}
+
+function closeTraceMembersPicker() {
+  if (!traceMembersPicker) return;
+  traceMembersPicker.classList.add('is-hidden');
+  traceMembersPicker.hidden = true;
+  traceMembersPicker.innerHTML = '';
+  btnTraceMemberAdd?.setAttribute('aria-expanded', 'false');
+}
+
+function addAgentToActiveLoop() {
+  if (!requireUnlockedData()) return;
+  const convo = conversations.find((item) => item.id === activeId);
+  if (!isBotGroup(convo)) return;
+  const members = ensureLoopAgents(convo);
+  if (members.length >= LOOP_AGENT_MAX) return;
+  const index = members.length;
+  const preset = loopRolePreset(index);
+  const used = new Set(members.map((bot) => bot.handle));
+  const handle = uniqueLoopHandle(used, preset.handle, index);
+  const agent = normalizeBot({
+    id: newId('b'),
+    handle,
+    name: '@' + handle,
+    description: preset.description,
+    model: defaultLoopModelId(index),
+    avatarSeed: handle,
+  });
+  convo.loopAgents!.push(agent);
+  convo.participantBotIds = convo.loopAgents!.map((bot) => bot.id);
+  convo.updatedAt = Date.now();
+  saveStore({ immediate: true });
+  renderSidebar();
+  if (typeof syncProjectChrome === 'function') syncProjectChrome();
+}
+
+function kickBotFromActiveGroup(botId: string | undefined) {
+  if (!requireUnlockedData()) return;
+  const convo = conversations.find((item) => item.id === activeId);
+  if (!isBotGroup(convo)) return;
+  const members = ensureLoopAgents(convo);
+  if (members.length <= LOOP_AGENT_MIN) return;
+  persistGroupParticipants(convo, members.map((bot) => bot.id).filter((id) => id !== botId));
+}
+
+const TRACE_ACTIVITY_SHARE_DEFAULT = 0.6;
+const TRACE_ACTIVITY_SHARE_MIN = 0.22;
+const TRACE_ACTIVITY_SHARE_MAX = 0.78;
+
+let traceActivityShare = TRACE_ACTIVITY_SHARE_DEFAULT;
+let traceActivityFolded = false;
+let traceMembersFolded = false;
+let traceSplitDrag: {pointerId: number} | null = null;
+
+function clampTraceActivityShare(value: number) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return TRACE_ACTIVITY_SHARE_DEFAULT;
+  return Math.min(TRACE_ACTIVITY_SHARE_MAX, Math.max(TRACE_ACTIVITY_SHARE_MIN, n));
+}
+
+function loadTraceSplitPrefs() {
+  traceActivityShare = clampTraceActivityShare(settings.traceActivityShare);
+  traceActivityFolded = !!settings.traceActivityFolded;
+  traceMembersFolded = !!settings.traceMembersFolded;
+  if (typeof applyTraceSplitLayout === 'function') applyTraceSplitLayout();
+}
+
+function saveTraceSplitPrefs() {
+  if (!storageReady) return;
+  if (
+    settings.traceActivityShare === traceActivityShare
+    && !!settings.traceActivityFolded === !!traceActivityFolded
+    && !!settings.traceMembersFolded === !!traceMembersFolded
+  ) {
+    return;
+  }
+  saveSettings({
+    ...settings,
+    traceActivityShare,
+    traceActivityFolded,
+    traceMembersFolded,
+  }, { immediate: false });
+}
+
+function applyTraceSplitLayout() {
+  const show = !!(traceSidebar && traceSidebar.classList.contains('has-members'));
+  if (btnTraceActivityFold) {
+    btnTraceActivityFold.hidden = !show;
+    btnTraceActivityFold.setAttribute('aria-hidden', show ? 'false' : 'true');
+  }
+  if (traceSplitHandle) {
+    traceSplitHandle.hidden = !show;
+    traceSplitHandle.setAttribute('aria-valuenow', String(Math.round(traceActivityShare * 100)));
+    traceSplitHandle.setAttribute(
+      'aria-disabled',
+      (!show || traceActivityFolded || traceMembersFolded) ? 'true' : 'false'
+    );
+  }
+  if (!traceSidebar) return;
+  if (!show) {
+    traceSidebar.classList.remove('activity-folded', 'members-folded', 'is-resizing');
+    traceSidebarSplit?.style.removeProperty('--trace-activity-share');
+    traceSidebarSplit?.style.removeProperty('--trace-members-share');
+    return;
+  }
+  traceSidebar.classList.toggle('activity-folded', traceActivityFolded);
+  traceSidebar.classList.toggle('members-folded', traceMembersFolded);
+  traceSidebarSplit?.style.setProperty('--trace-activity-share', traceActivityShare + 'fr');
+  traceSidebarSplit?.style.setProperty('--trace-members-share', (1 - traceActivityShare) + 'fr');
+  if (btnTraceActivityFold) {
+    const expanded = !traceActivityFolded;
+    btnTraceActivityFold.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    btnTraceActivityFold.title = expanded ? 'Collapse live activity' : 'Show live activity';
+    btnTraceActivityFold.setAttribute(
+      'aria-label',
+      expanded ? 'Collapse live activity' : 'Show live activity'
+    );
+  }
+  if (btnTraceMembersFold) {
+    const expanded = !traceMembersFolded;
+    btnTraceMembersFold.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    btnTraceMembersFold.title = expanded ? 'Collapse members' : 'Show members';
+    btnTraceMembersFold.setAttribute(
+      'aria-label',
+      expanded ? 'Collapse members' : 'Show members'
+    );
+  }
+}
+
+function setTraceActivityFolded(next: boolean) {
+  traceActivityFolded = !!next;
+  saveTraceSplitPrefs();
+  applyTraceSplitLayout();
+}
+
+function setTraceMembersFolded(next: boolean) {
+  traceMembersFolded = !!next;
+  if (traceMembersFolded) closeTraceMembersPicker();
+  saveTraceSplitPrefs();
+  applyTraceSplitLayout();
+}
+
+function setTraceActivityShare(next: number, { persist = true } = {}) {
+  traceActivityShare = clampTraceActivityShare(next);
+  applyTraceSplitLayout();
+  if (persist) saveTraceSplitPrefs();
+}
+
+function beginTraceSplitDrag(event: PointerEvent) {
+  if (event.pointerType === 'mouse' && event.button !== 0) return;
+  if (!traceSidebar?.classList.contains('has-members')) return;
+  if (traceActivityFolded || traceMembersFolded) return;
+  if (!traceSidebarSplit || !traceSplitHandle) return;
+  event.preventDefault();
+  traceSplitDrag = { pointerId: event.pointerId };
+  traceSidebar.classList.add('is-resizing');
+  try { traceSplitHandle.setPointerCapture(event.pointerId); } catch { /* ignore */ }
+  window.addEventListener('pointermove', moveTraceSplitDrag);
+  window.addEventListener('pointerup', endTraceSplitDrag);
+  window.addEventListener('pointercancel', endTraceSplitDrag);
+  moveTraceSplitDrag(event);
+}
+
+function moveTraceSplitDrag(event: PointerEvent) {
+  if (!traceSplitDrag || !traceSidebarSplit) return;
+  const rect = traceSidebarSplit.getBoundingClientRect();
+  const handleH = traceSplitHandle ? traceSplitHandle.getBoundingClientRect().height : 8;
+  const available = Math.max(1, rect.height - handleH);
+  const y = event.clientY - rect.top - handleH / 2;
+  setTraceActivityShare(y / available, { persist: false });
+}
+
+function endTraceSplitDrag(event: PointerEvent) {
+  if (!traceSplitDrag) return;
+  if (event && event.pointerId != null && traceSplitHandle) {
+    try { traceSplitHandle.releasePointerCapture(event.pointerId); } catch { /* ignore */ }
+  }
+  traceSplitDrag = null;
+  window.removeEventListener('pointermove', moveTraceSplitDrag);
+  window.removeEventListener('pointerup', endTraceSplitDrag);
+  window.removeEventListener('pointercancel', endTraceSplitDrag);
+  traceSidebar?.classList.remove('is-resizing');
+  saveTraceSplitPrefs();
+}
+
+function bindTraceSplitChrome() {
+  loadTraceSplitPrefs();
+  applyTraceSplitLayout();
+  btnTraceActivityFold?.addEventListener('click', (event) => {
+    event.stopPropagation();
+    setTraceActivityFolded(!traceActivityFolded);
+  });
+  btnTraceMembersFold?.addEventListener('click', (event) => {
+    event.stopPropagation();
+    setTraceMembersFolded(!traceMembersFolded);
+  });
+  if (!traceSplitHandle) return;
+  traceSplitHandle.addEventListener('pointerdown', beginTraceSplitDrag);
+  traceSplitHandle.addEventListener('pointermove', moveTraceSplitDrag);
+  traceSplitHandle.addEventListener('pointerup', endTraceSplitDrag);
+  traceSplitHandle.addEventListener('pointercancel', endTraceSplitDrag);
+  traceSplitHandle.addEventListener('dblclick', (event) => {
+    event.preventDefault();
+    setTraceActivityShare(TRACE_ACTIVITY_SHARE_DEFAULT);
+  });
+  traceSplitHandle.addEventListener('keydown', (event) => {
+    if (traceActivityFolded || traceMembersFolded) return;
+    if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+      event.preventDefault();
+      const delta = event.key === 'ArrowUp' ? -0.04 : 0.04;
+      setTraceActivityShare(traceActivityShare + delta);
+    } else if (event.key === 'Home') {
+      event.preventDefault();
+      setTraceActivityShare(TRACE_ACTIVITY_SHARE_DEFAULT);
+    }
+  });
+}
+
+function traceMembersRenderSignature(convo: Conversation | null | undefined, members: Bot[]) {
+  return JSON.stringify({
+    convoId: convo?.id || '',
+    members: (members || []).map((bot) => ({
+      id: bot.id || '',
+      handle: bot.handle || '',
+      name: bot.name || '',
+      model: bot.model || '',
+      modelLabel: loopModelTriggerLabel(bot.model),
+      stage: bot.stage || 'auto',
+      description: bot.description || '',
+    })),
+  });
+}
+
+function renderTraceMembers() {
+  if (!traceSidebar || !traceMembers) return;
+  const convo = conversations.find((item) => item.id === activeId);
+  const show = isBotsSurface() && isBotGroup(convo);
+  traceSidebar.classList.toggle('has-members', show);
+  traceMembers.hidden = !show;
+  if (!show) {
+    closeTraceMembersPicker();
+    if (traceMembersList) {
+      traceMembersList.replaceChildren();
+      delete traceMembersList.dataset.renderSignature;
+    }
+    applyTraceSplitLayout();
+    renderLoopFlow(convo);
+    return;
+  }
+  const members = ensureLoopAgents(convo);
+  const title = (document.getElementById('traceMembersTitle') as HTMLElement);
+  if (title) title.textContent = 'Agents · ' + members.length;
+  const canAdd = members.length < LOOP_AGENT_MAX;
+  if (btnTraceMemberAdd) {
+    btnTraceMemberAdd.disabled = !canAdd;
+    btnTraceMemberAdd.title = canAdd ? 'Add an agent' : 'This loop already has ' + LOOP_AGENT_MAX + ' agents';
+    btnTraceMemberAdd.setAttribute('aria-label', btnTraceMemberAdd.title);
+  }
+  if (!traceMembersList) {
+    applyTraceSplitLayout();
+    return;
+  }
+  const renderSignature = traceMembersRenderSignature(convo, members);
+  if (
+    traceMembersList.dataset.renderSignature === renderSignature
+    && traceMembersList.childElementCount === members.length
+  ) {
+    applyTraceSplitLayout();
+    renderLoopFlow(convo);
+    return;
+  }
+  traceMembersList.replaceChildren();
+  traceMembersList.dataset.renderSignature = renderSignature;
+  const canKick = members.length > LOOP_AGENT_MIN;
+  members.forEach((bot) => {
+    const row = (document.createElement('div') as HTMLElement);
+    row.className = 'trace-member';
+    const avatar = createBotAvatarEl(bot, { className: 'trace-member-avatar' });
+    applyPrivacyMosaic(avatar, 'bot-avatar:' + bot.id, { dense: true });
+    row.appendChild(avatar);
+    const copy = (document.createElement('div') as HTMLElement);
+    copy.className = 'trace-member-copy';
+    const handle = (document.createElement('span') as HTMLElement);
+    handle.className = 'trace-member-handle';
+    handle.textContent = botDisplayHandle(bot);
+    applyPrivacyMosaic(handle, 'bot-handle:' + bot.id);
+    setIdentityTitle(handle, botDisplayHandle(bot));
+    const model = createLoopModelPicker(bot.model, {
+      ariaLabel: 'Model for ' + botDisplayHandle(bot),
+      className: 'is-compact',
+      hiddenClass: 'trace-member-model',
+      onPick: (value) => persistAgentModel(convo, bot.id, value),
+    });
+    const stage = createLoopStageSelect(
+      bot.stage || 'auto',
+      'Stage for ' + botDisplayHandle(bot),
+      'is-compact'
+    );
+    stage.addEventListener('change', () => persistAgentStage(convo, bot.id, stage.value));
+    const desc = (document.createElement('textarea') as HTMLTextAreaElement);
+    desc.className = 'field-textarea trace-member-desc';
+    desc.rows = 2;
+    desc.maxLength = 400;
+    desc.placeholder = 'What this agent should do…';
+    desc.value = bot.description || '';
+    desc.setAttribute('aria-label', 'Description for ' + botDisplayHandle(bot));
+    desc.addEventListener('change', () => persistAgentDescription(convo, bot.id, desc.value));
+    desc.addEventListener('blur', () => persistAgentDescription(convo, bot.id, desc.value));
+    copy.appendChild(handle);
+    copy.appendChild(model);
+    copy.appendChild(stage);
+    copy.appendChild(desc);
+    row.appendChild(copy);
+    const kick = (document.createElement('button') as HTMLButtonElement);
+    kick.type = 'button';
+    kick.className = 'btn btn-ghost btn-icon trace-member-kick';
+    kick.dataset.botId = bot.id;
+    kick.setAttribute('aria-label', 'Remove ' + botDisplayHandle(bot) + ' from this loop');
+    kick.title = canKick ? 'Remove from loop' : 'Loops need at least two agents';
+    kick.disabled = !canKick;
+    kick.textContent = '×';
+    row.appendChild(kick);
+    traceMembersList.appendChild(row);
+  });
+  closeTraceMembersPicker();
+  applyTraceSplitLayout();
+  renderLoopFlow(convo);
+}
+
+function bindBotChrome() {
+  (document.getElementById('btnNewGroup') as HTMLButtonElement)?.addEventListener('click', () => openGroupDialog(null));
+  (document.getElementById('btnGroupCancel') as HTMLButtonElement)?.addEventListener('click', closeGroupDialog);
+  (document.getElementById('btnGroupClose') as HTMLButtonElement)?.addEventListener('click', closeGroupDialog);
+  (document.getElementById('btnGroupSave') as HTMLButtonElement)?.addEventListener('click', saveGroupFromDialog);
+  (document.getElementById('btnLoopCountDown') as HTMLButtonElement)?.addEventListener('click', () => {
+    setLoopDraftCount(loopDraftAgents.length - 1);
+  });
+  (document.getElementById('btnLoopCountUp') as HTMLButtonElement)?.addEventListener('click', () => {
+    setLoopDraftCount(loopDraftAgents.length + 1);
+  });
+  (document.getElementById('groupModal') as HTMLElement)?.addEventListener('click', (event) => {
+    if ((event.target as HTMLElement).id === 'groupModal') closeGroupDialog();
+  });
+  btnTraceMemberAdd?.addEventListener('click', (event) => {
+    event.stopPropagation();
+    addAgentToActiveLoop();
+  });
+  traceMembersList?.addEventListener('click', (event) => {
+    const kick = ((event.target as HTMLElement).closest('.trace-member-kick') as HTMLButtonElement);
+    if (!kick || kick.disabled) return;
+    kickBotFromActiveGroup(kick.dataset.botId);
+  });
+  topbarLoopPhase?.addEventListener('click', () => {
+    if (typeof setTraceSidebarOpen === 'function') setTraceSidebarOpen(true, { fromUser: true });
+  });
+  bindTraceSplitChrome();
+}
+
+bindBotChrome();

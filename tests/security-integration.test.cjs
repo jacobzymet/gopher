@@ -1,3 +1,4 @@
+const { chromium, appTestsEnabled, spawnApp, browserLaunchOptions, stopApp, removeAppData } = require('./helpers/app.cjs');
 // Requires a built app and Playwright. Uses an isolated temporary data directory.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -9,10 +10,9 @@ const net = require('node:net');
 const { setTimeout: delay } = require('node:timers/promises');
 
 test('built app supports offline OCR and revokes terminal sockets on encryption lock', {
-  skip: !process.env.SECURITY_APP_BINARY,
+  skip: !appTestsEnabled,
   timeout: 120000,
 }, async () => {
-  const { chromium } = require('playwright');
   const dir = mkdtempSync(join(tmpdir(), 'gopher-security-'));
   const config = join(dir, 'config.toml');
   writeFileSync(config, '');
@@ -21,7 +21,7 @@ test('built app supports offline OCR and revokes terminal sockets on encryption 
   const port = reservation.address().port;
   await new Promise(r => reservation.close(r));
   const origin = `http://127.0.0.1:${port}`;
-  const child = spawn(resolve(process.env.SECURITY_APP_BINARY), ['--headless', '--config', config, '--bind', `127.0.0.1:${port}`], { windowsHide: true, stdio: 'pipe' });
+  const child = spawnApp(['--headless', '--config', config, '--bind', `127.0.0.1:${port}`], { windowsHide: true, stdio: 'pipe' });
   let logs = '';
   child.stdout.on('data', b => { logs += b; });
   child.stderr.on('data', b => { logs += b; });
@@ -35,7 +35,7 @@ test('built app supports offline OCR and revokes terminal sockets on encryption 
       await delay(100);
     }
     assert.ok(ready, logs);
-    browser = await chromium.launch({ headless: true, channel: process.env.SECURITY_BROWSER_CHANNEL || undefined });
+    browser = await chromium.launch(browserLaunchOptions(process.env.SECURITY_BROWSER_CHANNEL));
     const page = await browser.newPage();
     const externalCode = [];
     await page.route('**/*', route => {
@@ -84,9 +84,8 @@ test('built app supports offline OCR and revokes terminal sockets on encryption 
     assert.equal(status, 'rejected');
   } finally {
     if (browser) await browser.close();
-    child.kill();
-    if (child.exitCode === null) await new Promise(r => child.once('exit', r));
+    await stopApp(child);
     // Only the exact test-created directory is removed.
-    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    await removeAppData(dir);
   }
 });

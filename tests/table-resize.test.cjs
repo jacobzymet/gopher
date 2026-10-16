@@ -1,11 +1,12 @@
+const { chromium, browserLaunchOptions } = require('./helpers/app.cjs');
+const { readUiScript } = require('./helpers/ui-source.cjs');
 // NODE_PATH can point to an installed Playwright package; no app build is needed.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 
 const root = join(__dirname, '..');
-const source = readFileSync(join(root, 'src/ui/chat/scripts/render.js'), 'utf8');
+const source = readUiScript("render");
 function declaration(name) {
   return source.match(new RegExp('function ' + name + '\\([\\s\\S]*?\\r?\\n\\}'))[0];
 }
@@ -14,21 +15,16 @@ const tableHtml = '<div class="md-table-wrap"><table class="md-table">' +
   '<tbody><tr><td>S1</td><td>Senior partner (youngest ever)</td><td>Junior partner</td></tr>' +
   '<tr><td>S8</td><td>Senior partner</td><td>Managing partner (Harvey steps down)</td></tr></tbody>' +
   '</table></div>';
-let chromium;
-try { ({ chromium } = require('playwright')); } catch { /* Report missing browser coverage. */ }
-const browserOptions = { skip: !chromium && 'Playwright is required for table resize tests' };
+const browserOptions = { skip: !chromium && 'Set GOPHER_BROWSER_TESTS=1 to run browser checks' };
 
 async function withTable(run) {
-  const browser = await chromium.launch({
-    headless: true,
-    ...(process.env.TABLE_RESIZE_BROWSER_CHANNEL ? { channel: process.env.TABLE_RESIZE_BROWSER_CHANNEL } : {}),
-  });
+  const browser = await chromium.launch(browserLaunchOptions(process.env.TABLE_RESIZE_BROWSER_CHANNEL));
   try {
     const page = await browser.newPage();
     await page.setContent('<div class="msg msg-role-assistant" style="width:570px;margin:20px">' +
       '<div class="msg-bubble">' + tableHtml + '</div></div>');
     for (const stylesheet of ['base.css', 'conversation.css']) {
-      await page.addStyleTag({ path: join(root, 'src/ui/chat/styles', stylesheet) });
+      await page.addStyleTag({ path: join(root, 'client/chat/styles', stylesheet) });
     }
     await page.addScriptTag({ content: [
       declaration('enhanceMarkdownTables'), declaration('enhanceCiteFavicons'), declaration('enhanceCodeBlocks'),

@@ -1,0 +1,191 @@
+{
+  "disable_transition": {
+    "meta": {
+      "kdf": "argon2id",
+      "kdf_iterations": 3,
+      "kdf_memory_kib": 65536,
+      "kdf_parallelism": 1,
+      "salt": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+      "verifier": {
+        "ciphertext": "j34OUGUMCke0nNaNmLqlUo0SuYY6ShQVDA==",
+        "gopher_crypto": 2,
+        "nonce": "AInKjN33xaWBxm94"
+      },
+      "version": 2
+    },
+    "operation": "disable",
+    "payload": {
+      "ciphertext": "OH09UC0InN3oQNOUDF5OJ3/rJ3ylhFBfwPeB/a/8W6o28I3iodtPSn/H002A/p1TCmbDWjR7Ey0+ce4SXNA5svfizbn4CoaN9Z2Cy0v/EsGA/hNfglSWb+TSlaEzUjIgTC/HTLfa0XWP+u+HM3Vz9bjIpoV/PCMBYtUtvU9Mh57DzwnbLJXupMyFfi5DaXzYYVD9C8xTNCGQWkU/NzRq3CD3HNg/KpFfyEVfT5uDDRtO82iiPuy/zmZhtEeLtw7WTVfHNsMyfA9+GBFRzoSPcPF4zctP7EqZE8IrguvWD7Ww1uPINP+RZcdcSthVrq9EPTnRvs4/rNRAppL+PT5qfhiqBemUn2V8Pnc4gFoLNUGMVv6lfgEoosEdvbvY8SBomYrotB/Bd7GjLk4YsWRnnGTVZsrvnYNcVPy91oZsL+Tz9ybHgPjwi/eC9lBQNeV+Ev1O59dDPDjF9G5qgJp2mGpSBduTx0tRWrgxY/BMyXhMIetzs7XGDN2Nqu3Oh20BMb7U219t0eG3TF1L/VYNdAtW/IDanF2w1vXnrojXIIglKVQe9TbHIkltgnu/C3pWuRz/GnAEGq2Ko1tvfOo543Mc407rsH7SjFljqZD0zVC+Qkw39RZr3wxSSWGtKvbbpbrNwCO9HoivtWWedGFkATPU4c9PTN0UjQAIqgiWth/RfYdLtKdDKtreOLU/8MlBBjr6nw5KX3y1kBKsOwsZg/HcHXY/wVuzSPxi3BVvGpqvKVkx+SV24hn2jqFcLpi921aCs1KYbFJMZKYy0aKLgC94raDJ24zYISJiGhit/+TTk25DCQ5ECtAZj7zAfOYrLsXOb1fx94WNlA9iBR9Y/s1OHVboKAUPpr7mAlWtDL12SEiIbxu3VNxqX9SEjVbTK1psoPX/cytwS01C32nYY8NSNcAyisPRF1Fsirvqd5ptuNLN09M6++9/0WyAKBQJevVKKpJOCVPD1HDHV+L9C8jVAvOR6RltQU+LROl6wkNytgCLuIyR4FqI8LnkN7GVYLY/l1CU1jCWNZR4lcwZiSMDU8h3sYefWhL/X7IteoN1q2Y9xfjNL+Bs9XL3j4TOEqZX5oxqSSD3poETvh9MEOi1FO1Fkfmqcwk9M1IEfE0/i0x0QiAmK3xJLgXhQ5Dt16cARBgFzVdb6lmZyc7Ec+dQidJkLSocgfypKzhYZPyvieuILK0q+oIaWCSWhZIo7Kzbyw3qY+8DsoZaZp4Hls1zT1hwgtyQ7mQJraSomNJy4VEO2qylrfw2ZsG7cxQprXI+M65Vd3ZaoRG6cDRUcwncO82eAESyAhyy8FXmgZHz6Y9/cAjsbPs3Q2hNjihOCJfdGUi8VKhXu6ov6E69DeT2QI+nILVb6Iye5DdhyDvJMBN7pAksb7CPM4SxH5Q7D+WMbq1eWJObFyFrJOyFCjA3wYkBgSGfTZxZ/Nqse4eWe4sxsKm3EMH0ggWyDWN4nzdDjJPz6ssFUo+DIfpHIFv904EOBE3wCjXtsjJX09vEdYr1d/a0jiU6fup7sQKBCjS+s/gckoJb8+wi1yCsLNU9G2Xo/9ZWCqN+PYVydAY2ROv/ycWmgpu8dGUnWubzMGYqqlCp1/UISAolLIqrGEYB47kXcONQj8srRr08VnJLwJlFWYvIC9v7MiaHKR2ZDqWaMuHO0LEAoMeG8LUk062LvdfgJJ5bPkp6AneqcT2FVopDaJiYFFK90GCI71SXQAk70KK3SsmCfKgVve3jZ067GBsGOqrJLEXAv2YRL0mi",
+      "gopher_crypto": 2,
+      "nonce": "yWm5+vK+eA/OZsZV"
+    },
+    "transaction_id": "BM5U-RE2yFzkMQ56fQCDew",
+    "version": 1
+  },
+  "enable_transition": {
+    "meta": {
+      "kdf": "argon2id",
+      "kdf_iterations": 3,
+      "kdf_memory_kib": 65536,
+      "kdf_parallelism": 1,
+      "salt": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+      "verifier": {
+        "ciphertext": "j34OUGUMCke0nNaNmLqlUo0SuYY6ShQVDA==",
+        "gopher_crypto": 2,
+        "nonce": "AInKjN33xaWBxm94"
+      },
+      "version": 2
+    },
+    "operation": "enable",
+    "payload": {
+      "ciphertext": "SQzskObk2Z2zXoGMJ9G9FDbZmIiMiowrNWGo/JCqowpTONpXxpaXQEKD9YNCJrMpQWWVJn72zRlVX7MsNIAOPhZJerPLZqteGkOiM9qMYPktMfYYD/N39hDZHBQmivaKKnRVS+O0RcSv9jsv+9uNiFTagnBPrd6aK3gVMFSF/SJ4nmG1FBM+J2yco/WRaUE19k1zll+A9/wxLvJbmvys+LN1oXojsCeJFVWTHS8ModbELmxIrLyHlXJ2rDwkoXSs1s+Kk6fYSJbrNWln+/ZCdYmdMk3wy0BitcdBTB6blTYnuwTG3SKPi5lfc1daRRstX7Py9Mh+5WgxXZle77krCFiA6vY7hZYWFiBVAss+eiv3wORsWTaC2/WnfRimUg7KSS5HQRtbA+XjOSQuOKqQhFq8Hfr3idxJtVu8eBOEB/CMnk8Tj9u+XrIYo4Z7Z60pe5b2Vo9Rcowsi576ef/XvjKyv04U6PFPFgt4tZCkMlz2K8TpkqoFroOoN6G+4ZMhR9lzFLWntwFz44RUh1O2DI0fOI9Udy7lbOPKlsiXbYu5KnhjjRFMDNCnDboGi0+B5w6zBeHEB5H6rqYD5NaAGrQ8mj5AoF1wQYdz9zKuB7GKRPt+7qpf+P2jNsVu+gWC3x23DYgc5GlHsBLKJZvheg3YBbtuM+/SRMVwC4rGcBO47MrFAKLmqK0+e5jmaN10JGyKr1MuWxIJN9kDwQxzsUtpJCvNTf0K5z05x9TVhk/QvbMi9JlrVbo6KxYlz30+lWWsuvqedXCBaqqUIrzWnlAX5U4J0wDMTMq+LQbL01pOmXBOOQH+cBt+Eosnm0gIXlhzhj1G46bJJuAzqj3NuUWs4TnpgW3dUC8L6bJipWEI0jblfGtLW/wvIn5Y99AiWVQMCX/oajoshOGJ52IPVo9cQxBahCAmrhxOP09s1yf9E8VQxsx5mHX1dJaeJdT/cSJH+9pvsnQMASC0/xqduqhZVM3oO8VtarMdXyPKaOE/3Si08Z2wLR4OjOrCqS9S3P8FpoWppI3ZTTfxMFspPAausvD8fXEBZTNgj4F2k65UnozcOxLZ3Jc3VGXn/uS2jEF5cgUbw3KfCAtpKCZvwQ+GvVULH3VVwduyNFKlD2qeMAxgfbLc2uJfuO9BuHv/yMhN0epGe/L7pmiqu3hKHXNSoKurFgXToRY3E4YjlCrkDBzalO1oz30XeA2p3YZ7vH8wpP6uoHKZ8iTtG/iPDUwefbSbUV6HiGgL8vGzxVvHi63Z7vYj9cdtcIjYLRuI4C/layieD3imfG8VW2QTChpp5FCD5sj9f8qAlOwbfgLNQDdNHi7/4uf91i2ZYjXMXeyRrMo9psFy85lGPZUUmbSxrsMM1CUXow3qZBro8G0qYth/2NrR1O+ApuKvsOSeLGmKTJNFZ5coYaznNdZbxn8d3aCa841fZrsCiArocxSlEmiu6eKtsu4cJyONPPsokmd7mqDm609+0FS6DID3YuBCS+j/ONvqd2Tw0Dd8hCPYqcJ3BpL3gctOMIolaXkE0qbtivpadGGjgvFCfExdHxngal3Bj8JPXbwhfrZZVi54lY3VRWdnMCf+FThXZc5pJFwoOl3E2SKLi3VUDEgpI+A6IZlglNjLagm8GRmo2F/m8Io6HJGZ9Rr9OgsKoZdOkswTxUF2aLZCr9RBAemruDRcj61dVvEcYhIyjtDl87UbJuQzjfm7IEjHJ4ysVJLyRDTogptucCKAJeHaBh12Irh8tBQog9PVZFtxWm1CTvI=",
+      "gopher_crypto": 2,
+      "nonce": "G5+yTNJVc6CcMisW"
+    },
+    "transaction_id": "Pd1pQf-QdEM9D_z1aWIGGw",
+    "version": 1
+  },
+  "encrypted": {
+    "chats": {
+      "ciphertext": "SzRCFwRV5RB8S6DVXQ1rmVhv2PUTA+yixjrAPUizOZ1ZuGeMpeDrNdPFF6m1IZs6Wd/sb06/6WLEYnezKoZwdvtdLbiEwVUgc8Mr2l61mRuuu3jv31daoJGY9UCglBxOL7SqkK9t1dh8ZUdS6xRgFaC06p35QFZ2c73MNHysZCKnv1gtTxZ8DBJSFFjBw3y9kLj3+ys8M6f7VtePXAUUak6+uUCi9UDaB6VH7zQ8HhFBIrqYH7kaoa75lzDqM9ugeXbEq5TESS+vJa/vJ5H6U0l30fp5yClU4eK9dG9VIiBmEckGstQj52y5jIeagtOksdpdNlLQ5YkqSHSbIGgl3FCoA16m7EUWRIqUX/Mstueu3CWxjLcViIS1km1VbPx83Vfc6O4hwC5U/6ZsjaZRfRz2xjyH",
+      "gopher_crypto": 2,
+      "nonce": "TrMAbRw7HhAd9DTk"
+    },
+    "diagnostics": {
+      "ciphertext": "5bfcY4SiiNksndXlXqaL7zDOzNUkUTTx1B7hHNAxM3AU+6Qz4a6ZK0sR8pOnuEXBpqupLMB73F4m5BUeh7y1T3613OGTh4KIa5i5k4/DaRfCQDnw++tEYTTDCoUZDvcsczNp9OQS7wM8ueN0OK4pwSTBA0R70YzNQSQG17LNRfWksUM3tleaaUPxdqkP6oijMKJOVqFrtdVksWysiGNy7XVyTohENDTCcFbKz8P82MFFTkE95cpDE2YvqGWEMbj17y9bJxYrVWQV7ct+HY88Rui/60O1wo42YkKhftaKQhHNTA/SaNaRLczaBvcEdqLIQLpPHFWhpOsH/UHLXdXVGeGq3qPYqM/8uHh0IjIgQhaCk2fcYSdCubtJDmOI6NhOVZ/456E=",
+      "gopher_crypto": 2,
+      "nonce": "+D8bK1FxHDDIKqhD"
+    },
+    "preferences": {
+      "ciphertext": "7z6aSKouoo4kNmHTPkQNQYs2QqC5wVngz32vojMfa9yasM93uZf1TUVG/rBo3lX83wnhQ8JFnKcNxLwBTRh6x1QJ6jpIBgzAfeH5e/8E0ImNfE/f8Etvh41Z7sRluovg2AIMZwRAPs04Qnd8hqC7mPpDzccZHzfeOPDAmEamY80CgFbTXjxzfbrDIfTIGi2m+Bk=",
+      "gopher_crypto": 2,
+      "nonce": "iuQwMHXm4Fm/5Qh6"
+    },
+    "providers": {
+      "ciphertext": "ZL2RPbV5iQLT9Rcnl0C03r7S8GjTDsnCC3/z+7+xzZHbpv3aPpWAa42cdrX4eMcsov3Vc42P7m7rL7LF5p/+0glNGSx03gsHGLuO15XhPZz4nXT7n2CNKFQaEsV8rXLT1oV7tMkLFSHG1Bqnb4XMEMrEZEXFcDLHDkCjRi7BI0u7OLJZqNNgzaEb0Pk7XBPCaUbX1cBzcXWcML6IW6Dj//VT0S/ZUNBCEBl0D3fKlqXXIODFZX6cCdoItexNYEdcTFe8CwOmCc3TN0FcCZeEGpTYCl3HiyUOWI29JXvhsVTq8Vdwsu5ZGjq2RD0dMnqAt2Om4HqX10xfNsu2pYx3lhIERpr02+lADQF4VqYlJpAPGwc9rQ==",
+      "gopher_crypto": 2,
+      "nonce": "tkpa6Vj9QFeRvEAH"
+    },
+    "skills": {
+      "ciphertext": "uD2/qhL/Lii8VDmUfQVrHvHBHpRgPyD53UAAykhTYr/jM7u48JD6dBkVu5DePvsT9qKCDpzVBq7j3oKhyqkxRVqIt4EkgUPf28NbvtfwSchrb9GLH1EQrOpcURjSv8dW/G0m76KqbVOivFTILP6t+7U6GPhGSZq9BnzUnhDV27UT9NIHU/5MGHKTjv77ZBY86eJgqWxVjtdejP/oWiKfNv4iWh14euXU0D6U/QjB/DB4G9Ku5uQt993IaRSmvDzpxs4jWXd4DNejfw8hT9dNUAcyOeveDAqEm9KO0Btr",
+      "gopher_crypto": 2,
+      "nonce": "Gne2LYJ1BxGszhLm"
+    }
+  },
+  "key_hex": "b6023c7b4be5353836de9b90d8018e7f2d4854c20fd60636fa2369a65a4a62b6",
+  "legacy_key_hex": "e38ca3ef7776754f2e93e4fc8ae2122d2397722a5735a4744d6958436013db1a",
+  "legacy_meta": {
+    "kdf": "argon2id",
+    "kdf_iterations": 2,
+    "kdf_memory_kib": 19456,
+    "kdf_parallelism": 1,
+    "salt": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+    "verifier": null,
+    "version": 1
+  },
+  "meta": {
+    "kdf": "argon2id",
+    "kdf_iterations": 3,
+    "kdf_memory_kib": 65536,
+    "kdf_parallelism": 1,
+    "salt": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=",
+    "verifier": {
+      "ciphertext": "j34OUGUMCke0nNaNmLqlUo0SuYY6ShQVDA==",
+      "gopher_crypto": 2,
+      "nonce": "AInKjN33xaWBxm94"
+    },
+    "version": 2
+  },
+  "passphrase": "Rust compatibility passphrase 🔐",
+  "snapshot": {
+    "chats": {
+      "activeProfileId": "rust-profile",
+      "profiles": [
+        {
+          "bots": [],
+          "conversations": [
+            {
+              "id": "rust-chat",
+              "messages": [
+                {
+                  "content": "Preserve Unicode 你好 🌍",
+                  "role": "user"
+                }
+              ],
+              "title": "Original Rust chat"
+            }
+          ],
+          "id": "rust-profile",
+          "name": "Rust fixture",
+          "projects": [
+            {
+              "id": "p1",
+              "name": "Migration"
+            }
+          ]
+        }
+      ],
+      "version": 3
+    },
+    "diagnostics": {
+      "dropped": 0,
+      "entries": [
+        {
+          "conversation_id": "rust-chat",
+          "data": "{\"message\":\"Original diagnostic\"}",
+          "elapsed_ms": 1.5,
+          "event": "fixture",
+          "id": 1,
+          "level": "info",
+          "source": "server",
+          "timestamp": 1000,
+          "trace_id": "rust-trace",
+          "truncated_bytes": 0
+        }
+      ],
+      "last_id": 1,
+      "timings": [],
+      "version": 1
+    },
+    "preferences": {
+      "diagnosticsEnabled": true,
+      "name": "Rust fixture",
+      "profiles": {
+        "rust-profile": {
+          "accent": "violet"
+        }
+      },
+      "selectedChatModel": "p1|fixture"
+    },
+    "provider_tokens": {
+      "provider_config": {
+        "active_provider_id": "rust-provider",
+        "providers": [
+          {
+            "allow_insecure_tls": false,
+            "api_style": "openai",
+            "base": "https://example.com/v1",
+            "id": "rust-provider",
+            "kind": "custom",
+            "name": "Original provider",
+            "token": "rust-provider-secret"
+          }
+        ]
+      },
+      "version": 2
+    },
+    "skills": [
+      {
+        "content": "Preserve instructions 你好",
+        "created_at": 1,
+        "description": "Original persisted skill",
+        "enabled": true,
+        "id": "sk-0123456789abcdef",
+        "name": "Rust skill",
+        "source_filename": "SKILL.md",
+        "updated_at": 2
+      }
+    ]
+  },
+  "source": "Original Gopher Rust crypto and encryption_transition APIs"
+}

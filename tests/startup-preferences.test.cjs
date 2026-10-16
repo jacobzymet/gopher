@@ -1,11 +1,11 @@
+const { readUiScript } = require('./helpers/ui-source.cjs');
 const assert = require('node:assert/strict');
-const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
 
-const source = readFileSync(join(__dirname, '../src/ui/chat/scripts/state.js'), 'utf8');
-const runtime = readFileSync(join(__dirname, '../src/ui/chat/scripts/runtime.js'), 'utf8');
+const source = readUiScript("state");
+const runtime = readUiScript("runtime");
 function declaration(text, name) {
   const match = text.match(new RegExp('^(?:async )?function ' + name + '\\([\\s\\S]*?^\\}', 'm'));
   assert.ok(match, 'missing ' + name);

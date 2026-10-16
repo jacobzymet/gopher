@@ -1,0 +1,12 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
+const pointer = join(dirname(fileURLToPath(import.meta.url)), 'current.json');
+const { checkout } = JSON.parse(readFileSync(pointer, 'utf8')) as { checkout: string };
+const args = process.argv.slice(2);
+const serverMode = args.some(arg => ['--headless', '--browser', '--open', '--help', '-h', '--version', '-v'].includes(arg));
+const electron = join(checkout, 'node_modules/electron/dist', process.platform === 'win32' ? 'electron.exe' : process.platform === 'darwin' ? 'Electron.app/Contents/MacOS/Electron' : 'electron');
+const child = spawn(serverMode ? process.execPath : electron, serverMode ? [join(checkout, 'dist/server/index.js'), ...args] : [checkout, ...args], { stdio: serverMode ? 'inherit' : 'ignore', detached: !serverMode, windowsHide: true, env: { ...process.env, GOPHER_RELEASE_POINTER: pointer, GOPHER_NODE_EXECUTABLE: process.execPath } });
+child.on('error', error => { console.error(error.message); process.exitCode = 1; });
+if (!serverMode) child.unref(); else child.on('exit', code => { process.exitCode = code || 0; });

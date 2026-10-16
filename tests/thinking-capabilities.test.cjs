@@ -1,12 +1,12 @@
+const { readUiScript } = require('./helpers/ui-source.cjs');
 const assert = require('node:assert/strict');
-const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { test } = require('node:test');
 const vm = require('node:vm');
 
 const root = join(__dirname, '..');
-const controls = readFileSync(join(root, 'src/ui/chat/scripts/controls.js'), 'utf8').replace(/\r\n/g, '\n');
-const state = readFileSync(join(root, 'src/ui/chat/scripts/state.js'), 'utf8').replace(/\r\n/g, '\n');
+const controls = readUiScript("controls").replace(/\r\n/g, '\n');
+const state = readUiScript("state").replace(/\r\n/g, '\n');
 
 function declaration(source, name) {
   const match = source.match(new RegExp('^function ' + name + '\\([\\s\\S]*?^\\}$', 'm'));

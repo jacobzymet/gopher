@@ -1,3 +1,5 @@
+const { chromium, appTestsEnabled, spawnApp, browserLaunchOptions, stopApp, removeAppData } = require('./helpers/app.cjs');
+const { readUiScript } = require('./helpers/ui-source.cjs');
 const assert = require('node:assert/strict');
 const { readFileSync, mkdtempSync, writeFileSync, rmSync, existsSync } = require('node:fs');
 const { join, resolve } = require('node:path');
@@ -7,7 +9,7 @@ const vm = require('node:vm');
 const { spawn } = require('node:child_process');
 const { createServer } = require('node:http');
 const { setTimeout: delay } = require('node:timers/promises');
-const source = readFileSync(join(__dirname, '../src/ui/chat/scripts/diagnostics.js'), 'utf8');
+const source = readUiScript("diagnostics");
 
 function harness() {
   const calls = [];
@@ -86,11 +88,9 @@ test('a response from before lock cannot repopulate logs after a new session', a
   assert.equal(vm.runInContext('diagnosticQueue.length', state), 0);
 });
 
-let chromium;
-try { ({ chromium } = require('playwright')); } catch {}
 
 test('real Logs tab locates provider delay, redacts credentials, and persists only encrypted logs', {
-  skip: !process.env.GOPHER_TEST_BINARY || !chromium,
+  skip: !appTestsEnabled || !chromium,
   timeout: 90000,
 }, async () => {
   const provider = createServer(async (request, response) => {
@@ -120,11 +120,13 @@ test('real Logs tab locates provider delay, redacts credentials, and persists on
     'active_provider_id = "fixture"', '[[providers]]', 'id = "fixture"', 'name = "Fixture"',
     `base = "http://127.0.0.1:${provider.address().port}/v1"`, 'api_style = "openai"', 'token = "fixture-secret-token"',
   ].join('\n'));
-  const child = spawn(resolve(process.env.GOPHER_TEST_BINARY), ['--headless', '--config', join(dir, 'config.toml'), '--bind', '127.0.0.1:0'], { windowsHide: true, stdio: 'pipe' });
+  const child = spawnApp(['--headless', '--config', join(dir, 'config.toml'), '--bind', '127.0.0.1:0'], { windowsHide: true, stdio: 'pipe' });
   let logs = ''; let spawnError; let browser;
+  let releaseBrowserLogs;
+  const browserLogsGate = new Promise(resolve => { releaseBrowserLogs = resolve; });
+  let heldBrowserLogs = false;
   child.on('error', error => { spawnError = error; });
   child.stdout.on('data', data => { logs += data; }); child.stderr.on('data', data => { logs += data; });
-  const exited = new Promise(resolve => child.once('close', resolve));
   try {
     let origin;
     for (let i = 0; i < 100; i++) {
@@ -135,10 +137,19 @@ test('real Logs tab locates provider delay, redacts credentials, and persists on
       await delay(100);
     }
     assert.ok(origin, logs);
-    browser = await chromium.launch({ headless: true, channel: process.env.SECURITY_BROWSER_CHANNEL || undefined });
+    browser = await chromium.launch(browserLaunchOptions(process.env.SECURITY_BROWSER_CHANNEL));
     const page = await browser.newPage(); const errors = [];
     page.on('pageerror', error => errors.push(error.message));
-    await page.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
+    await page.route('**/*', async route => {
+      const request = route.request(), url = new URL(request.url());
+      if (url.origin !== origin) return route.abort();
+      if (!heldBrowserLogs && url.pathname === '/api/diagnostics' && request.method() === 'POST'
+        && request.postDataJSON()?.entries?.some(entry => entry.event === 'prompt.prepare.started')) {
+        heldBrowserLogs = true;
+        await browserLogsGate;
+      }
+      return route.continue();
+    });
     await page.goto(origin);
     await page.waitForFunction(() => storageReady && modelMenuOptions.some(model => model.label === 'diagnostic-model'));
     assert.equal(await page.evaluate(() => settings.diagnosticsEnabled), false);
@@ -155,11 +166,21 @@ test('real Logs tab locates provider delay, redacts credentials, and persists on
       console.warn('fixture console warning', { api_key: 'console-secret' });
     });
     await page.waitForFunction(() => !activeStreams.has('diagnostic-chat') && conversations.find(item => item.id === 'diagnostic-chat')?.messages.some(message => message.role === 'assistant'));
-    const data = await page.evaluate(async () => { await refreshDiagnostics(); await flushDiagnostics(); await refreshDiagnostics(); return diagnosticStatus; });
-    const entries = data.entries;
+    await page.waitForFunction(() => diagnosticFlushBusy && !diagnosticQueue.some(entry => entry.event === 'prompt.prepare.started'));
+    assert.equal(heldBrowserLogs, true);
+    // Interval uploads are single-flight: calling flush/refresh again does not
+    // await work already in progress. Hold one real batch to cover that race.
+    const pending = await page.evaluate(async () => {
+      await refreshDiagnostics(); await flushDiagnostics(); await refreshDiagnostics();
+      return { uploading: diagnosticFlushBusy, captured: diagnosticEntries.some(entry => entry.event === 'prompt.prepare.started') };
+    });
+    assert.equal(pending.uploading, true); assert.equal(pending.captured, false);
+    releaseBrowserLogs();
+    const expectedEvents = ['prompt.prepare.started', 'cancel.wait.finished', 'chat.request.dispatch', 'provider.request', 'provider.headers', 'provider.first_byte', 'provider.raw_chunk', 'server.first_reasoning_token', 'server.first_content_token', 'browser.first_reasoning_token', 'browser.first_content_token', 'console.warn'];
+    await page.waitForFunction(names => names.every(name => diagnosticEntries.some(entry => entry.event === name)), expectedEvents, { timeout: 15000, polling: 100 });
     const all = await page.evaluate(() => diagnosticEntries);
     const event = name => all.find(entry => entry.event === name);
-    for (const name of ['prompt.prepare.started', 'cancel.wait.finished', 'chat.request.dispatch', 'provider.request', 'provider.headers', 'provider.first_byte', 'provider.raw_chunk', 'server.first_reasoning_token', 'server.first_content_token', 'browser.first_reasoning_token', 'browser.first_content_token', 'console.warn']) assert.ok(event(name), name);
+    for (const name of expectedEvents) assert.ok(event(name), name);
     assert.ok(event('provider.headers').elapsed_ms >= 150);
     assert.ok(event('provider.first_byte').elapsed_ms >= 350);
     assert.ok(event('server.first_reasoning_token').elapsed_ms >= 450);
@@ -184,7 +205,7 @@ test('real Logs tab locates provider delay, redacts credentials, and persists on
     await page.waitForFunction(() => document.querySelector('.diagnostic-entry[open] pre')?.textContent.length > 0);
     assert.match(await page.locator('.diagnostic-entry[open] pre').textContent(), /Fixture|choices/);
     await page.locator('#diagnosticsSearch').fill('');
-    await page.screenshot({ path: resolve('target/diagnostics-ui.png') });
+    await page.screenshot({ path: resolve('output/playwright/diagnostics-ui.png') });
     await page.evaluate(async () => {
       for (let start = 0; start < 600; start += 60) {
         const response = await diagnosticFetch('/api/diagnostics', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
@@ -223,9 +244,10 @@ test('real Logs tab locates provider delay, redacts credentials, and persists on
     await page.waitForFunction(() => diagnosticEntries.length === 0 && diagnosticGeneration != null);
     assert.deepEqual(errors, []);
   } finally {
+    releaseBrowserLogs();
     if (browser) await browser.close();
-    if (child.exitCode === null && !spawnError) child.kill(); await exited;
+    await stopApp(child);
     provider.closeAllConnections(); await new Promise(resolve => provider.close(resolve));
-    rmSync(dir, { recursive: true, force: true });
+    await removeAppData(dir);
   }
 });

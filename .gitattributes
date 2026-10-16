@@ -1,5 +1,7 @@
 # Bundled runtime assets retain the exact bytes recorded in their manifest.
-src/ui/vendor/ocr/* -text
+client/chat.html -text -whitespace
+client/chat/styles/* -text -whitespace
+client/vendor/** -text -whitespace
 
 # Keep installers POSIX/PowerShell-safe across Windows checkouts.
 install-linux.sh text eol=lf

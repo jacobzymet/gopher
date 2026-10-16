@@ -1,3 +1,4 @@
+const { readUiScript } = require('./helpers/ui-source.cjs');
 'use strict';
 
 const test = require('node:test');
@@ -5,12 +6,12 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-const input = fs.readFileSync('src/ui/chat/scripts/input.js', 'utf8');
+const input = readUiScript("input");
 const inputStart = input.indexOf('function exactContextTokenCount(');
 const inputEnd = input.indexOf('\nfunction syncContextUsage(', inputStart);
 assert.ok(inputStart >= 0 && inputEnd > inputStart);
 
-const render = fs.readFileSync('src/ui/chat/scripts/render.js', 'utf8');
+const render = readUiScript("render");
 const renderStart = render.indexOf('function ingestStreamUsage(');
 const renderEnd = render.indexOf('\nfunction finalizeTurnStats(', renderStart);
 assert.ok(renderStart >= 0 && renderEnd > renderStart);

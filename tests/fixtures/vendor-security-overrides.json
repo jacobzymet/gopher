@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "baseline": "tests/fixtures/original-ui-sha256.json",
+  "assets": [
+    {
+      "path": "client/vendor/purify.min.js",
+      "package": "dompurify",
+      "from": "3.4.15",
+      "to": "3.4.16",
+      "originalSha256": "85b67cc74b556e3d3630eb21cb453d2ba97a0a6894729a8bc1f168f465da54c9",
+      "sha256": "2c90a9b46d6463f26038a29b686e82bc91de01fdac9d5229e7cfe3b360134ea2",
+      "advisories": [
+        "https://github.com/cure53/DOMPurify/security/advisories/GHSA-p98j-92pf-mc4p",
+        "https://github.com/cure53/DOMPurify/security/advisories/GHSA-6688-9rhm-gjv2"
+      ],
+      "reason": "Official security patch for IN_PLACE detached-subtree and removed rawtext-root sanitization."
+    },
+    {
+      "path": "client/vendor/katex/katex.min.js",
+      "package": "katex",
+      "from": "0.16.22",
+      "to": "0.16.22+gopher-security.1",
+      "originalSha256": "e8d885505949f3a5f4abdd5dd0d53696bd1371ad26ffbf4f310dcd77c8cdae89",
+      "sha256": "55b43d173be4bf6919652d07ae6ca3d32aac2c1755bfbb8c826fc2f270c8675d",
+      "advisories": [
+        "https://github.com/KaTeX/KaTeX/security/advisories/GHSA-238p-pmpm-9mq7"
+      ],
+      "reason": "Backport official own-property security checks without changing rendering algorithms, markup, CSS or fonts; 56-formula exact pixel comparison."
+    }
+  ]
+}

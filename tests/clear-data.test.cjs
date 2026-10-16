@@ -1,14 +1,11 @@
+const { readUiScript } = require('./helpers/ui-source.cjs');
 // Run without compiling the app: node --test tests/clear-data.test.cjs
 const assert = require('node:assert/strict');
-const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { test } = require('node:test');
 const vm = require('node:vm');
 
-const source = readFileSync(
-  join(__dirname, '../src/ui/chat/scripts/controls.js'),
-  'utf8'
-).replace(/\r\n/g, '\n');
+const source = readUiScript("controls").replace(/\r\n/g, '\n');
 
 function declaration(name) {
   const match = source.match(new RegExp('^function ' + name + '\\([\\s\\S]*?^\\}$', 'm'));

@@ -1,183 +1,128 @@
 # <img src="assets/browser-favicon.png" alt="" width="36" height="36"> Gopher
 
-A local, lightweight, open source LLM harness for humanity.
+A local, open source LLM workspace built with TypeScript.
 
-A more permissive alternative to [Open WebUI](https://github.com/open-webui/open-webui), with:
+Connect OpenAI-compatible, Anthropic Messages, or Responses providers, local or cloud. Gopher does not include an inference engine.
 
-- OpenAI-compatible and Anthropic Messages–compatible providers, local or cloud
-- Chats, projects, Loops (multi-model group chats), memory, model pins, and attachments
-- Agent mode with approvals, web search, URL fetching, deep research, browser control, filesystem access, terminal access, and custom skills
-- Passphrase-based encryption at rest for chats, preferences, provider credentials, and skills
+- Chats, projects, profiles, Loops, memory, model pins, search, drafts, exports, and Ghost sessions
+- Streaming answers, reasoning, live reconnection, cancellation, editing, and branching
+- Agent tools with approvals, steering, web research, browser control, files, terminal sessions, and custom skills
+- Image attachments and offline OCR, plus PDF and text extraction
+- Optional passphrase encryption for chats, preferences, provider credentials, skills, and saved diagnostics
+- Native Electron desktop app and a secured, loopback-only browser server
 
-Gopher does not bundle an inference engine. Connect Ollama, OpenAI, Gemini, Anthropic, or another compatible endpoint.
+## Run from source
 
-## Install and run
-
-Gopher is built on your computer from the current **master** commit. Install [current stable Rust with Cargo](https://rustup.rs) and the native build tools for your platform first. The installers compile a pinned commit with the repository’s lockfile, then install the resulting executable. The first build may take several minutes.
-
-### Windows
-
-Install Rust’s **MSVC** toolchain and [Visual Studio Build Tools](https://visualstudio.microsoft.com/downloads/) with **Desktop development with C++** and the Windows SDK. The desktop window also needs [Microsoft Edge WebView2](https://developer.microsoft.com/microsoft-edge/webview2/).
-
-```powershell
-irm https://raw.githubusercontent.com/jacobzymet/gopher/master/install.ps1 | iex
-```
-
-The script installs to `%LOCALAPPDATA%\gopher\bin` and adds that directory to your user PATH.
-
-### macOS
-
-Install Rust and Xcode Command Line Tools (`xcode-select --install`), then run:
+Install **Node.js 24.7 or later**, npm, and Git. Linux and macOS also require a
+C/C++ compiler, make, and Python 3 for native dependencies. On macOS, install the
+Xcode Command Line Tools. Then:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/jacobzymet/gopher/master/install-macos.sh | sh
+npm ci
+npm run build
+npm run desktop
 ```
 
-### Linux
-
-Install Rust, a C/C++ compiler, pkg-config, and GLib, GTK3 and WebKitGTK 4.1 development packages. On Debian/Ubuntu:
+For a browser window:
 
 ```sh
-sudo apt install build-essential pkg-config libglib2.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev
-curl -fsSL https://raw.githubusercontent.com/jacobzymet/gopher/master/install-linux.sh | sh
+npm start -- --browser
 ```
 
-The script prints equivalent Fedora and Arch requirements when dependencies are missing. Unix scripts install to `~/.local/bin`; add it to PATH if needed. Inspect scripts before running them if you prefer. Use `GOPHER_INSTALL_DIR` or `--dir DIRECTORY` to choose the destination; Windows also supports `--no-path`.
-
-### Stay up to date
-
-**App updates track the latest commit on `master`, not new GitHub releases.**
-
-Run `gopher`. **Settings → App** compares this build’s commit with `master` on GitHub. **Build and restart** compiles the current master commit locally with Cargo, verifies the built app’s identity, installs it, and restarts. Build failures leave your installed app intact. Rust and native build tools must remain installed for updates. Compiled dependencies are cached for subsequent builds.
-
-Builds use commit IDs such as `master@0123456789ab`, also shown by `gopher --version`. Modified local checkouts are marked `+modified`; unknown source revisions can be rebuilt from master. Rerunning the platform installer also updates to master. There are no numbered release channels or binary downloads.
-
-To migrate an existing installation that checks numbered releases, install Rust and the build dependencies, then rerun the platform installer above.
-
-To work from a checkout with Git:
+For a server without opening a window:
 
 ```sh
-git clone --branch master https://github.com/jacobzymet/gopher
-cd gopher
-cargo run --locked
-# Later, with your local changes committed or otherwise saved:
-git switch master
-git pull --ff-only origin master
-cargo build --release --locked
+npm start -- --headless
 ```
 
-The default launch opens a native desktop window and starts a loopback-only control plane. Updates applied from a Cargo checkout install into the user install folder used by the platform scripts.
+The default URL is `http://gopher.localhost:3930`. `http://127.0.0.1:3930` also works. Browser-control tools use an installed Chrome, Chromium, or Edge; set `GOPHER_BROWSER_PATH` to choose an executable.
+
+The lockfile pins dependencies and explicitly approves native dependency installation scripts. `npm run desktop` installs Electron's binary when needed; when launching the Electron CLI directly, first run `node node_modules/electron/install.js`. `fs-ext` must compile on Unix for exclusive data locks, even though npm classifies it as optional. `node-pty` also compiles when no prebuilt binary matches your platform and Node.js version; Windows then requires Python 3 and Visual Studio C++ Build Tools.
 
 | Option | Behavior |
 | --- | --- |
-| `--browser` | Open the UI in the default browser |
-| `--headless` | Run without opening a window or browser |
-| `--bind ADDR` | Override the loopback listen address |
-| `--config PATH` | Use another `config.toml`; other data is stored beside it |
+| `--browser` | Open the default browser |
+| `--headless` | Run without opening a window |
+| `--bind ADDR` | Choose a loopback address; port `0` selects an available port |
+| `--config PATH` | Read configuration and store data beside this file |
+| `--version` | Show this build's source commit |
 
-Default URL: `http://gopher.localhost:3930`. `/settings` redirects to **Settings → Providers**. The optional browser-control tool requires Chrome or Edge.
+`GOPHER_BIND` supplies the bind address when the CLI does not. Non-loopback binds are rejected.
 
-## Everyday tools
+## Install
 
-- **Ctrl+K** (⌘K on macOS) searches titles and the full text of saved chats, Loops, and projects in the current profile. Results include matching excerpts and open the relevant message. Use quotes for an exact phrase, filter by Chats or Projects, or type `>` for quick actions.
-- **Ctrl+F** (⌘F) finds text in the open conversation, including passages with inline formatting. Enter / Shift+Enter moves between matches; Escape closes the search.
-- Unsent text, capability mentions, reply quotes, and new-chat model/folder choices restore separately for each chat and project. Drafts use the same storage and encryption as chats. Ghost drafts and pending attachment files stay in memory only; files need to be reattached after reload.
-- The conversation menu offers **Export as Markdown**. Exports include messages, reply quotes, and attachment names. Tool payloads, provider configuration, and attachment bytes are excluded.
-- **Ctrl+Shift+O** (⌘⇧O) starts a chat; **Ctrl+,** (⌘,) opens Settings. The welcome screen offers prompt starters and a direct model setup action.
-- Repeated connection failures show a reconnect notice while preserving the composer. Sending resumes when Gopher is reachable again.
+The platform installers build a pinned master commit in a new release directory and switch the launcher only after a successful build and native dependency checks. They require Node.js 24.7+, npm, and Git; Unix installers also use curl and the native build tools listed above. A missing or incompatible native dependency leaves the current release active.
 
-## Web search
+```powershell
+# Windows
+irm https://raw.githubusercontent.com/jacobzymet/gopher/master/install.ps1 | iex
+```
 
-Configure search under **Settings → Agent Capabilities → Web search**:
+```sh
+# macOS
+curl -fsSL https://raw.githubusercontent.com/jacobzymet/gopher/master/install-macos.sh | sh
+# Linux
+curl -fsSL https://raw.githubusercontent.com/jacobzymet/gopher/master/install-linux.sh | sh
+```
 
-| Provider | Behavior |
-| --- | --- |
-| Auto | Uses a configured SearXNG instance first; otherwise DuckDuckGo |
-| Parallel | Uses free MCP without a key, or the Search API with a key |
-| TinyFish | Uses its Search API and requires a key |
-| SearXNG | Uses the configured instance only |
-| DuckDuckGo | Uses the HTML and Lite endpoints |
+Use `GOPHER_INSTALL_DIR` or `--dir DIRECTORY` for a different launcher location. Windows supports `--no-path`. Settings → App checks master and can build and restart a compatible TypeScript update. Failed builds leave the installed app available; previous release directories remain for recovery.
 
-Parallel and TinyFish keys can be entered in Settings or supplied as `PARALLEL_API_KEY` and `TINYFISH_API_KEY`. Result count, recency, region, SafeSearch, and optional result-page fetching are configurable.
+## Existing data
 
-## Data and configuration
+Gopher reads existing configuration and storage formats, including Argon2id/AES-256-GCM encrypted files. Keep a backup when moving between application versions. An exclusive data-directory lock prevents concurrent writers.
 
-On-disk data and configuration use the **`gopher`** folder:
-
-| OS | Default directory |
+| OS | Default data directory |
 | --- | --- |
 | Windows | `%APPDATA%\gopher\` |
 | macOS | `~/Library/Application Support/gopher/` |
 | Linux | `~/.config/gopher/` |
 
-| Path | Contents |
-| --- | --- |
-| `config.toml` | Bind, appearance, and unencrypted provider configuration |
-| `chats.json` | Conversations and projects |
-| `preferences.json` | Settings, model state, and search credentials |
-| `provider-tokens.json` | Encrypted provider definitions and credentials; present only when encryption is enabled |
-| `encryption.json` | Encryption salt, KDF parameters, and key verifier |
-| `encryption-transition.json` | Recovery state used only during encryption-mode changes |
-| `chat-skills/skills.json` | Atomic custom-skill snapshot |
-
-Chats, preferences, and skills are encrypted in place when encryption is enabled. Provider configuration is then removed from plaintext `config.toml` and stored in `provider-tokens.json`.
-
-The UI manages these settings, but a minimal configuration is:
+`config.toml` stores appearance, bind, and plaintext provider settings. `chats.json`, `preferences.json`, and `chat-skills/skills.json` store conversations, preferences, and custom skills. When encryption is enabled, these files are protected in place, provider credentials move into `provider-tokens.json`, and `encryption.json` holds the key-derivation metadata. Encryption changes use a recoverable journal.
 
 ```toml
-active_provider_id = "…"
+active_provider_id = "local"
 
 [ui]
 host = "127.0.0.1"
 port = 3930
-theme = "dark" # dark, light, or system
+theme = "dark"
 
 [data]
 storage = "disk"
 
 [[providers]]
-id = "…"
-name = "ollama"
+id = "local"
+name = "Ollama"
 base = "http://127.0.0.1:11434/v1"
-api_style = "openai" # openai or anthropic
-token = ""           # optional for local endpoints
+api_style = "openai"
+token = ""
 ```
 
-Provider API style is detected when a provider is added or saved. Existing entries without `api_style` default to `openai`.
+Configure providers, search backends, custom skills, appearance, and other capabilities in Settings. ChatGPT supports browser sign-in, device-code sign-in, and explicitly confirmed local Codex-session import. A chat's manual model selection overrides the default until **Use default** is selected.
 
-**Settings → Composer → Default model** applies to chats without a manual model choice. Choosing a model beneath the composer saves it for that chat only, including after restart. **Use default** in the model menu clears that choice so the chat follows future default changes. A model chosen in an unsent draft belongs to the chat created from that draft; the next new chat starts with the default.
+## Everyday controls
 
-**Settings → Logs → Enable diagnostic logging** is off by default. It combines browser console/errors, application logs, request stages, raw provider requests/streams, and tool events. Per-request timings separate preparation and cancellation waits from provider headers, first bytes, and first reasoning/content tokens. Search/filter the entries or export JSON for debugging. Logs include prompt/response content with credentials redacted. Saved logs live in encrypted `diagnostics.json` under the same passphrase as local data; without encryption they remain in memory. Locking clears the live buffer. Turning encryption off removes the encrypted log file and keeps the session buffer in memory. Raw logs retain up to 2,000 entries or 8 MiB, with oversized entries marked; a separate bounded timing index retains first-token milestones after raw-log rotation.
+| Shortcut | Action |
+| --- | --- |
+| Ctrl/⌘ K | Search saved chats/projects or type `>` for actions |
+| Ctrl/⌘ F | Find text in the current conversation |
+| Ctrl/⌘ Shift O | Start a chat |
+| Ctrl/⌘ , | Open Settings |
 
-Bind precedence is `--bind`, then `GOPHER_BIND`, then `[ui]`. Network-reachable addresses are refused because the local UI has no authentication.
+Drafts restore independently for each chat and project. Ghost sessions stay temporary. The conversation menu exports Markdown without attachment bytes, credentials, or tool payloads. Profiles and projects constrain past-chat retrieval; Ghost sessions cannot retrieve saved chats.
 
-LLM system and tool prompts live under [`prompts/`](prompts/) and are embedded at compile time.
+Agent file tools stay within the selected workspace. Bounded file reads can resume using byte offsets. Patch validation completes before writing, and unrelated edits are preserved. Read-only calls run in batches of up to eight; mutations and browser actions retain order.
 
-**Settings → Personalization → Search and reference past chats** is enabled by default, including outside Agent mode. The read-only `list_chats`, `search_chats`, and `read_chat` tools show queries, source links, and expandable retrieved text in activity. Answers can cite original messages; links open the chat and highlight the message. Retrieved text goes to the selected model provider. Project chats retrieve only within their project; non-project chats retrieve only non-project chats in the current profile. Temporary Ghost (incognito) chats cannot retrieve or appear in results and neither read nor update saved memory. Turning the switch off blocks subsequent retrieval, including during an active turn. Saved global/project/bot memory is managed separately. Retrieval uses the existing protected chat store without a plaintext disk index; every call rechecks settings, scope, deletion, and lock state.
+Terminal commands continue through `wait_terminal` without relaunching the process. Sessions are scoped to their conversation and workspace, expire after 30 idle minutes, and retain bounded output with an explicit omission marker. Initial wait is separate from process lifetime.
 
-Agent file reads run concurrently in groups of up to eight. Writes, commands, browser actions, and their approvals preserve call order. `read_file` defaults to 200 lines and reads bounded pages from large files; use its returned `byte_offset` to continue. `apply_patch` supports multiple files and context hunks, validates the whole patch before writing, and attempts rollback if a commit fails. It preserves unrelated bytes and line endings. External writers are outside the workspace tool lock; rollback leaves detected external edits untouched and reports them.
+The agent reserves context for tool definitions and responses, archives complete older assistant/tool exchanges, and preserves user/system/developer instructions. Context comes from the selected model, `GOPHER_AGENT_CONTEXT_TOKENS`, or an explicit request override. If protected input cannot fit, the request fails clearly instead of silently truncating instructions.
 
-`run_terminal` returns a session ID when a command continues beyond the initial wait. `wait_terminal` polls that same process or terminates it explicitly. **Settings → Initial wait** controls the first wait (5–30 seconds), not a kill timeout. Sessions are scoped to the conversation and workspace, limited to eight running commands per conversation and 64 sessions overall, and expire after 30 minutes without polling. Captured output stays bounded at 32 KB and retains the beginning and end; larger output is explicitly marked as omitted. The interactive terminal remains separate.
+## Privacy and diagnostics
 
-Agent runs budget their context before each model request. Older complete assistant/tool exchanges move into an encrypted temporary archive retrievable through `read_tool_history` during that run; user, system, and developer messages remain intact. The archive uses a per-run key held only in memory and is deleted on close; its limits are 64 MB and 8192 records. If protected input alone is too large, the run reports an error instead of truncating instructions. Text token counts and image costs are estimates, not a provider tokenizer. The context window comes from the selected model's reported metadata when available. Override it with `GOPHER_AGENT_CONTEXT_TOKENS`, or pass `context_window_tokens` in the agent request (highest priority). When none is available, defaults are 8192 tokens without an API key and 32768 with one. Tool schemas and a response reserve are deducted, and individual tool output budgets shrink with the available context.
+Encryption uses Argon2id and authenticated AES-256-GCM with purpose-bound data. The passphrase is never stored. Locking cancels requests, terminates terminals, closes isolated browser contexts, clears live buffers, and removes the session key. Data writes are atomic, reject symlinks/hardlinks, and use private OS permissions. Windows grants access to the current user and LocalSystem.
 
-## Encryption at rest
+Encryption protects stored application data. It does not protect workspace files, previously copied plaintext, OS backups, or a compromised logged-in account. Forgotten passphrases cannot be recovered.
 
-Enable encryption under **Settings → Local Data**. Gopher derives a 256-bit key with Argon2id (64 MiB, three iterations, one lane) and encrypts protected data with AES-256-GCM using random 96-bit nonces and purpose-bound authenticated data. The passphrase and raw key are never stored; the session key remains in memory until **Lock session** or exit and is then zeroized. Writes use private permissions, atomic replacement, and an exclusive data-directory lock.
+Diagnostic logging is off by default. Settings → Logs captures redacted browser/server/provider/tool events and timing milestones. Saved diagnostics require encryption; otherwise the bounded log stays in memory. Locking clears the live buffer.
 
-The protection covers offline confidentiality and integrity of chats, preferences, provider definitions and credentials, and skills. It does not protect plaintext copies or backups made before encryption, filesystem snapshots, malware or another process in the logged-in session, rollback to an older complete encrypted data set, memory forensics while unlocked, forgotten passphrases, or hardware failure. Secure deletion cannot be guaranteed on SSDs or copy-on-write filesystems. **Forgotten passphrases cannot be recovered.**
-
-Workspace files, terminal history, downloads, OS caches, and browser profiles from older versions are outside this encryption boundary. Agent browsing now uses isolated temporary private contexts, cleaned up on lock and normal shutdown. Windows app data files and directories receive protected ACLs for the current user and LocalSystem, including custom locations.
-
-## Build and verify
-
-```powershell
-cargo build --release --locked
-cargo fmt --package gopher -- --check
-cargo clippy --all-targets --locked -- -D warnings
-cargo test --all-targets --locked
-```
-
-The binary embeds the UI, prompts, fonts loader, syntax highlighting, Markdown renderer, sanitizer, terminal assets, and icons.
-
-Licensed under the [MIT License](LICENSE).
+Licensed under the [MIT License](LICENSE). See [third-party notices](THIRD_PARTY_NOTICES.md).

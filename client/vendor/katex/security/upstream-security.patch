@@ -1,0 +1,96 @@
+diff --git a/src/Namespace.ts b/src/Namespace.ts
+--- a/src/Namespace.ts
++++ b/src/Namespace.ts
+@@ -81,8 +81,10 @@ export default class Namespace<Value> {
+     get(name: string): Value | undefined {
+         if (Object.prototype.hasOwnProperty.call(this.current, name)) {
+             return this.current[name];
+-        } else {
++        } else if (Object.prototype.hasOwnProperty.call(this.builtins, name)) {
+             return this.builtins[name];
++        } else {
++            return undefined;
+         }
+     }
+ 
+@@ -111,7 +113,8 @@ export default class Namespace<Value> {
+             // value is the correct one.
+             const top = this.undefStack[this.undefStack.length - 1];
+             if (top && !Object.prototype.hasOwnProperty.call(top, name)) {
+-                top[name] = this.current[name];
++                top[name] = Object.prototype.hasOwnProperty.call(
++                    this.current, name) ? this.current[name] : undefined;
+             }
+         }
+         if (value == null) {
+
+diff --git a/src/Settings.ts b/src/Settings.ts
+--- a/src/Settings.ts
++++ b/src/Settings.ts
+@@ -326,7 +326,8 @@ function getDefaultValue<K extends keyof SettingsOptions>(
+     schema: SchemaEntry<K>,
+ ): Settings[K];
+ function getDefaultValue(schema: SchemaEntry<keyof SettingsOptions>): DefaultValue {
+-    if (schema.default !== undefined) {
++    if (Object.prototype.hasOwnProperty.call(schema, "default") &&
++        schema.default !== undefined) {
+         return schema.default;
+     }
+     const type = Array.isArray(schema.type) ? schema.type[0] : schema.type;
+@@ -339,10 +340,13 @@ function applySetting<K extends keyof SettingsOptions>(
+     options: SettingsOptions,
+     schema: SchemaEntry<K>,
+ ) {
+-    const optionValue = options[prop];
++    const optionValue = Object.prototype.hasOwnProperty.call(options, prop)
++        ? options[prop] : undefined;
++    const processor = Object.prototype.hasOwnProperty.call(schema, "processor")
++        ? schema.processor : undefined;
+     target[prop] = optionValue !== undefined
+-        ? (schema.processor
+-            ? schema.processor(optionValue)
++        ? (processor
++            ? processor(optionValue)
+             : optionValue)
+         : getDefaultValue(schema);
+ }
+
+diff --git a/test/katex-spec.ts b/test/katex-spec.ts
+--- a/test/katex-spec.ts
++++ b/test/katex-spec.ts
+@@ -4625,6 +4625,35 @@ describe("strict setting", function() {
+     });
+ });
+ 
++describe("Settings prototype pollution", function() {
++    afterEach(() => {
++        delete (Object.prototype as any).trust;
++        delete (Object.prototype as any).default;
++        delete (Object.prototype as any).processor;
++    });
++
++    it("should ignore a polluted Object.prototype.trust", () => {
++        (Object.prototype as any).trust = true;
++        expect(new Settings().trust).toBe(false);
++        expect(katex.renderToString(r`\href{javascript:alert(1)}{x}`))
++            .not.toContain("<a href=");
++    });
++
++    it("should ignore trust inherited from the options prototype", () => {
++        expect(new Settings(Object.create({trust: true})).trust).toBe(false);
++    });
++
++    it("should ignore a polluted Object.prototype.default", () => {
++        (Object.prototype as any).default = true;
++        expect(new Settings().trust).toBe(false);
++    });
++
++    it("should ignore a polluted Object.prototype.processor", () => {
++        (Object.prototype as any).processor = () => true;
++        expect(new Settings({trust: false}).trust).toBe(false);
++    });
++});
++
+ describe("Internal __* interface", function() {
+     const latex = r`\sum_{k = 0}^{\infty} x^k`;
+     const rendered = katex.renderToString(latex);

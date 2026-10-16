@@ -1,11 +1,11 @@
+const { readUiScript } = require('./helpers/ui-source.cjs');
 const assert = require('node:assert/strict');
-const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { test } = require('node:test');
 const vm = require('node:vm');
 
 function load(state, file, names) {
-  const source = readFileSync(join(__dirname, '../src/ui/chat/scripts', file), 'utf8').replace(/\r\n/g, '\n');
+  const source = readUiScript(file).replace(/\r\n/g, '\n');
   for (const name of names) {
     const match = source.match(new RegExp('^(?:async )?function ' + name + '\\([\\s\\S]*?^\\}$', 'm'));
     assert.ok(match, name);

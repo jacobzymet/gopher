@@ -1,0 +1,1573 @@
+function formatUserHtml(text: string) {
+  return escapeHtml(text)
+    .replace(/\n/g, '<br>')
+    .replace(
+      /(^|[\s>])(@(?:[a-z][a-z0-9_]{1,31}|everyone|user))\b/gi,
+      (_, lead: string, token: string) => {
+        const id = token.slice(1).toLowerCase();
+        return lead + '<span class="mention" data-mention="' + id + '">' + token + '</span>';
+      }
+    );
+}
+
+const BOT_PING_RE = /@(?:[a-z][a-z0-9_]{1,31}|everyone|user)\b/gi;
+
+/** Wrap @pings in rendered assistant HTML (bots surface) to match user bubbles. */
+function decorateMentionTextNodes(root: Node) {
+  if (!root || typeof isBotsSurface !== 'function' || !isBotsSurface()) return;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const parent = node.parentElement;
+      if (!parent) return NodeFilter.FILTER_REJECT;
+      if ((parent.closest('pre, code, .mention, a, script, style, .md-code-lang, button') as HTMLButtonElement)) {
+        return NodeFilter.FILTER_REJECT;
+      }
+      const value = node.nodeValue || '';
+      if (!value.includes('@')) return NodeFilter.FILTER_REJECT;
+      BOT_PING_RE.lastIndex = 0;
+      if (!BOT_PING_RE.test(value)) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  nodes.forEach((textNode) => {
+    const text = textNode.nodeValue || '';
+    BOT_PING_RE.lastIndex = 0;
+    const frag = document.createDocumentFragment();
+    let last = 0;
+    let match: RegExpExecArray | null;
+    while ((match = BOT_PING_RE.exec(text))) {
+      if (match.index > last) {
+        frag.appendChild(document.createTextNode(text.slice(last, match.index)));
+      }
+      const span = (document.createElement('span') as HTMLElement);
+      span.className = 'mention';
+      span.dataset.mention = match[0].slice(1).toLowerCase();
+      span.textContent = match[0];
+      frag.appendChild(span);
+      last = match.index + match[0].length;
+    }
+    if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+    textNode.parentNode!.replaceChild(frag, textNode);
+  });
+}
+
+function formatUserMessageHtml(message: string | Pick<ChatMessage, 'content' | 'attachments' | 'replyQuote' | 'replyToSpeakerHandle'>) {
+  let text = typeof message === 'string' ? message : (message?.content || '');
+  const attachments = Array.isArray((message as ChatMessage)?.attachments) ? (message as ChatMessage).attachments! : [];
+  const replyQuote = typeof message === 'object' && message?.replyQuote
+    ? String(message.replyQuote).trim()
+    : '';
+  if (attachments.length && text === '(attachment)') text = '';
+  const replyHandle = typeof message === 'object' && message?.replyToSpeakerHandle
+    ? String(message.replyToSpeakerHandle).replace(/^@/, '').trim()
+    : '';
+  const quoteHtml = replyQuote
+    ? '<div class="msg-reply-quote"><span class="msg-reply-quote-label">Replying to'
+      + (replyHandle
+        ? ' <span class="mention msg-reply-quote-who" data-mention="'
+          + escapeHtml(replyHandle.toLowerCase()) + '">@' + escapeHtml(replyHandle) + '</span>'
+        : '')
+      + '</span>'
+      + escapeHtml(replyQuote) + '</div>'
+    : '';
+  const textHtml = formatUserHtml(text);
+  if (!attachments.length) return quoteHtml + textHtml;
+  const chips = attachments.map((att) => {
+    if (att.kind === 'image' && att.previewUrl) {
+      return '<img class="msg-attach-thumb" src="' + escapeHtml(att.previewUrl)
+        + '" alt="' + escapeHtml(att.name || 'image') + '">';
+    }
+    return '<span class="msg-attach-file">' + escapeHtml(att.name || 'attachment') + '</span>';
+  }).join('');
+  const media = '<div class="msg-attachments">' + chips + '</div>';
+  return quoteHtml + (textHtml ? media + textHtml : media);
+}
+
+/** @type {Array<{id:string,name:string,mime:string,kind:'image'|'file',size:number,dataUrl:string,previewUrl:string,status:string,progress:number,error:string,file?:File|null}>} */
+let pendingAttachments: MessageAttachment[] = [];
+const ATTACH_FILE_GLYPH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>';
+/** Selected assistant snippet the next send will reply to. */
+let pendingReplyQuote: string | null = null;
+/** @type {{speakerId:string,speakerHandle:string}|null} */
+let pendingReplyTarget: ReplyTarget | null = null;
+let attachmentsSupported = false;
+let modelContextLength: number | null = null;
+let tesseractLoading: Promise<OcrApi> | null = null;
+let ocrEpoch = 0;
+let ocrAbortController = new AbortController();
+const ocrWorkers = new Set<{ terminate(): Promise<unknown> }>();
+
+function cancelOcrWorkers() {
+  ocrEpoch += 1;
+  ocrAbortController.abort();
+  ocrAbortController = new AbortController();
+  for (const worker of ocrWorkers) void worker.terminate().catch(() => {});
+  ocrWorkers.clear();
+}
+
+function selectedModelMeta() {
+  const remote = selectedRemoteModel(latestState);
+  return {
+    attachmentsSupported: !!(remote && remote.attachments_supported),
+    contextLength: remote && Number(remote.context_length) > 0
+      ? Number(remote.context_length)
+      : null,
+  };
+}
+
+function formatContextTokenCount(value: number) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return '—';
+  return Math.round(n).toLocaleString();
+}
+
+function compactContextModelLabel(value: string) {
+  const raw = String(value || '').trim();
+  if (!raw) return 'selected model';
+
+  const normalized = raw.replace(/\\/g, '/');
+  const tail = normalized.split('/').filter(Boolean).pop() || raw;
+
+  if (tail.length <= 44) return tail;
+  return tail.slice(0, 41) + '...';
+}
+
+function exactContextTokenCount(value: unknown) {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function latestConversationContextUsage(convo: Conversation | null | undefined, activeModel: string) {
+  if (!convo || !Array.isArray(convo.messages)) return null;
+  for (let i = convo.messages.length - 1; i >= 0; i -= 1) {
+    const message = convo.messages[i];
+    if (!message || message.role !== 'assistant') continue;
+    const model = String(message.contextModel || message.model || '').trim();
+    if (activeModel && model && model !== activeModel) continue;
+    const explicit = exactContextTokenCount(message.contextTokens);
+    if (explicit != null) {
+      return {
+        used: explicit,
+        prompt: exactContextTokenCount(message.contextPromptTokens),
+        completion: exactContextTokenCount(message.contextCompletionTokens),
+        model,
+      };
+    }
+    const prompt = exactContextTokenCount(message.promptTokens);
+    const completion = exactContextTokenCount(message.completionTokens);
+    if (prompt != null) {
+      return {
+        used: prompt + (completion ?? 0),
+        prompt,
+        completion,
+        model,
+      };
+    }
+  }
+  return null;
+}
+
+function contextUsageSnapshot(convo: Conversation | null, activeModel: string, liveStats: StreamUsage | null) {
+  const livePrompt = exactContextTokenCount(liveStats?.contextPromptTokens);
+  const liveCompletion = exactContextTokenCount(liveStats?.contextCompletionTokens);
+  if (livePrompt != null) {
+    return {
+      used: livePrompt + (liveCompletion ?? 0),
+      prompt: livePrompt,
+      completion: liveCompletion,
+      model: activeModel,
+    };
+  }
+  return latestConversationContextUsage(convo, activeModel);
+}
+
+function syncContextUsage(convo: Conversation | null = null, liveStats: StreamUsage | null = null, liveRemote: ModelOption | null = null) {
+  if (!contextUsage) return;
+  const activeConvo = convo || conversations.find((item) => item.id === activeId) || null;
+  const liveStream = activeConvo ? activeStreams.get(activeConvo.id) : null;
+  const remote = liveRemote || liveStream?.contextRemote || selectedRemoteModel(latestState);
+  const activeModel = String(remote?.model || selectedChatModel || '').trim();
+  const limit = Number(remote?.context_length);
+  const hasLimit = Number.isFinite(limit) && limit > 0;
+  const snapshot = contextUsageSnapshot(
+    activeConvo,
+    activeModel,
+    liveStats || liveStream?.usageStats || null
+  );
+
+  contextUsage.classList.remove('is-warn', 'is-danger', 'is-unavailable');
+  const ring = (contextUsage.querySelector('.context-usage-ring') as HTMLElement);
+
+  if (!hasLimit) {
+    contextUsage.classList.add('is-unavailable');
+    contextUsage.style.setProperty('--context-usage-pct', '0');
+    if (ring) ring.style.strokeDashoffset = '100';
+    contextUsageTitle.textContent = 'Context';
+    contextUsageSummary.textContent = 'Window size unavailable';
+    contextUsageDetail.textContent = activeModel
+      ? compactContextModelLabel(activeModel) + ' does not report a context length.'
+      : 'Choose a model to see context usage.';
+    contextUsage.setAttribute('aria-label', 'Context window size unavailable');
+    return;
+  }
+
+  if (!activeConvo) {
+    contextUsage.style.setProperty('--context-usage-pct', '0');
+    if (ring) ring.style.strokeDashoffset = '100';
+    contextUsageTitle.textContent = 'Context · 0%';
+    contextUsageSummary.textContent = '0 / ' + formatContextTokenCount(limit) + ' tokens';
+    contextUsageDetail.textContent = 'New chat · ' + compactContextModelLabel(activeModel);
+    contextUsage.setAttribute('aria-label', 'Context usage 0 percent');
+    return;
+  }
+
+  if (!snapshot) {
+    contextUsage.classList.add('is-unavailable');
+    contextUsage.style.setProperty('--context-usage-pct', '0');
+    if (ring) ring.style.strokeDashoffset = '100';
+    contextUsageTitle.textContent = 'Context';
+    contextUsageSummary.textContent = 'Waiting for usage';
+    contextUsageDetail.textContent =
+      formatContextTokenCount(limit) + ' token window · ' + compactContextModelLabel(activeModel);
+    contextUsage.setAttribute('aria-label', 'Context usage waiting for provider data');
+    return;
+  }
+
+  const used = Math.max(0, Number(snapshot.used) || 0);
+  const pct = (used / limit) * 100;
+  const ringPct = Math.max(0, Math.min(100, pct));
+  const remaining = Math.max(0, limit - used);
+  const pctLabel = pct > 0 && pct < 1 ? '<1%' : (pct < 10 ? pct.toFixed(1) + '%' : Math.round(pct) + '%');
+
+  contextUsage.style.setProperty('--context-usage-pct', ringPct.toFixed(2));
+  if (ring) ring.style.strokeDashoffset = String(100 - ringPct);
+  if (pct >= 90) contextUsage.classList.add('is-danger');
+  else if (pct >= 75) contextUsage.classList.add('is-warn');
+
+  contextUsageTitle.textContent = 'Context · ' + pctLabel;
+  contextUsageSummary.textContent =
+    formatContextTokenCount(used) + ' / ' + formatContextTokenCount(limit) + ' tokens';
+  contextUsageDetail.textContent =
+    formatContextTokenCount(remaining) + ' remaining · '
+    + compactContextModelLabel(snapshot.model || activeModel);
+  contextUsage.setAttribute(
+    'aria-label',
+    'Context usage ' + pctLabel + ', ' + formatContextTokenCount(used) + ' of ' + formatContextTokenCount(limit) + ' tokens'
+  );
+}
+
+function textFallbackContextOk() {
+  if (!settings.attachmentTextFallback) return false;
+  if (modelContextLength == null) return true;
+  return modelContextLength >= ATTACHMENT_MIN_CONTEXT;
+}
+
+function attachmentsUiEnabled() {
+  const mode = ATTACHMENTS_MODES.includes(settings.attachmentsMode)
+    ? settings.attachmentsMode
+    : 'auto';
+  if (mode === 'off') return false;
+  if (mode === 'on') return true;
+  return attachmentsSupported || textFallbackContextOk();
+}
+
+function attachDisabledReason() {
+  const mode = ATTACHMENTS_MODES.includes(settings.attachmentsMode)
+    ? settings.attachmentsMode
+    : 'auto';
+  if (mode === 'off') {
+    return 'Attachments disabled in Settings → Attachments';
+  }
+  if (mode === 'auto' && !attachmentsSupported && !settings.attachmentTextFallback) {
+    return 'This model does not report attachment support. Go to Settings → Attachments to configure.';
+  }
+  if (mode === 'auto' && !attachmentsSupported && settings.attachmentTextFallback && !textFallbackContextOk()) {
+    return 'Context window looks too small for text extraction. Go to Settings → Attachments to configure.';
+  }
+  return '';
+}
+
+function syncAttachButton() {
+  const meta = selectedModelMeta();
+  attachmentsSupported = meta.attachmentsSupported;
+  modelContextLength = meta.contextLength;
+  syncContextUsage();
+  updateSendEnabled();
+  syncMicButton();
+  renderPlusMenu();
+  syncPlusButton();
+}
+
+function voiceInputSupported() {
+  return typeof SpeechRecognitionAPI === 'function';
+}
+
+function syncMicButton() {
+  if (!btnMic) return;
+  const supported = voiceInputSupported();
+  btnMic.classList.toggle('is-hidden', !supported);
+  btnMic.hidden = !supported;
+  if (!supported) {
+    stopVoiceInput({ silent: true });
+    return;
+  }
+  const locked = diskEncryptionLocked();
+  const enabled = serverReady && !locked;
+  if (!enabled && voiceListening) stopVoiceInput({ silent: true });
+  btnMic.classList.toggle('is-disabled', !enabled);
+  btnMic.setAttribute('aria-disabled', enabled ? 'false' : 'true');
+  btnMic.classList.toggle('is-listening', voiceListening);
+  btnMic.setAttribute('aria-pressed', voiceListening ? 'true' : 'false');
+  btnMic.setAttribute('aria-label', voiceListening ? 'Stop voice input' : 'Voice input');
+  if (!enabled) {
+    btnMic.title = locked
+      ? 'Unlock local data to use voice input'
+      : 'Connect a provider to use voice input';
+  } else if (voiceListening) {
+    btnMic.title = 'Listening… click to stop';
+  } else {
+    btnMic.title = 'Voice input';
+  }
+}
+
+function showComposerHint(message: string | null, { warn = false } = {}) {
+  if (!composerHint || !message) return;
+  composerHint.textContent = message;
+  composerHint.classList.toggle('is-warn', !!warn);
+  composerHint.classList.remove('is-hidden');
+}
+
+function hideComposerHint() {
+  if (!composerHint) return;
+  composerHint.textContent = '';
+  composerHint.classList.remove('is-warn');
+  composerHint.classList.add('is-hidden');
+}
+
+function showVoiceHint(message: string, { warn = true, ms = 8000 } = {}) {
+  if (!message) return;
+  showComposerHint(message, { warn });
+  voiceHintUntil = Date.now() + ms;
+}
+
+let voiceAudioCtx: AudioContext | null = null;
+function playVoiceCue(kind: string) {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    if (!voiceAudioCtx) voiceAudioCtx = new AC();
+    if (voiceAudioCtx.state === 'suspended') void voiceAudioCtx.resume();
+    const t0 = voiceAudioCtx.currentTime;
+    // Soft two-note blips: up for start, down for stop.
+    const tones = kind === 'start'
+      ? [
+          { f: 620, d: 0.055, g: 0.16 },
+          { f: 880, d: 0.08, g: 0.13, delay: 0.05 },
+        ]
+      : [
+          { f: 700, d: 0.05, g: 0.14 },
+          { f: 460, d: 0.075, g: 0.11, delay: 0.045 },
+        ];
+    for (const tone of tones) {
+      const osc = voiceAudioCtx.createOscillator();
+      const gain = voiceAudioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = tone.f;
+      const startAt = t0 + (tone.delay || 0);
+      gain.gain.setValueAtTime(0.0001, startAt);
+      gain.gain.exponentialRampToValueAtTime(tone.g, startAt + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, startAt + tone.d);
+      osc.connect(gain);
+      gain.connect(voiceAudioCtx.destination);
+      osc.start(startAt);
+      osc.stop(startAt + tone.d + 0.02);
+    }
+  } catch (_) {
+    // Audio cues are optional; ignore Autoplay / Web Audio failures.
+  }
+}
+
+function paintVoiceTranscript(interim: string) {
+  const spoken = (voiceFinal + (interim || '')).replace(/^\s+/, '');
+  const needsSpace = spoken
+    && voicePrefix.length > 0
+    && !/\s$/.test(voicePrefix)
+    && !/^[.,!?;:]/.test(spoken);
+  const lead = needsSpace ? ' ' : '';
+  composerInput.value = voicePrefix + lead + spoken + voiceSuffix;
+  const cursor = voicePrefix.length + lead.length + spoken.length;
+  composerInput.setSelectionRange(cursor, cursor);
+  autoResize(composerInput);
+  updateSendEnabled();
+}
+
+function stopVoiceInput({ silent = false, cue = true } = {}) {
+  const wasListening = voiceListening;
+  voiceListening = false;
+  if (voiceRecognition) {
+    const rec = voiceRecognition;
+    voiceRecognition = null;
+    rec.onresult = null;
+    rec.onerror = null;
+    rec.onend = null;
+    try { rec.stop(); } catch (_) { /* already stopped */ }
+    try { rec.abort(); } catch (_) { /* unsupported / already stopped */ }
+  }
+  if (btnMic) {
+    btnMic.classList.remove('is-listening');
+    btnMic.setAttribute('aria-pressed', 'false');
+    btnMic.setAttribute('aria-label', 'Voice input');
+    btnMic.title = 'Voice input';
+  }
+  if (wasListening && cue) playVoiceCue('stop');
+  if (!silent && wasListening) updateComposerHint();
+}
+
+function startVoiceInput() {
+  if (!voiceInputSupported() || !btnMic) return;
+  if (!serverReady || diskEncryptionLocked()) {
+    showVoiceHint(
+      diskEncryptionLocked()
+        ? 'Unlock local data to use voice input.'
+        : 'Connect a provider before using voice input.'
+    );
+    return;
+  }
+  if (!requireUnlockedData()) return;
+
+  stopVoiceInput({ silent: true, cue: false });
+
+  const start = composerInput.selectionStart ?? composerInput.value.length;
+  const end = composerInput.selectionEnd ?? start;
+  voicePrefix = composerInput.value.slice(0, start);
+  voiceSuffix = composerInput.value.slice(end);
+  voiceFinal = '';
+
+  const recognition = new SpeechRecognitionAPI!();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = navigator.language || 'en-US';
+
+  recognition.onresult = (event) => {
+    if (!voiceListening) return;
+    let interim = '';
+    for (let i = event.resultIndex; i < event.results.length; i += 1) {
+      const result = event.results[i];
+      const chunk = result?.[0]?.transcript || '';
+      if (result.isFinal) voiceFinal += chunk;
+      else interim += chunk;
+    }
+    paintVoiceTranscript(interim);
+  };
+
+  recognition.onerror = (event) => {
+    const code = event.error || '';
+    if (code === 'aborted') return;
+    if (code === 'no-speech') {
+      stopVoiceInput();
+      return;
+    }
+    stopVoiceInput({ silent: true });
+    if (code === 'not-allowed' || code === 'service-not-allowed') {
+      showVoiceHint('Microphone permission is blocked for this site.');
+    } else if (code === 'audio-capture') {
+      showVoiceHint('No microphone was found.');
+    } else if (code === 'network') {
+      showVoiceHint('Voice recognition needs a network connection.');
+    } else {
+      showVoiceHint('Voice input failed (' + code + ').');
+    }
+    syncMicButton();
+  };
+
+  recognition.onend = () => {
+    if (!voiceListening) return;
+    // Chromium sometimes ends continuous sessions; restart while armed.
+    try {
+      recognition.start();
+    } catch (_) {
+      stopVoiceInput();
+    }
+  };
+
+  try {
+    recognition.start();
+  } catch (error) {
+    showVoiceHint((error as Error)?.message || 'Could not start voice input.');
+    return;
+  }
+
+  voiceRecognition = recognition;
+  voiceListening = true;
+  voiceHintUntil = 0;
+  playVoiceCue('start');
+  syncMicButton();
+  showComposerHint('Listening… click the mic or press Esc to stop');
+  composerInput.focus();
+}
+
+function toggleVoiceInput() {
+  if (voiceListening) stopVoiceInput();
+  else startVoiceInput();
+}
+
+function formatAttachSize(bytes: number) {
+  const n = Number(bytes) || 0;
+  if (n <= 0) return 'Ready';
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) {
+    const kb = n / 1024;
+    return (kb < 10 ? kb.toFixed(1) : String(Math.round(kb))) + ' KB';
+  }
+  return (n / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function attachmentIsBusy(att: MessageAttachment) {
+  return att?.status === 'reading' || att?.status === 'extracting';
+}
+
+function attachChipClasses(att: MessageAttachment) {
+  const classes = ['composer-attach-chip'];
+  if (att.kind === 'image') classes.push('is-image');
+  if (att.status === 'error') classes.push('is-error');
+  else if (att.status === 'ready') classes.push('is-ready');
+  if (attachmentIsBusy(att)) {
+    classes.push('is-loading');
+    const pct = Number(att.progress) || 0;
+    if (!(pct > 0 && pct < 1)) classes.push('is-indeterminate');
+  }
+  return classes.join(' ');
+}
+
+function attachStatusLabel(att: MessageAttachment) {
+  if (att.status === 'error') return att.error || 'Could not read file';
+  if (att.status === 'reading') {
+    const pct = Number(att.progress) || 0;
+    if (pct > 0 && pct < 1) return 'Reading ' + Math.round(pct * 100) + '%';
+    return 'Reading…';
+  }
+  if (att.status === 'extracting') {
+    const pct = Number(att.progress) || 0;
+    if (pct > 0 && pct < 1) return 'Extracting ' + Math.round(pct * 100) + '%';
+    return 'Extracting…';
+  }
+  return formatAttachSize(att.size);
+}
+
+function pendingAttachmentChipHtml(att: MessageAttachment) {
+  const pct = Math.max(0, Math.min(1, Number(att.progress) || 0));
+  const thumb = att.kind === 'image' && att.previewUrl
+    ? '<img class="attach-thumb" src="' + escapeHtml(att.previewUrl) + '" alt="">'
+    : '<span class="attach-thumb attach-file-glyph" aria-hidden="true">' + ATTACH_FILE_GLYPH + '</span>';
+  const busy = attachmentIsBusy(att);
+  return '<div class="' + attachChipClasses(att) + '" data-attach-id="' + escapeHtml(att.id)
+    + '" style="--attach-progress:' + pct + '" aria-busy="' + (busy ? 'true' : 'false') + '">'
+    + thumb
+    + '<span class="attach-copy">'
+    + '<span class="attach-name" title="' + escapeHtml(att.name) + '">' + escapeHtml(att.name) + '</span>'
+    + '<span class="attach-status">' + escapeHtml(attachStatusLabel(att)) + '</span>'
+    + '</span>'
+    + '<button type="button" class="attach-remove" data-attach-remove="' + escapeHtml(att.id)
+    + '" aria-label="Remove ' + escapeHtml(att.name || 'attachment') + '">×</button>'
+    + '</div>';
+}
+
+function findAttachChip(id: string) {
+  if (!composerAttachmentsEl) return null;
+  const safe = String(id || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  return (composerAttachmentsEl.querySelector('[data-attach-id="' + safe + '"]') as HTMLElement);
+}
+
+function paintPendingAttachment(att: MessageAttachment) {
+  if (!att || !composerAttachmentsEl) return;
+  const el = findAttachChip(att.id);
+  if (!el) {
+    renderPendingAttachments();
+    return;
+  }
+  const pct = Math.max(0, Math.min(1, Number(att.progress) || 0));
+  el.className = attachChipClasses(att);
+  el.style.setProperty('--attach-progress', String(pct));
+  el.setAttribute('aria-busy', attachmentIsBusy(att) ? 'true' : 'false');
+  const status = (el.querySelector('.attach-status') as HTMLElement);
+  if (status) status.textContent = attachStatusLabel(att);
+  if (att.kind === 'image' && att.previewUrl) {
+    let img = (el.querySelector('img.attach-thumb') as HTMLImageElement);
+    if (!img) {
+      const glyph = (el.querySelector('.attach-file-glyph') as HTMLElement);
+      img = (document.createElement('img') as HTMLImageElement);
+      img.className = 'attach-thumb';
+      img.alt = '';
+      if (glyph) glyph.replaceWith(img);
+      else el.insertBefore(img, el.firstChild);
+    }
+    if (img.getAttribute('src') !== att.previewUrl) img.setAttribute('src', att.previewUrl);
+  }
+}
+
+function scheduleAttachmentPaint(att: MessageAttachment) {
+  if (!att || att._paintQueued) return;
+  att._paintQueued = true;
+  requestAnimationFrame(() => {
+    att._paintQueued = false;
+    if (pendingAttachments.includes(att)) paintPendingAttachment(att);
+  });
+}
+
+function setAttachmentPhase(att: MessageAttachment, status: string, progress: number | null) {
+  if (!att) return;
+  att.status = status;
+  if (progress != null) att.progress = progress;
+  scheduleAttachmentPaint(att);
+}
+
+function renderPendingAttachments() {
+  if (!composerAttachmentsEl) return;
+  if (!pendingAttachments.length) {
+    composerAttachmentsEl.innerHTML = '';
+    composerAttachmentsEl.classList.add('is-hidden');
+    return;
+  }
+  composerAttachmentsEl.classList.remove('is-hidden');
+  composerAttachmentsEl.innerHTML = pendingAttachments.map(pendingAttachmentChipHtml).join('');
+}
+
+function revokeAttachPreview(att: MessageAttachment) {
+  const url = att?.previewUrl;
+  if (url && String(url).startsWith('blob:')) {
+    try { URL.revokeObjectURL(url); } catch (_) { /* already revoked */ }
+    att.previewUrl = '';
+  }
+}
+
+function disposePendingAttachment(att: MessageAttachment) {
+  if (!att) return;
+  if (att.abort instanceof AbortController) {
+    try { att.abort.abort(); } catch (_) { /* already aborted */ }
+  }
+  revokeAttachPreview(att);
+}
+
+function clearPendingAttachments() {
+  pendingAttachments.forEach(disposePendingAttachment);
+  pendingAttachments = [];
+  renderPendingAttachments();
+  updateSendEnabled();
+}
+
+function removePendingAttachment(id: string | null) {
+  pendingAttachments.filter((att) => att.id === id).forEach(disposePendingAttachment);
+  pendingAttachments = pendingAttachments.filter((att) => att.id !== id);
+  renderPendingAttachments();
+  updateSendEnabled();
+}
+
+function readAttachmentFile(att: MessageAttachment): Promise<MessageAttachment> {
+  if (!att) return Promise.reject(new Error('Missing attachment'));
+  if (att.status === 'ready' && att.dataUrl) return Promise.resolve(att);
+  if (att.readyPromise) return att.readyPromise;
+  att.readyPromise = new Promise<MessageAttachment>((resolve, reject) => {
+    const file = att.file;
+    if (!file) {
+      att.status = 'error';
+      att.error = 'File is no longer available';
+      scheduleAttachmentPaint(att);
+      reject(new Error(att.error));
+      return;
+    }
+    const reader = new FileReader();
+    att.reader = reader;
+    const controller = att.abort instanceof AbortController ? att.abort : new AbortController();
+    att.abort = controller;
+    let settled = false;
+    const finishOk = () => {
+      if (settled) return;
+      settled = true;
+      att.dataUrl = String(reader.result || '');
+      att.progress = 1;
+      att.status = 'ready';
+      att.reader = null;
+      scheduleAttachmentPaint(att);
+      resolve(att);
+    };
+    const finishErr = (message: string | undefined) => {
+      if (settled) return;
+      settled = true;
+      att.reader = null;
+      if (controller.signal.aborted) {
+        reject(new Error('Cancelled'));
+        return;
+      }
+      att.status = 'error';
+      att.error = message;
+      scheduleAttachmentPaint(att);
+      reject(new Error(message));
+    };
+    if (controller.signal.aborted) {
+      finishErr('Cancelled');
+      return;
+    }
+    controller.signal.addEventListener('abort', () => {
+      try { reader.abort(); } catch (_) { /* already finished */ }
+      finishErr('Cancelled');
+    }, { once: true });
+    reader.onprogress = (event) => {
+      if (settled || controller.signal.aborted) return;
+      if (event.lengthComputable && event.total > 0) {
+        att.progress = Math.min(1, event.loaded / event.total);
+        att.status = 'reading';
+        scheduleAttachmentPaint(att);
+      }
+    };
+    reader.onload = () => finishOk();
+    reader.onerror = () => finishErr('Failed to read ' + (att.name || 'file'));
+    reader.onabort = () => finishErr('Cancelled');
+    try {
+      reader.readAsDataURL(file);
+    } catch (error) {
+      finishErr((error as Error)?.message || ('Failed to read ' + (att.name || 'file')));
+    }
+  });
+  return att.readyPromise;
+}
+
+async function ensureAttachmentLoaded(att: MessageAttachment) {
+  if (att?.status === 'ready' && att.dataUrl) return att;
+  if (att?.status === 'error' && att.error && att.error !== 'Cancelled') {
+    throw new Error(att.error);
+  }
+  await readAttachmentFile(att);
+  if (att.status === 'error' || !att.dataUrl) {
+    throw new Error(att.error || ('Failed to read ' + (att.name || 'file')));
+  }
+  return att;
+}
+
+function isImageFile(file: File) {
+  if (!file) return false;
+  if (file.type && file.type.startsWith('image/')) return true;
+  // Some pickers omit MIME (notably certain HEIC/PNG paths). Fall back to name.
+  return /\.(avif|bmp|gif|heic|heif|jpe?g|png|svg|webp)$/i.test(String(file.name || ''));
+}
+
+function isExtractableFile(file: File) {
+  if (!file) return false;
+  if (isImageFile(file)) return false;
+  const name = String(file.name || '').toLowerCase();
+  const mime = String(file.type || '').toLowerCase();
+  if (mime.includes('pdf') || name.endsWith('.pdf')) return true;
+  if (mime.startsWith('text/') || mime === 'application/json' || mime === 'application/xml') return true;
+  return /\.(txt|md|markdown|csv|tsv|json|jsonl|xml|html?|css|js|tsx?|jsx|py|rs|go|java|c|cpp|h|hpp|ya?ml|toml|ini|log|sql|sh|bat|ps1)$/i.test(name);
+}
+
+let attachHintUntil = 0;
+function showAttachHint(message: string, { warn = true } = {}) {
+  if (!message) return;
+  showComposerHint(message, { warn });
+  attachHintUntil = Date.now() + 8000;
+}
+
+async function addFilesToPending(fileList: FileList | File[] | null) {
+  if (!attachmentsUiEnabled()) {
+    showAttachHint(attachDisabledReason() || 'Attachments are disabled.');
+    return;
+  }
+  // Snapshot immediately — input.value = '' empties a live FileList.
+  const files = Array.from(fileList || []).filter(Boolean);
+  const queued = [];
+  for (const file of files) {
+    if (pendingAttachments.length >= ATTACHMENT_MAX_FILES) {
+      showAttachHint('Attachment limit is ' + ATTACHMENT_MAX_FILES + ' files.');
+      break;
+    }
+    if (file.size > ATTACHMENT_MAX_BYTES) {
+      showAttachHint((file.name || 'File') + ' is larger than 8 MB.');
+      continue;
+    }
+    if (!isImageFile(file) && !isExtractableFile(file)) {
+      showAttachHint('Unsupported file type: ' + (file.name || 'file'));
+      continue;
+    }
+    // Queue anything the paperclip allows. Capability checks (vision / OCR /
+    // text extraction) run at send time so the chip always appears.
+    const image = isImageFile(file);
+    let previewUrl = '';
+    if (image) {
+      try { previewUrl = URL.createObjectURL(file); } catch (_) { previewUrl = ''; }
+    }
+    const att: MessageAttachment = {
+      id: newId('a'),
+      name: file.name || (image ? 'image' : 'attachment'),
+      mime: file.type || (image ? 'image/png' : 'application/octet-stream'),
+      kind: image ? 'image' : 'file',
+      size: file.size || 0,
+      file,
+      dataUrl: '',
+      previewUrl,
+      status: 'reading',
+      progress: 0,
+      error: '',
+      abort: new AbortController(),
+    };
+    pendingAttachments.push(att);
+    queued.push(att);
+  }
+  renderPendingAttachments();
+  updateSendEnabled();
+  if (queued.length && serverReady) {
+    attachHintUntil = 0;
+    updateComposerHint();
+  }
+  queued.forEach((att) => {
+    void readAttachmentFile(att).catch((error: Error) => {
+      if (String(error?.message || '') === 'Cancelled') return;
+      if (!pendingAttachments.includes(att)) return;
+      showAttachHint(error?.message || 'Failed to read file');
+    });
+  });
+}
+
+function truncateAttachmentText(text: string, maxChars: number) {
+  const value = String(text || '').trim();
+  if (!value) return '';
+  if (value.length <= maxChars) return value;
+  return value.slice(0, Math.max(0, maxChars - 80))
+    + '\n\n…[truncated ' + (value.length - maxChars + 80) + ' characters]';
+}
+
+async function extractAttachmentText(att: MessageAttachment) {
+  const response = await fetch('/api/attachments/extract', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      filename: att.name,
+      mime: att.mime,
+      content_base64: att.dataUrl,
+    }),
+  });
+  const payload: (ApiErrorResult & { text?: string }) | null = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error((payload && payload.error) || ('Extract failed (' + response.status + ')'));
+  }
+  return String(payload?.text || '').trim();
+}
+
+async function ensureTesseract() {
+  if (window.Tesseract) return window.Tesseract;
+  if (tesseractLoading) return tesseractLoading;
+  tesseractLoading = new Promise<OcrApi>((resolve, reject) => {
+    const script = (document.createElement('script') as HTMLScriptElement);
+    script.src = '/ocr/tesseract.min.js';
+    script.async = true;
+    script.onload = () => {
+      if (window.Tesseract) resolve(window.Tesseract);
+      else reject(new Error('Tesseract.js failed to load'));
+    };
+    script.onerror = () => { script.remove(); reject(new Error('Could not load the bundled OCR engine')); };
+    document.head.appendChild(script);
+  }).finally(() => {
+    // keep resolved module on window; allow retry on hard failure
+  });
+  try {
+    return await tesseractLoading;
+  } catch (error) {
+    tesseractLoading = null;
+    throw error;
+  }
+}
+
+async function ocrAttachmentImage(att: MessageAttachment) {
+  const epoch = ocrEpoch;
+  const signal = ocrAbortController.signal;
+  const Tesseract = await ensureTesseract();
+  if (epoch !== ocrEpoch) throw new Error('OCR cancelled');
+  const worker = await Tesseract.createWorker('eng', 1, {
+    workerPath: new URL('/ocr/worker.min.js', location.origin).href,
+    corePath: new URL('/ocr', location.origin).href,
+    langPath: new URL('/ocr', location.origin).href,
+    workerBlobURL: false,
+    cacheMethod: 'none',
+    logger: (message: { status: string; progress: number; }) => {
+      if (epoch !== ocrEpoch || !pendingAttachments.includes(att)) return;
+      if (message?.status === 'recognizing text' && Number.isFinite(message.progress)) {
+        setAttachmentPhase(att, 'extracting', message.progress);
+      }
+    },
+  });
+  ocrWorkers.add(worker);
+  let onAbort: (() => void) | undefined;
+  try {
+    if (epoch !== ocrEpoch) throw new Error('OCR cancelled');
+    const cancelled = new Promise<never>((_, reject) => {
+      onAbort = () => reject(new Error('OCR cancelled'));
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+    const result = await Promise.race([worker.recognize((att.dataUrl || att.previewUrl)!), cancelled]);
+    if (epoch !== ocrEpoch) throw new Error('OCR cancelled');
+    return String(result?.data?.text || '').trim();
+  } finally {
+    if (onAbort) signal.removeEventListener('abort', onAbort);
+    ocrWorkers.delete(worker);
+    await worker.terminate().catch(() => {});
+  }
+}
+
+async function withAttachmentExtract(att: MessageAttachment, work: () => Promise<string>) {
+  setAttachmentPhase(att, 'extracting', 0);
+  try {
+    const result = await work();
+    setAttachmentPhase(att, 'ready', 1);
+    return result;
+  } catch (error) {
+    att.status = 'error';
+    att.error = (error as Error)?.message || 'Extract failed';
+    scheduleAttachmentPaint(att);
+    throw error;
+  }
+}
+
+async function prepareAttachmentsForSend(attachments: MessageAttachment[]): Promise<MessageAttachment[]> {
+  const list = Array.isArray(attachments) ? attachments : [];
+  const prepared = [];
+  const maxChars = settings.attachmentMaxChars || DEFAULT_SETTINGS.attachmentMaxChars;
+  for (const att of list) {
+    await ensureAttachmentLoaded(att);
+    if (att.kind === 'image' && attachmentsSupported) {
+      prepared.push({
+        ...att,
+        sendMode: 'native',
+        apiPart: {
+          type: 'image_url',
+          image_url: { url: att.dataUrl! },
+        },
+      });
+      continue;
+    }
+    if (att.kind === 'image') {
+      if (!(settings.attachmentTextFallback && settings.attachmentOcr && textFallbackContextOk())) {
+        throw new Error('Image attachments need a vision model, or OCR enabled in Settings → Attachments.');
+      }
+      const text = truncateAttachmentText(
+        await withAttachmentExtract(att, () => ocrAttachmentImage(att)),
+        maxChars
+      );
+      if (!text) {
+        att.status = 'error';
+        att.error = 'OCR found no text';
+        scheduleAttachmentPaint(att);
+        throw new Error('OCR found no text in ' + (att.name || 'image'));
+      }
+      prepared.push({
+        ...att,
+        sendMode: 'text',
+        extractedText: text,
+        apiText: 'Attachment: ' + (att.name || 'image') + '\n\n' + text,
+      });
+      continue;
+    }
+    // Non-image files: extract to text (native PDF document APIs are provider-specific).
+    if (!settings.attachmentTextFallback || !textFallbackContextOk()) {
+      if (attachmentsSupported) {
+        throw new Error('Non-image files need text extraction. Enable it in Settings → Attachments.');
+      }
+      throw new Error('This model cannot take that file. Enable text extraction in Settings → Attachments.');
+    }
+    const text = truncateAttachmentText(
+      await withAttachmentExtract(att, () => extractAttachmentText(att)),
+      maxChars
+    );
+    if (!text) {
+      att.status = 'error';
+      att.error = 'No extractable text';
+      scheduleAttachmentPaint(att);
+      throw new Error('No extractable text in ' + (att.name || 'file'));
+    }
+    prepared.push({
+      ...att,
+      sendMode: 'text',
+      extractedText: text,
+      apiText: 'Attachment: ' + (att.name || 'file') + '\n\n' + text,
+    });
+  }
+  return prepared;
+}
+
+function storedAttachmentsFromPrepared(prepared: MessageAttachment[]): MessageAttachment[] {
+  return prepared.map((att) => ({
+    id: att.id,
+    name: att.name,
+    mime: att.mime,
+    kind: att.kind,
+    size: att.size,
+    previewUrl: att.kind === 'image' ? (att.dataUrl || '') : '',
+    dataUrl: att.dataUrl,
+    extractedText: att.extractedText || '',
+    sendMode: att.sendMode || 'native',
+  }));
+}
+
+function buildUserApiContent(text: string, attachments: MessageAttachment[], replyQuote?: string | null, replyHandle?: string): string | ApiContentPart[] {
+  const prepared = Array.isArray(attachments) ? attachments : [];
+  const textBits = [];
+  const quote = String(replyQuote || '').trim();
+  if (quote) textBits.push(formatReplyQuoteForApi(quote, replyHandle));
+  if (text && String(text).trim()) textBits.push(String(text).trim());
+  for (const att of prepared) {
+    if (att.sendMode === 'text' && att.apiText) textBits.push(att.apiText);
+  }
+  const imageParts = prepared
+    .filter((att) => att.sendMode === 'native' && att.apiPart)
+    .map((att) => att.apiPart!);
+  const combinedText = textBits.join('\n\n');
+  if (!imageParts.length) return combinedText;
+  const parts = [];
+  if (combinedText) parts.push({ type: 'text', text: combinedText });
+  parts.push(...imageParts);
+  return parts;
+}
+
+function formatReplyQuoteForApi(quote: string, handle?: string) {
+  const body = String(quote || '').trim().split('\n').map((line) => '> ' + line).join('\n');
+  const who = String(handle || '').replace(/^@/, '').trim();
+  const lead = who
+    ? 'Replying to @' + who + ':'
+    : 'Replying to this from your previous message:';
+  return lead + '\n\n' + body;
+}
+
+function copyReplyFields(source: ChatMessage, target: ChatMessage) {
+  if (!source || !target) return target;
+  if (source.replyQuote) target.replyQuote = source.replyQuote;
+  if (source.replyToSpeakerId) {
+    target.replyToSpeakerId = source.replyToSpeakerId;
+    if (source.replyToSpeakerHandle) target.replyToSpeakerHandle = source.replyToSpeakerHandle;
+  }
+  return target;
+}
+
+function messageReplyExcerpt(raw: string) {
+  const text = typeof stripThinkingTags === 'function'
+    ? stripThinkingTags(String(raw || ''))
+    : String(raw || '');
+  return text.replace(/\u00a0/g, ' ').trim().slice(0, 4000);
+}
+
+function resolveReplySpeaker(convo: Conversation | undefined, row: HTMLElement, message: ChatMessage | null | undefined) {
+  if (message?.speakerId) {
+    const handle = message.speakerHandle
+      || (typeof getBot === 'function' ? getBot(message.speakerId)?.handle : '')
+      || '';
+    return { speakerId: message.speakerId, speakerHandle: handle };
+  }
+  if (message?.speakerHandle && typeof botByHandle === 'function') {
+    const bot = botByHandle(message.speakerHandle);
+    if (bot) return { speakerId: bot.id, speakerHandle: bot.handle };
+  }
+  const rowId = row?.dataset?.speakerId;
+  if (rowId) {
+    return {
+      speakerId: rowId,
+      speakerHandle: row.dataset.speakerHandle || '',
+    };
+  }
+  const stream = typeof activeStreams !== 'undefined' ? activeStreams.get(activeId!) : null;
+  if (stream?.dom?.row === row && typeof streamSpeakerBot === 'function') {
+    const bot = streamSpeakerBot(stream);
+    if (bot) return { speakerId: bot.id, speakerHandle: bot.handle };
+  }
+  if (typeof isBotsConvo === 'function' && isBotsConvo(convo) && convo?.botKind === 'dm' && convo.botId) {
+    const bot = typeof getBot === 'function' ? getBot(convo.botId) : null;
+    if (bot) return { speakerId: bot.id, speakerHandle: bot.handle };
+  }
+  return null;
+}
+
+function userMessageApiContent(message: Pick<ChatMessage, 'content' | 'replyQuote' | 'replyToSpeakerHandle' | 'attachments'>): string | ApiContentPart[] {
+  let raw = typeof message.content === 'string'
+    ? parseCapabilityMentions(message.content).text
+    : '';
+  const quote = typeof message.replyQuote === 'string' ? message.replyQuote.trim() : '';
+  if (quote) {
+    raw = formatReplyQuoteForApi(quote, message.replyToSpeakerHandle)
+      + (raw && raw !== '(attachment)' ? '\n\n' + raw : '');
+  }
+  const attachments = Array.isArray(message.attachments) ? message.attachments : [];
+  if (!attachments.length) return raw;
+  const textBits = [];
+  if (raw && raw !== '(attachment)') textBits.push(raw);
+  const parts = [];
+  for (const att of attachments) {
+    const nativeImage = att.kind === 'image'
+      && att.dataUrl
+      && !att.extractedText
+      && (att.sendMode === 'native' || !att.sendMode);
+    if (nativeImage) {
+      parts.push({
+        type: 'image_url',
+        image_url: { url: att.dataUrl! },
+      });
+    } else if (att.extractedText) {
+      textBits.push('Attachment: ' + (att.name || 'file') + '\n\n' + att.extractedText);
+    }
+  }
+  const combinedText = textBits.join('\n\n');
+  if (!parts.length) return combinedText;
+  const content: ApiContentPart[] = [];
+  if (combinedText) content.push({ type: 'text', text: combinedText });
+  content.push(...parts);
+  return content;
+}
+
+function displayTextWithMentions(text: string, mentionIds: Set<string>) {
+  const prefix = [...mentionIds]
+    .filter((id) => MENTION_IDS.includes(id))
+    .map((id) => '@' + id)
+    .join(' ');
+  return prefix ? (prefix + ' ' + text).trim() : text;
+}
+
+function resolveTurnSkills(mentionIds: Set<string>) {
+  const mentioned = mentionIds instanceof Set ? mentionIds : new Set<string>(mentionIds || []);
+  const deepAllowed = !!settings.skillDeepResearch;
+  const deepFromMention = deepAllowed && mentioned.has('deep_research');
+  const savedDeep = deepAllowed && DEEP_RESEARCH_MODES.includes(settings.deepResearch)
+    ? settings.deepResearch
+    : 'off';
+  const deepOutput = savedDeep !== 'off'
+    ? savedDeep
+    : (deepFromMention ? 'long' : null);
+  const deep = !!deepOutput;
+  const webSearch = deep
+    || (!!settings.agentMode && !!settings.skillWebSearch)
+    || mentioned.has('web_search');
+  const fetchUrl = deep
+    || (!!settings.agentMode && !!settings.skillFetchUrl)
+    || mentioned.has('fetch_url');
+  const filesystem = !!settings.agentMode && !!settings.skillFilesystem;
+  const terminalCap = !!settings.agentMode && !!settings.skillTerminal;
+  const browserCap = !!settings.agentMode && !!settings.skillBrowser;
+  const chatRetrieval = settings.chatRetrieval !== false;
+  const useAgent = deep
+    || chatRetrieval
+    || webSearch
+    || fetchUrl
+    || filesystem
+    || terminalCap
+    || browserCap
+    || (!!settings.agentMode && userSkills.some((skill) => skill.enabled));
+  const skills = {
+      chat_retrieval: chatRetrieval,
+      web_search: webSearch,
+      web_search_depth: WEB_SEARCH_DEPTHS.includes(settings.webSearchDepth)
+        ? settings.webSearchDepth
+        : DEFAULT_SETTINGS.webSearchDepth,
+      web_search_provider: WEB_SEARCH_PROVIDERS.includes(settings.webSearchProvider)
+        ? settings.webSearchProvider
+        : DEFAULT_SETTINGS.webSearchProvider,
+      web_search_searxng: typeof settings.webSearchSearxng === 'string'
+        ? settings.webSearchSearxng.trim()
+        : '',
+      web_search_parallel_api_key: typeof settings.webSearchParallelApiKey === 'string'
+        ? settings.webSearchParallelApiKey.trim()
+        : '',
+      web_search_parallel_mode: WEB_SEARCH_PARALLEL_MODES.includes(settings.webSearchParallelMode)
+        ? settings.webSearchParallelMode
+        : DEFAULT_SETTINGS.webSearchParallelMode,
+      web_search_tinyfish_api_key: typeof settings.webSearchTinyfishApiKey === 'string'
+        ? settings.webSearchTinyfishApiKey.trim()
+        : '',
+      web_search_max_results: Math.min(20, Math.max(1, Number(settings.webSearchResults) || 6)),
+      web_search_region: /^[a-z]{2}-[a-z]{2}$/.test(settings.webSearchRegion)
+        ? settings.webSearchRegion
+        : 'us-en',
+      web_search_safesearch: WEB_SEARCH_SAFESEARCH.includes(settings.webSearchSafeSearch)
+        ? settings.webSearchSafeSearch
+        : 'moderate',
+      web_search_recency: WEB_SEARCH_RECENCIES.includes(settings.webSearchRecency)
+        ? settings.webSearchRecency
+        : 'any',
+      fetch_url: fetchUrl,
+      fetch_url_max_chars: Math.min(
+        200000,
+        Math.max(1000, Number(settings.fetchUrlMaxChars) || 8000)
+      ),
+      web_search_page_max_chars: (() => {
+        const raw = Number(settings.webSearchPageMaxChars);
+        if (!Number.isFinite(raw) || raw <= 0) return 0;
+        return Math.min(200000, Math.max(1000, Math.round(raw)));
+      })(),
+      approval_mode: APPROVAL_MODES.includes(settings.approvalMode)
+        ? settings.approvalMode
+        : 'manual',
+      filesystem,
+      workspace_root: sessionWorkspaceRoot(),
+      terminal: terminalCap,
+      terminal_timeout_secs: Math.min(30, Math.max(5, Number(settings.terminalTimeoutSecs) || 30)),
+      browser: browserCap,
+  };
+  if (deep) {
+    skills.web_search_depth = 'deep';
+    skills.web_search_max_results = Math.max(skills.web_search_max_results, 10);
+  }
+  return {
+    useAgent,
+    skills,
+    deepResearch: deep,
+    deepResearchOutput: deepOutput || 'long',
+    forceTools: resolveForcedTools(mentioned),
+  };
+}
+
+function resolveForcedTools(mentionIds: Set<string>) {
+  if (!settings.agentMode) return [];
+  const mentioned = mentionIds instanceof Set ? mentionIds : new Set(mentionIds || []);
+  const forced = [];
+  if (mentioned.has('web_search') && settings.skillWebSearch !== false) forced.push('web_search');
+  if (mentioned.has('fetch_url') && settings.skillFetchUrl !== false) forced.push('fetch_url');
+  return forced;
+}
+
+function getMentionContext(textarea: HTMLTextAreaElement) {
+  const pos = textarea.selectionStart;
+  const before = textarea.value.slice(0, pos);
+  const match = before.match(/(^|\s)@([a-z0-9_]*)$/i);
+  if (!match) return null;
+  const query = match[2].toLowerCase();
+  const start = pos - match[2].length - 1; // index of '@'
+  return { start, query, pos };
+}
+
+function closeMentionMenu() {
+  mentionState = null;
+  mentionMenu.classList.add('is-hidden');
+  mentionMenu.innerHTML = '';
+  if (mentionMenu.parentElement !== composerCard) composerCard.prepend(mentionMenu);
+}
+
+function placeMentionMenu() {
+  const host = (mentionInput?.closest('.msg-edit') as HTMLElement) || composerCard;
+  if (mentionMenu.parentElement !== host) {
+    if (host === composerCard) {
+      composerCard.prepend(mentionMenu);
+    } else {
+      host.appendChild(mentionMenu);
+    }
+  }
+}
+
+function activeMentionExcludeIds() {
+  if (mentionInput === composerInput) return composerMentionIds;
+  return parseCapabilityMentions(mentionInput?.value || '').mentions;
+}
+
+function mentionOptionDescription(item: MentionOption) {
+  if (!item) return '';
+  if (item.id === 'web_search' || item.id === 'fetch_url') {
+    if (settings.agentMode) {
+      return item.id === 'web_search'
+        ? 'Required: must search before answering'
+        : 'Required: must fetch a page before answering';
+    }
+    return 'Stays enabled for this chat until removed';
+  }
+  return item.description;
+}
+
+function renderMentionMenu() {
+  if (!mentionState || mentionState.items.length === 0) {
+    closeMentionMenu();
+    return;
+  }
+  placeMentionMenu();
+  mentionMenu.innerHTML = '';
+  let lastSection = '';
+  mentionState.items.forEach((item, index) => {
+    const section = item.section || 'Capabilities';
+    if (section !== lastSection) {
+      lastSection = section;
+      const label = (document.createElement('div') as HTMLElement);
+      label.className = 'mention-menu-label';
+      label.textContent = section;
+      mentionMenu.appendChild(label);
+    }
+    const btn = (document.createElement('button') as HTMLButtonElement);
+    btn.type = 'button';
+    btn.className = 'mention-option' + (index === mentionState!.activeIndex ? ' is-active' : '');
+    btn.setAttribute('role', 'option');
+    btn.setAttribute('aria-selected', index === mentionState!.activeIndex ? 'true' : 'false');
+    btn.innerHTML =
+      '<span class="mention-option-name">' + escapeHtml(item.label) + '</span>' +
+      '<span class="mention-option-desc">' + escapeHtml(mentionOptionDescription(item)) + '</span>';
+    btn.addEventListener('mousedown', (event) => {
+      event.preventDefault(); // keep focus in textarea
+      insertMention(item);
+    });
+    mentionMenu.appendChild(btn);
+  });
+  mentionMenu.classList.remove('is-hidden');
+}
+
+function updateMentionMenu(forInput?: HTMLTextAreaElement) {
+  if (forInput) mentionInput = forInput;
+  const input = mentionInput || composerInput;
+  const ctx = getMentionContext(input);
+  if (!ctx) {
+    closeMentionMenu();
+    return;
+  }
+  const excluded = activeMentionExcludeIds();
+  const extras = typeof extraMentionItems === 'function'
+    ? extraMentionItems(ctx.query, excluded)
+    : [];
+  const items = extras.concat(MENTION_OPTIONS.filter((item) => {
+    if (!item.label.startsWith(ctx.query) || excluded.has(item.id)) return false;
+    if (item.id === 'deep_research' && settings.skillDeepResearch === false) return false;
+    return true;
+  }));
+  if (items.length === 0) {
+    closeMentionMenu();
+    return;
+  }
+  const prev = mentionState && mentionState.query === ctx.query ? mentionState.activeIndex : 0;
+  mentionState = {
+    start: ctx.start,
+    query: ctx.query,
+    activeIndex: Math.min(prev, items.length - 1),
+    items,
+  };
+  renderMentionMenu();
+}
+
+/** Promote completed @capability tokens in the textarea into chips (strip text). */
+function promoteTypedMentions() {
+  const value = composerInput.value;
+  if (!/(^|\s)@(?:web_search|fetch_url|deep_research)\b/i.test(value)) return;
+  const cursor = composerInput.selectionStart;
+  const before = value.slice(0, cursor);
+  value.replace(/(^|\s)@(web_search|fetch_url|deep_research)\b/gi, (_, _lead: string, name: string) => {
+    composerMentionIds.add(name.toLowerCase());
+    return _;
+  });
+  const next = value.replace(/(^|\s)@(?:web_search|fetch_url|deep_research)\b/gi, '$1').replace(/[ \t]{2,}/g, ' ');
+  const beforeClean = before.replace(/(^|\s)@(?:web_search|fetch_url|deep_research)\b/gi, '$1').replace(/[ \t]{2,}/g, ' ');
+  composerInput.value = next;
+  const nextPos = Math.min(beforeClean.length, next.length);
+  composerInput.setSelectionRange(nextPos, nextPos);
+  renderComposerMentions();
+  renderComposerModes();
+}
+
+function insertMention(item: MentionOption) {
+  if (!mentionState || !mentionInput) return;
+  const input = mentionInput;
+  const value = input.value;
+  const cursor = input.selectionStart;
+  const before = value.slice(0, mentionState.start);
+  const after = value.slice(cursor);
+  if (input === composerInput && !item.inline) {
+    input.value = before + after;
+    input.setSelectionRange(before.length, before.length);
+    composerMentionIds.add(item.id);
+    closeMentionMenu();
+    autoResize(composerInput);
+    updateSendEnabled();
+    renderComposerMentions();
+    renderComposerModes();
+    syncPlusButton();
+  } else {
+    const inserted = '@' + item.label + (after.startsWith(' ') ? '' : ' ');
+    input.value = before + inserted + after;
+    const pos = before.length + inserted.length;
+    input.setSelectionRange(pos, pos);
+    closeMentionMenu();
+    autoResize(input);
+  }
+  input.focus();
+}
+
+function handleMentionKeydown(event: KeyboardEvent) {
+  if (event.isComposing || event.keyCode === 229) return false;
+  if (!mentionState) return false;
+  if (event.key === 'ArrowDown') {
+    event.preventDefault();
+    mentionState.activeIndex = (mentionState.activeIndex + 1) % mentionState.items.length;
+    renderMentionMenu();
+    return true;
+  }
+  if (event.key === 'ArrowUp') {
+    event.preventDefault();
+    mentionState.activeIndex =
+      (mentionState.activeIndex - 1 + mentionState.items.length) % mentionState.items.length;
+    renderMentionMenu();
+    return true;
+  }
+  if (event.key === 'Enter' || event.key === 'Tab') {
+    event.preventDefault();
+    insertMention(mentionState.items[mentionState.activeIndex]);
+    return true;
+  }
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeMentionMenu();
+    return true;
+  }
+  return false;
+}
+
+function renderComposerReply() {
+  if (!composerReply) return;
+  const quote = typeof pendingReplyQuote === 'string' ? pendingReplyQuote.trim() : '';
+  if (!quote) {
+    composerReply.innerHTML = '';
+    composerReply.classList.add('is-hidden');
+    return;
+  }
+  composerReply.classList.remove('is-hidden');
+  composerReply.innerHTML = '';
+  const chip = (document.createElement('div') as HTMLElement);
+  chip.className = 'composer-reply-chip';
+  const label = (document.createElement('span') as HTMLElement);
+  label.className = 'composer-reply-chip-label';
+  const handle = pendingReplyTarget?.speakerHandle
+    ? String(pendingReplyTarget.speakerHandle).replace(/^@/, '').trim()
+    : '';
+  if (handle) {
+    label.classList.add('has-handle');
+    label.textContent = 'Reply to @' + handle;
+  } else {
+    label.textContent = 'Reply';
+  }
+  const text = (document.createElement('div') as HTMLElement);
+  text.className = 'composer-reply-chip-text';
+  text.textContent = quote;
+  const remove = (document.createElement('button') as HTMLButtonElement);
+  remove.type = 'button';
+  remove.setAttribute('aria-label', 'Remove reply');
+  remove.textContent = '×';
+  remove.addEventListener('click', () => {
+    clearPendingReplyQuote();
+    focusComposer();
+  });
+  chip.appendChild(label);
+  chip.appendChild(text);
+  chip.appendChild(remove);
+  composerReply.appendChild(chip);
+}
+
+function clearPendingReplyQuote() {
+  pendingReplyQuote = null;
+  pendingReplyTarget = null;
+  renderComposerReply();
+  updateSendEnabled();
+}
+
+function setPendingReply(text: string, target: ReplyTarget | null = null) {
+  const quote = messageReplyExcerpt(text);
+  if (!quote) return;
+  pendingReplyQuote = quote;
+  pendingReplyTarget = target && target.speakerId
+    ? {
+      speakerId: String(target.speakerId),
+      speakerHandle: String(target.speakerHandle || '').replace(/^@/, ''),
+    }
+    : null;
+  hideSelectionReplyBar();
+  renderComposerReply();
+  updateSendEnabled();
+  focusComposer();
+}
+
+function setPendingReplyQuote(text: string) {
+  setPendingReply(text, null);
+}
+
+function hideSelectionReplyBar() {
+  if (!selectionReplyBar) return;
+  selectionReplyBar.classList.add('is-hidden');
+  selectionReplyBar.hidden = true;
+}
+
+function assistantSelectionQuote() {
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed || !sel.rangeCount || !chatThread) return null;
+  const text = String(sel.toString() || '').replace(/\u00a0/g, ' ').trim();
+  if (!text) return null;
+  const range = sel.getRangeAt(0);
+  const node = range.commonAncestorContainer;
+  const el = (node.nodeType === 1 ? node : node.parentElement) as Element | null;
+  if (!el || !chatThread.contains(el)) return null;
+  const row = (el.closest('.msg-role-assistant') as HTMLElement);
+  if (!row || !chatThread.contains(row) || row.classList.contains('msg-queued')) return null;
+  if ((el.closest('.thinking, .msg-actions, .clarify-card, .msg-edit, button, textarea, input') as HTMLInputElement)) {
+    return null;
+  }
+  const bubble = (row.querySelector('.msg-bubble') as HTMLElement);
+  if (!bubble || !bubble.contains(el)) return null;
+  const rect = range.getBoundingClientRect();
+  if (!rect || (rect.width === 0 && rect.height === 0)) return null;
+  return {
+    text: text.slice(0, 4000),
+    rect,
+    row,
+  };
+}
+
+function syncSelectionReplyBar() {
+  if (!selectionReplyBar || mainView !== 'chat') {
+    hideSelectionReplyBar();
+    return;
+  }
+  const quote = assistantSelectionQuote();
+  if (!quote) {
+    hideSelectionReplyBar();
+    return;
+  }
+  selectionReplyBar.hidden = false;
+  selectionReplyBar.classList.remove('is-hidden');
+  const top = Math.max(8, quote.rect.top - 44);
+  const left = Math.min(
+    window.innerWidth - 24,
+    Math.max(24, quote.rect.left + quote.rect.width / 2)
+  );
+  selectionReplyBar.style.top = top + 'px';
+  selectionReplyBar.style.left = left + 'px';
+}
+
+function renderComposerMentions() {
+  composerMentions.innerHTML = '';
+  const agentOn = !!settings.agentMode;
+  MENTION_IDS.forEach((id) => {
+    if (!composerMentionIds.has(id)) return;
+    const option = mentionOptionById(id);
+    const forced = agentOn && (id === 'web_search' || id === 'fetch_url');
+    const chip = (document.createElement('span') as HTMLElement);
+    chip.className = 'composer-mention-chip' + (forced ? ' is-forced' : '');
+    const label = (document.createElement('span') as HTMLElement);
+    label.textContent = '@' + (option ? option.label : id);
+    chip.appendChild(label);
+    if (forced) {
+      const badge = (document.createElement('span') as HTMLElement);
+      badge.className = 'chip-badge';
+      badge.textContent = 'required';
+      badge.title = 'Agent will use this skill before answering';
+      chip.appendChild(badge);
+    }
+    const remove = (document.createElement('button') as HTMLButtonElement);
+    remove.type = 'button';
+    remove.setAttribute('aria-label', 'Remove @' + id);
+    remove.textContent = '×';
+    remove.addEventListener('click', () => {
+      composerMentionIds.delete(id);
+      renderComposerMentions();
+      renderComposerModes();
+      syncPlusButton();
+      composerInput.focus();
+    });
+    chip.appendChild(remove);
+    composerMentions.appendChild(chip);
+  });
+  syncPlusButton();
+}
+
+let userSkills: UserSkill[] = [];

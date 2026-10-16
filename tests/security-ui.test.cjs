@@ -1,3 +1,5 @@
+const { chromium, browserLaunchOptions } = require('./helpers/app.cjs');
+const { readUiScript } = require('./helpers/ui-source.cjs');
 // NODE_PATH can point to an installed Playwright package; no app build is needed.
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
@@ -8,7 +10,7 @@ const root = join(__dirname, '..');
 
 test('bundled OCR assets match the reviewed hashes', () => {
   const { createHash } = require('node:crypto');
-  const dir = join(root, 'src/ui/vendor/ocr');
+  const dir = join(root, 'client/vendor/ocr');
   const hashes = JSON.parse(readFileSync(join(dir, 'sha256.json'), 'utf8'));
   for (const [name, hash] of Object.entries(hashes)) {
     assert.equal(createHash('sha256').update(readFileSync(join(dir, name))).digest('hex'), hash, name);
@@ -34,7 +36,7 @@ test('locking terminates OCR and releases a pending recognition', async () => {
 });
 
 function declaration(file, name) {
-  const source = readFileSync(join(root, 'src/ui/chat/scripts', file), 'utf8').replace(/\r\n/g, '\n');
+  const source = readUiScript(file).replace(/\r\n/g, '\n');
   const match = source.match(new RegExp('^(?:async )?function ' + name + '\\([\\s\\S]*?^\\}$', 'm'));
   assert.ok(match, name);
   return match[0];
@@ -94,21 +96,16 @@ test('a terminal response arriving after lock cannot recreate a terminal', async
   assert.equal(state.activeTerminalId, '');
 });
 
-let chromium;
-try { ({ chromium } = require('playwright')); } catch { /* Explicitly report missing browser coverage. */ }
 test('actual vendored sanitizer blocks executable and UI-clobbering model HTML', {
-  skip: !chromium && 'Playwright is required for the browser security test',
+  skip: !chromium && 'Set GOPHER_BROWSER_TESTS=1 to run browser checks',
 }, async () => {
-  const browser = await chromium.launch({
-    headless: true,
-    ...(process.env.SECURITY_BROWSER_CHANNEL ? { channel: process.env.SECURITY_BROWSER_CHANNEL } : {}),
-  });
+  const browser = await chromium.launch(browserLaunchOptions(process.env.SECURITY_BROWSER_CHANNEL));
   try {
     const page = await browser.newPage();
     await page.route('**/*', (route) => route.abort());
-    await page.addScriptTag({ path: join(root, 'src/ui/vendor/purify.min.js') });
-    await page.addScriptTag({ path: join(root, 'src/ui/vendor/marked.min.js') });
-    const renderer = readFileSync(join(root, 'src/ui/chat/scripts/render.js'), 'utf8');
+    await page.addScriptTag({ path: join(root, 'client/vendor/purify.min.js') });
+    await page.addScriptTag({ path: join(root, 'client/vendor/marked.min.js') });
+    const renderer = readUiScript("render");
     const mathRenderer = renderer.slice(renderer.indexOf('const TEX_COMMANDS'), renderer.indexOf('\nlet markdownImages'));
     assert.ok(mathRenderer.includes('function renderMarkdown'));
     await page.addScriptTag({ content: [
@@ -137,7 +134,7 @@ test('actual vendored sanitizer blocks executable and UI-clobbering model HTML',
       host.innerHTML = renderMarkdown('**Evidence** [source](https://example.com)');
       return { version: DOMPurify.version, bold: host.querySelector('strong')?.textContent, link: host.querySelector('a')?.href, executed: !!window.__xss };
     });
-    assert.equal(result.version, '3.4.15');
+    assert.equal(result.version, '3.4.16');
     assert.equal(result.bold, 'Evidence');
     assert.equal(result.link, 'https://example.com/');
     assert.equal(result.executed, false);

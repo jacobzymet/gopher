@@ -1,11 +1,12 @@
+const { chromium, appTestsEnabled, spawnApp, browserLaunchOptions, stopApp, removeAppData } = require('./helpers/app.cjs');
+const { readUiScript } = require('./helpers/ui-source.cjs');
 const assert = require('node:assert/strict');
-const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { test } = require('node:test');
 const vm = require('node:vm');
 
 function load(context, file, names) {
-  const source = readFileSync(join(__dirname, '../src/ui/chat/scripts', file), 'utf8').replace(/\r\n/g, '\n');
+  const source = readUiScript(file).replace(/\r\n/g, '\n');
   for (const name of names) {
     const match = source.match(new RegExp('^(?:async )?function ' + name + '\\([\\s\\S]*?^\\}$', 'm'));
     assert.ok(match, name);
@@ -157,11 +158,9 @@ test('Loop compaction cannot send a request without its selected provider', asyn
   await assert.rejects(state.collectCompletionText([], 'missing'), /selected Loop model is unavailable/);
 });
 
-let chromium;
-try { ({ chromium } = require('playwright')); } catch {}
 
 test('real chat model picks survive switching, default changes, reload, and background sends', {
-  skip: !process.env.GOPHER_TEST_BINARY || !chromium,
+  skip: !appTestsEnabled || !chromium,
   timeout: 60000,
 }, async () => {
   const { mkdtempSync, writeFileSync, rmSync } = require('node:fs');
@@ -193,7 +192,7 @@ test('real chat model picks survive switching, default changes, reload, and back
     'name = "Fixture"', `base = "http://127.0.0.1:${provider.address().port}/v1"`,
     'api_style = "openai"', 'token = ""',
   ].join('\n'));
-  const child = spawn(resolve(process.env.GOPHER_TEST_BINARY), [
+  const child = spawnApp([
     '--headless', '--config', join(dir, 'config.toml'), '--bind', '127.0.0.1:0',
   ], { windowsHide: true, stdio: 'pipe' });
   let logs = '';
@@ -201,7 +200,6 @@ test('real chat model picks survive switching, default changes, reload, and back
   child.on('error', error => { spawnError = error; });
   child.stdout.on('data', data => { logs += data; });
   child.stderr.on('data', data => { logs += data; });
-  const exited = new Promise(resolve => child.once('close', resolve));
   let browser;
   try {
     let origin;
@@ -213,7 +211,7 @@ test('real chat model picks survive switching, default changes, reload, and back
       await delay(100);
     }
     assert.ok(origin, logs);
-    browser = await chromium.launch({ headless: true, channel: process.env.SECURITY_BROWSER_CHANNEL || undefined });
+    browser = await chromium.launch(browserLaunchOptions(process.env.SECURITY_BROWSER_CHANNEL));
     const page = await browser.newPage();
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
@@ -290,10 +288,9 @@ test('real chat model picks survive switching, default changes, reload, and back
     assert.deepEqual(errors, []);
   } finally {
     if (browser) await browser.close();
-    if (child.exitCode === null && !spawnError) child.kill();
-    await exited;
+    await stopApp(child);
     provider.closeAllConnections();
     await new Promise(resolve => provider.close(resolve));
-    rmSync(dir, { recursive: true, force: true });
+    await removeAppData(dir);
   }
 });

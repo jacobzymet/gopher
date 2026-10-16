@@ -1,27 +1,15 @@
+const { readUiScript } = require('./helpers/ui-source.cjs');
 // Run without compiling the app: node --test tests/model-menu-anchor.test.cjs
 const assert = require('node:assert/strict');
-const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { test } = require('node:test');
 const vm = require('node:vm');
 
 const root = join(__dirname, '..');
-const runtime = readFileSync(
-  join(root, 'src/ui/chat/scripts/runtime.js'),
-  'utf8'
-).replace(/\r\n/g, '\n');
-const state = readFileSync(
-  join(root, 'src/ui/chat/scripts/state.js'),
-  'utf8'
-).replace(/\r\n/g, '\n');
-const bots = readFileSync(
-  join(root, 'src/ui/chat/scripts/bots.js'),
-  'utf8'
-).replace(/\r\n/g, '\n');
-const render = readFileSync(
-  join(root, 'src/ui/chat/scripts/render.js'),
-  'utf8'
-).replace(/\r\n/g, '\n');
+const runtime = readUiScript("runtime").replace(/\r\n/g, '\n');
+const state = readUiScript("state").replace(/\r\n/g, '\n');
+const bots = readUiScript("bots").replace(/\r\n/g, '\n');
+const render = readUiScript("render").replace(/\r\n/g, '\n');
 
 function declaration(source, name) {
   const match = source.match(new RegExp('^function ' + name + '\\([\\s\\S]*?^\\}$', 'm'));

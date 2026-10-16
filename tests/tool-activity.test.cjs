@@ -1,13 +1,13 @@
+const { readUiScript } = require('./helpers/ui-source.cjs');
 // Run without compiling the app: node --test tests/tool-activity.test.cjs
 const assert = require('node:assert/strict');
-const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { test } = require('node:test');
 const vm = require('node:vm');
 
 const root = join(__dirname, '..');
-const render = readFileSync(join(root, 'src/ui/chat/scripts/render.js'), 'utf8').replace(/\r\n/g, '\n');
-const runtime = readFileSync(join(root, 'src/ui/chat/scripts/runtime.js'), 'utf8').replace(/\r\n/g, '\n');
+const render = readUiScript("render").replace(/\r\n/g, '\n');
+const runtime = readUiScript("runtime").replace(/\r\n/g, '\n');
 
 // Exercise the shipped functions, without bootstrapping the rest of the UI.
 function declaration(source, name) {

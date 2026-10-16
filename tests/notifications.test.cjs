@@ -1,13 +1,14 @@
+const { chromium, appTestsEnabled, spawnApp, browserLaunchOptions, stopApp, removeAppData } = require('./helpers/app.cjs');
+const { readUiScript } = require('./helpers/ui-source.cjs');
 // Run without compiling the app: node --test tests/notifications.test.cjs
 const assert = require('node:assert/strict');
-const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { test } = require('node:test');
 const vm = require('node:vm');
 
 const root = join(__dirname, '..');
-const render = readFileSync(join(root, 'src/ui/chat/scripts/render.js'), 'utf8').replace(/\r\n/g, '\n');
-const controls = readFileSync(join(root, 'src/ui/chat/scripts/controls.js'), 'utf8').replace(/\r\n/g, '\n');
+const render = readUiScript("render").replace(/\r\n/g, '\n');
+const controls = readUiScript("controls").replace(/\r\n/g, '\n');
 
 function declaration(name) {
   const match = render.match(new RegExp('^(?:async )?function ' + name + '\\([\\s\\S]*?^\\}$', 'm'));
@@ -275,11 +276,9 @@ test('the notification bell toggles a popover without replacing the current page
   assert.equal(state.mainView, 'projects');
 });
 
-let chromium;
-try { ({ chromium } = require('playwright')); } catch {}
 
 test('real approval inbox follows live SSE, clears on Stop, and ignores finished replay', {
-  skip: !process.env.GOPHER_TEST_BINARY || !chromium,
+  skip: !appTestsEnabled || !chromium,
   timeout: 60000,
 }, async () => {
   const { mkdtempSync, writeFileSync, rmSync } = require('node:fs');
@@ -289,7 +288,7 @@ test('real approval inbox follows live SSE, clears on Stop, and ignores finished
   const { setTimeout: delay } = require('node:timers/promises');
   const dir = mkdtempSync(join(tmpdir(), 'gopher-notifications-'));
   writeFileSync(join(dir, 'config.toml'), '# Isolated notification regression\n');
-  const child = spawn(resolve(process.env.GOPHER_TEST_BINARY), [
+  const child = spawnApp([
     '--headless', '--config', join(dir, 'config.toml'), '--bind', '127.0.0.1:0',
   ], { windowsHide: true, stdio: 'pipe' });
   let logs = '';
@@ -297,7 +296,6 @@ test('real approval inbox follows live SSE, clears on Stop, and ignores finished
   child.on('error', error => { spawnError = error; });
   child.stdout.on('data', data => { logs += data; });
   child.stderr.on('data', data => { logs += data; });
-  const exited = new Promise(resolve => child.once('close', resolve));
   let browser;
   try {
     let origin;
@@ -309,7 +307,7 @@ test('real approval inbox follows live SSE, clears on Stop, and ignores finished
       await delay(100);
     }
     assert.ok(origin, logs);
-    browser = await chromium.launch({ headless: true, channel: process.env.SECURITY_BROWSER_CHANNEL || undefined });
+    browser = await chromium.launch(browserLaunchOptions(process.env.SECURITY_BROWSER_CHANNEL));
     const page = await browser.newPage();
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
@@ -376,8 +374,7 @@ test('real approval inbox follows live SSE, clears on Stop, and ignores finished
     assert.deepEqual(errors, []);
   } finally {
     if (browser) await browser.close();
-    if (child.exitCode === null && !spawnError) child.kill();
-    await exited;
-    rmSync(dir, { recursive: true, force: true });
+    await stopApp(child);
+    await removeAppData(dir);
   }
 });

@@ -1,0 +1,271 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "8432ffd8f41705d37f5d630594c8adecc718558e",
+  "description": "SHA-256 reference values for HTML, stylesheets, browser scripts, and licensed vendor assets.",
+  "assets": [
+    {
+      "path": "client/chat.html",
+      "sha256": "2c7002d85cab929c8257479006982d769627719b7b91e4229fb30dd90f8438f3"
+    },
+    {
+      "path": "client/chat/styles/base.css",
+      "sha256": "99546387a2cf1fd0905784b5b92864fef871d2a1a801fadbd98405cdf9f27fc6"
+    },
+    {
+      "path": "client/chat/styles/conversation.css",
+      "sha256": "ccdcc720cd27346054f69ef55853663eadf95324e1e135cc98c25bd11401be1e"
+    },
+    {
+      "path": "client/chat/styles/content.css",
+      "sha256": "e843fc2c59c2fd6bc55b723561dbb7c45dad8ced7bb88006fc159ef79ed7838f"
+    },
+    {
+      "path": "client/chat/styles/composer.css",
+      "sha256": "fb4208f77f984115ebbc41854f5ca0e4ef94a4d69a33ee49ca205c51bf5f3700"
+    },
+    {
+      "path": "client/chat/styles/activity.css",
+      "sha256": "dcf4b354952cead66635dd903afad93a365dc1b9a2dedf33045785c5021a00c4"
+    },
+    {
+      "path": "client/chat/styles/projects.css",
+      "sha256": "3ee4e558280967ceaf0565e9941e5f6e20fa4afd3abff4bcebfa2e6863383422"
+    },
+    {
+      "path": "client/chat/styles/notifications.css",
+      "sha256": "a0570c7210754f6500fb0ca7e8c63d1cc03593e43969589954ec9acb2a82b2a7"
+    },
+    {
+      "path": "client/chat/styles/profiles.css",
+      "sha256": "0fcb6420aa74919ee04c2a2573f3367b2950c50f56072a27c2fd4d5ff11d8c70"
+    },
+    {
+      "path": "client/chat/styles/bots.css",
+      "sha256": "f8447f76c07cc18137cb649f1cc767124728d325e45df38a40f046b9cae61274"
+    },
+    {
+      "path": "client/chat/styles/terminal.css",
+      "sha256": "66d10d63f3bfcb90599e16779b23a69b4f1dd32a03671fa13b40a97ec8c42fbb"
+    },
+    {
+      "path": "client/chat/styles/diagnostics.css",
+      "sha256": "3f2d2243d5f761cf502b0471b4ff9c7b777e6be94ad57043b840ed804f499c76"
+    },
+    {
+      "path": "client/chat/styles/workspace.css",
+      "sha256": "df09f5c27c435347c48423f0b17552803547176a1acd13ec5787ff187e7e5e3a"
+    }
+  ],
+  "runtime": [
+    {
+      "path": "client/chat/scripts/bots.ts",
+      "sha256": "784bb34a42b7e7790ad89e305a0842d93082ed7b34a3a5b428fa69c20b96c6df"
+    },
+    {
+      "path": "client/chat/scripts/controls.ts",
+      "sha256": "7275ad7af97dd249ddc19b964b9f59e22f73eb2b8f0b37e5d33340bb319a2f6e"
+    },
+    {
+      "path": "client/chat/scripts/diagnostics.ts",
+      "sha256": "d9ffb0d8cd194820dbae71946ada9f74649a21a2df9060d4d9367bf6afeaf834"
+    },
+    {
+      "path": "client/chat/scripts/input.ts",
+      "sha256": "a4aef8e439addb8d6f72776e4e89ffbea38ebee51e92d64ff59f5cb64e51c37b"
+    },
+    {
+      "path": "client/chat/scripts/providers.ts",
+      "sha256": "f3de38cd45d56abe31118f929919eee59cab8383806053d0d79a5ddb555c5128"
+    },
+    {
+      "path": "client/chat/scripts/render.ts",
+      "sha256": "4c037c488dec43bdef7e2223dee03fee7b8b90ca1ec0877abbc4e7e4bb00611c"
+    },
+    {
+      "path": "client/chat/scripts/runtime.ts",
+      "sha256": "df149a5e1c9a4bd6ee0b8f12731e2d20c254c7bfc59df32cb25a559937090d6f"
+    },
+    {
+      "path": "client/chat/scripts/state.ts",
+      "sha256": "739a8547444202ec2c6c7afd1a824bd67302ec7bc516c1a9b6a092b1e1cc8ad6"
+    },
+    {
+      "path": "client/chat/scripts/terminal.ts",
+      "sha256": "a6d9593101137200c5088237d1d351c88749bb89d1d767bb0759ac4d613d5140"
+    },
+    {
+      "path": "client/chat/scripts/workspace.ts",
+      "sha256": "768e1294759c483b94efadffcba242d315f373ad26ef50771185c74e3c63f118"
+    },
+    {
+      "path": "client/orb.ts",
+      "sha256": "e0812e6fe2978c7ad1201a6ac3e61e9a8990aa941e4dd0004e9726eb061c96df"
+    },
+    {
+      "path": "client/optional-fonts.ts",
+      "sha256": "d7973cdac50a4377caadb2b7cc90f9c62bcc8833de8a2486831901110ea8f5ee"
+    }
+  ],
+  "vendor": [
+    {
+      "path": "client/vendor/highlight.min.js",
+      "sha256": "f1e7fac1af8089b2281e623dbbd49e4dc307b51074e02a4d6473959688f556db"
+    },
+    {
+      "path": "client/vendor/katex/fonts/KaTeX_AMS-Regular.woff2",
+      "sha256": "0cdd387c9590a1a9f9794560022dbb59654a7d86f187aa0c81495ad42d3a7308"
+    },
+    {
+      "path": "client/vendor/katex/fonts/KaTeX_Caligraphic-Bold.woff2",
+      "sha256": "de7701e42cf1f4cf0b766c03fb27977207eee2f4fd5d76fa82188406da43ea4c"
+    },
+    {
+      "path": "client/vendor/katex/fonts/KaTeX_Caligraphic-Regular.woff2",
+      "sha256": "5d53e70ad607c2352162dec9e0923fb54ecdafaccbf604cd8dcf7d00facb989b"
+    },
+    {
+      "path": "client/vendor/katex/fonts/KaTeX_Fraktur-Bold.woff2",
+      "sha256": "74444efd593c005e3f4573b44524704c0af0a937fe911cca9e94068d0d140d3f"
+    },
+    {
+      "path": "client/vendor/katex/fonts/KaTeX_Fraktur-Regular.woff2",
+      "sha256": "51814d270d06ff0255dba0799994fa4d8c84d11f09951d47595f4abb1f3602dc"
+    },
+    {
+      "path": "client/vendor/katex/fonts/KaTeX_Main-Bold.woff2",
+      "sha256": "0f60d1b897938ec918c8ce073092411baf9438f6739465693ff18b0f9d20b021"
+    },
+    {
+      "path": "client/vendor/katex/fonts/KaTeX_Main-BoldItalic.woff2",
+      "sha256": "99cd42a3c072d918f2f44984a807cf7aa16e13545fd0875fc07c6c65f99e715b"
+    },
+    {
+      "path": "client/vendor/katex/fonts/KaTeX_Main-Italic.woff2",
+      "sha256": "97479ca6cce906abc961ecac96faa5f9ca2e61b8e7670d475826bcdee9a7c267"
+    },
+    {
+      "path": "client/vendor/katex/fonts/KaTeX_Main-Regular.woff2",
+      "sha256": "c2342cd8b869e01752a9321dc17213fc40d4d04c79688c1d43f2cf316abd7866"
+    },
+    {
+      "path": "client/vendor/katex/fonts/KaTeX_Math-BoldItalic.woff2",
+      "sha256": "dc47344dbb6cb5b655c8460d561f4df5f501b90c804ad3c6cec65fe322351ab1"
+    },
+    {
+      "path": "client/vendor/katex/fonts/KaTeX_Math-Italic.woff2",
+      "sha256": "7af58c5ec8f132a2ddde9027c6d7814decce4d3b822a11192a42a20e2e973264"
+    },
+    {
+      "path": "client/vendor/katex/fonts/KaTeX_SansSerif-Bold.woff2",
+      "sha256": "e99ae51144bf1232efcc1bfe5add36262c6866b0faab24fa75740e1b98577a62"
+    },
+    {
+      "path": "client/vendor/katex/fonts/KaTeX_SansSerif-Italic.woff2",
+      "sha256": "00b26ac825e2095056396e0553b8ac26d3f8ad158c3826e28b4c45b385c4714a"
+    },
+    {
+      "path": "client/vendor/katex/fonts/KaTeX_SansSerif-Regular.woff2",
+      "sha256": "68e8c73ef42afd3ccec58bf0fba302cce448938e7fc020a5e31f8a952eee1342"
+    },
+    {
+      "path": "client/vendor/katex/fonts/KaTeX_Script-Regular.woff2",
+      "sha256": "036d4e95149b69ff9bcc0cd55771efeb25ffa3947293e69acd78d5ac328c684b"
+    },
+    {
+      "path": "client/vendor/katex/fonts/KaTeX_Size1-Regular.woff2",
+      "sha256": "6b47c40166b6dbe21a5dfca7718413f2147fd2399be1ba605d8ad39cedf25dfe"
+    },
+    {
+      "path": "client/vendor/katex/fonts/KaTeX_Size2-Regular.woff2",
+      "sha256": "d04c54219f9eaec6d4d4fd42dfb28785975a4794d6b2fc71e566b9cd6db842dd"
+    },
+    {
+      "path": "client/vendor/katex/fonts/KaTeX_Size3-Regular.woff2",
+      "sha256": "73d591271b1604960cb10bb90fee021670af7297017e0e98480b332d11f51995"
+    },
+    {
+      "path": "client/vendor/katex/fonts/KaTeX_Size4-Regular.woff2",
+      "sha256": "a4af7d414440a1c1790825cfb700cf9cf43b0f2c4b04f0ebc523011ad9853ec0"
+    },
+    {
+      "path": "client/vendor/katex/fonts/KaTeX_Typewriter-Regular.woff2",
+      "sha256": "71d517d67827787cfabdf186914cc3358eda539e37931941f2b2fd4a21f68c0b"
+    },
+    {
+      "path": "client/vendor/katex/katex.min.css",
+      "sha256": "b29f1adef955855f895eee60e2b3b96007bae7e0ddbadef52414eaf885f9230d"
+    },
+    {
+      "path": "client/vendor/katex/katex.min.js",
+      "sha256": "e8d885505949f3a5f4abdd5dd0d53696bd1371ad26ffbf4f310dcd77c8cdae89"
+    },
+    {
+      "path": "client/vendor/marked.min.js",
+      "sha256": "742ee84b0d5a1f6376aeda1bb495c3bf35ddfc7e332f20d3698e9e676b99f714"
+    },
+    {
+      "path": "client/vendor/ocr/eng.traineddata.gz",
+      "sha256": "45b4cb346724ac1774f1c36f42f182b887bcdb28ebe63e6fff90ac41f3fcff91"
+    },
+    {
+      "path": "client/vendor/ocr/LICENSE-core.txt",
+      "sha256": "c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08"
+    },
+    {
+      "path": "client/vendor/ocr/LICENSE-eng.txt",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    },
+    {
+      "path": "client/vendor/ocr/LICENSE-tesseract.txt",
+      "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1"
+    },
+    {
+      "path": "client/vendor/ocr/provenance.json",
+      "sha256": "8a289ae7279f9dc2db665fc1676efaa2512a0d516751bea86ae390f381d363eb"
+    },
+    {
+      "path": "client/vendor/ocr/sha256.json",
+      "sha256": "e548eb172d4cbd56eacbbeea59ecdb765bbeaf39f7a5728024c9302eef3769b0"
+    },
+    {
+      "path": "client/vendor/ocr/tesseract-core-lstm.wasm.js",
+      "sha256": "775a35df6f2ae100e02609443e6bd5cafcd07983dd6175454ca4a432a7730687"
+    },
+    {
+      "path": "client/vendor/ocr/tesseract-core-simd-lstm.wasm.js",
+      "sha256": "9d7c43fb206dc9f48475228b46bf35f888fa9e6259da2e67d5a75c77049f2dc7"
+    },
+    {
+      "path": "client/vendor/ocr/tesseract-core-simd.wasm.js",
+      "sha256": "3b0678c47a8dea6abb931b214171c08b742a5b9a9fcbbb1a028a08d5de6e9d4c"
+    },
+    {
+      "path": "client/vendor/ocr/tesseract-core.wasm.js",
+      "sha256": "e66872f6a76f5ad414d73d21512245df0de3060ad4871a97c47efceaab27b955"
+    },
+    {
+      "path": "client/vendor/ocr/tesseract.min.js",
+      "sha256": "10fff78484067759c43028a02a72d76d0b90eb17302bb23b58a9ec5410bc928b"
+    },
+    {
+      "path": "client/vendor/ocr/worker.min.js",
+      "sha256": "38645599043239c0eb6db08a6504a92dcdc292200535f3e9339cd77c4443b842"
+    },
+    {
+      "path": "client/vendor/purify.min.js",
+      "sha256": "85b67cc74b556e3d3630eb21cb453d2ba97a0a6894729a8bc1f168f465da54c9"
+    },
+    {
+      "path": "client/vendor/xterm-addon-fit.min.js",
+      "sha256": "fd7a961ebfca64806e2e114702445adf8b03fe3a477e70c6ade5d5c41be5396f"
+    },
+    {
+      "path": "client/vendor/xterm.css",
+      "sha256": "d5ae245243718a83de80f1632f7923ee240dece505e0aaadcdf3effe94782b8c"
+    },
+    {
+      "path": "client/vendor/xterm.min.js",
+      "sha256": "f73987e1e856adaab99820dad5e42c3f40bfd5a8894ff062915a71c578ffe6b8"
+    }
+  ]
+}

@@ -1,3 +1,4 @@
+const { readUiScript } = require('./helpers/ui-source.cjs');
 // Run without compiling the app: node --test tests/prompt-progress.test.cjs
 'use strict';
 
@@ -6,7 +7,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-const runtime = fs.readFileSync('src/ui/chat/scripts/runtime.js', 'utf8');
+const runtime = readUiScript("runtime");
 const start = runtime.indexOf('function promptProgressLabel(');
 const end = runtime.indexOf('\nfunction syncStreamSpeakerChrome', start);
 assert.ok(start >= 0 && end > start);

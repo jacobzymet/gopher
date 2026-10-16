@@ -1,3 +1,4 @@
+const { readUiScript } = require('./helpers/ui-source.cjs');
 'use strict';
 
 const test = require('node:test');
@@ -5,7 +6,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-const render = fs.readFileSync('src/ui/chat/scripts/render.js', 'utf8').replace(/\r\n/g, '\n');
+const render = readUiScript("render").replace(/\r\n/g, '\n');
 const helperStart = render.indexOf('function formatTokPerSec(');
 const helperEnd = render.indexOf('\nfunction ingestStreamUsage(', helperStart);
 assert.ok(helperStart >= 0 && helperEnd > helperStart);
@@ -32,7 +33,7 @@ test('measures the complete turn interval safely', () => {
 });
 
 test('persists work time for completed and stopped responses', () => {
-  const runtime = fs.readFileSync('src/ui/chat/scripts/runtime.js', 'utf8');
+  const runtime = readUiScript("runtime");
   assert.match(runtime, /const workStartedAt = Date\.now\(\);/);
   assert.match(runtime, /turnStartedAt: workStartedAt/);
   assert.equal((runtime.match(/message\.workDurationMs = totalWorkMs/g) || []).length, 2);

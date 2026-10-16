@@ -1,10 +1,12 @@
+const { chromium, appTestsEnabled, spawnApp, browserLaunchOptions, stopApp, removeAppData } = require('./helpers/app.cjs');
+const { readUiScript } = require('./helpers/ui-source.cjs');
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { test } = require('node:test');
 const vm = require('node:vm');
 
-const source = readFileSync(join(__dirname, '../src/ui/chat/scripts/workspace.js'), 'utf8');
+const source = readUiScript("workspace");
 function load(context, names) {
   for (const name of names) {
     const match = source.match(new RegExp('^function ' + name + '\\([\\s\\S]*?^\\}$', 'm'));
@@ -201,10 +203,8 @@ test('connection feedback tolerates a transient failure and recovers after a suc
   assert.equal(updates, 2);
 });
 
-let chromium;
-try { ({ chromium } = require('playwright')); } catch {}
 test('workspace browser flows preserve drafts across navigation and reload, search all messages, find formatted text, and export', {
-  skip: !process.env.GOPHER_TEST_BINARY || !chromium, timeout: 90000,
+  skip: !appTestsEnabled || !chromium, timeout: 90000,
 }, async () => {
   const { mkdtempSync, writeFileSync, rmSync } = require('node:fs');
   const { tmpdir } = require('node:os');
@@ -213,11 +213,10 @@ test('workspace browser flows preserve drafts across navigation and reload, sear
   const { setTimeout: delay } = require('node:timers/promises');
   const dir = mkdtempSync(join(tmpdir(), 'gopher-workspace-'));
   writeFileSync(join(dir, 'config.toml'), '');
-  const child = spawn(resolve(process.env.GOPHER_TEST_BINARY), ['--headless', '--config', join(dir, 'config.toml'), '--bind', '127.0.0.1:0'], { windowsHide: true, stdio: 'pipe' });
+  const child = spawnApp(['--headless', '--config', join(dir, 'config.toml'), '--bind', '127.0.0.1:0'], { windowsHide: true, stdio: 'pipe' });
   let logs = '';
   child.stdout.on('data', (data) => { logs += data; });
   child.stderr.on('data', (data) => { logs += data; });
-  const exited = new Promise((resolve) => child.once('close', resolve));
   let browser;
   try {
     let origin;
@@ -228,7 +227,7 @@ test('workspace browser flows preserve drafts across navigation and reload, sear
       await delay(100);
     }
     assert.ok(origin, logs);
-    browser = await chromium.launch({ headless: true, channel: process.env.SECURITY_BROWSER_CHANNEL || undefined });
+    browser = await chromium.launch(browserLaunchOptions(process.env.SECURITY_BROWSER_CHANNEL));
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
@@ -345,8 +344,7 @@ test('workspace browser flows preserve drafts across navigation and reload, sear
     assert.deepEqual(errors, []);
   } finally {
     await browser?.close();
-    if (child.exitCode == null) child.kill();
-    await exited;
-    rmSync(dir, { recursive: true, force: true });
+    await stopApp(child);
+    await removeAppData(dir);
   }
 });

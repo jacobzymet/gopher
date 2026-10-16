@@ -1,28 +1,24 @@
+const { chromium, browserLaunchOptions } = require('./helpers/app.cjs');
+const { readUiScript, readUiStyles } = require('./helpers/ui-source.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { readFileSync, mkdirSync } = require('node:fs');
 const { join } = require('node:path');
 
-let chromium;
-try { ({ chromium } = require('playwright')); } catch { /* Browser coverage requires Playwright. */ }
-const browserOptions = { skip: !chromium && 'Playwright is required for marquee browser tests' };
+const browserOptions = { skip: !chromium && 'Set GOPHER_BROWSER_TESTS=1 to run browser checks' };
 const read = (path) => readFileSync(join(__dirname, '..', path), 'utf8');
-const render = read('src/ui/chat/scripts/render.js');
-const state = read('src/ui/chat/scripts/state.js');
+const render = readUiScript("render");
+const state = readUiScript("state");
 const extract = (source, name) => source.match(new RegExp('function ' + name + '\\([^]*?\\r?\\n\\}'))[0];
-const html = read('src/ui/chat.html')
+const html = read('client/chat.html')
   .replace(/<script\b[^>]*>[^]*?<\/script>/gi, '')
   .replace(/<link\b[^>]*>/gi, '');
-const css = [...read('build.rs').matchAll(/"(src\/ui\/chat\/styles\/[^"]+)"/g)]
-  .map((match) => read(match[1])).join('\n');
+const css = readUiStyles();
 const longTitle = 'Remove Toilet Bowl Stains Without Brushing - A Complete Cleaning Guide';
 let browser;
 
 test.before(async () => {
-  if (chromium) browser = await chromium.launch({
-    headless: true,
-    ...(process.env.MARQUEE_BROWSER_CHANNEL ? { channel: process.env.MARQUEE_BROWSER_CHANNEL } : {}),
-  });
+  if (chromium) browser = await chromium.launch(browserLaunchOptions(process.env.MARQUEE_BROWSER_CHANNEL));
 });
 test.after(async () => { await browser?.close(); });
 

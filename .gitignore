@@ -1,11 +1,16 @@
-/target/
-**/target/
 /.venv/
-vendor/glib/Cargo.lock
-**/*.rs.bk
 .agents/
 skills-lock.json
+/node_modules/
+/.npm-cache/
+/.migration/
+/dist/
+/coverage/
+/output/typescript/
+/output/
 __pycache__/
 *.py[cod]
 /tensorchat/
 /.playwright-cli/
+# Local build outputs.
+/target/

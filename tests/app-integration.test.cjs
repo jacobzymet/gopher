@@ -1,4 +1,5 @@
-// Set GOPHER_TEST_BINARY to a built executable. Every test uses isolated data.
+const { appTestsEnabled, spawnApp, stopApp, removeAppData } = require('./helpers/app.cjs');
+// Set GOPHER_E2E=1 to test the TypeScript CLI. Every test uses isolated data.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { mkdtempSync, readFileSync, writeFileSync, rmSync } = require('node:fs');
@@ -8,13 +9,13 @@ const { spawn } = require('node:child_process');
 const { setTimeout: delay } = require('node:timers/promises');
 
 test('ephemeral bind reports its actual port and relative config keeps data beside it', {
-  skip: !process.env.GOPHER_TEST_BINARY,
+  skip: !appTestsEnabled,
   timeout: 30000,
 }, async () => {
   const dir = mkdtempSync(join(tmpdir(), 'gopher-config-path-'));
   writeFileSync(join(dir, 'config.toml'), '');
   let origin;
-  const child = spawn(resolve(process.env.GOPHER_TEST_BINARY), [
+  const child = spawnApp([
     '--headless', '--config', 'config.toml', '--bind', '127.0.0.1:0',
   ], { cwd: dir, windowsHide: true, stdio: 'pipe' });
   let logs = '';
@@ -22,7 +23,6 @@ test('ephemeral bind reports its actual port and relative config keeps data besi
   child.on('error', error => { spawnError = error; });
   child.stdout.on('data', data => { logs += data; });
   child.stderr.on('data', data => { logs += data; });
-  const exited = new Promise(resolve => child.once('close', resolve));
   try {
     let bootstrap;
     for (let i = 0; i < 100; i++) {
@@ -61,10 +61,9 @@ test('ephemeral bind reports its actual port and relative config keeps data besi
     writeFileSync(join(dir, 'chats.json'), '');
     const corrupt = await call('/api/data/store');
     assert.ok(corrupt.status >= 400);
-    assert.match(corrupt.body.error, /empty JSON file/);
+    assert.match(corrupt.body.error, /empty JSON file/i);
   } finally {
-    if (child.exitCode === null && !spawnError) child.kill();
-    await exited;
-    rmSync(dir, { recursive: true, force: true });
+    await stopApp(child);
+    await removeAppData(dir);
   }
 });
