@@ -27,7 +27,7 @@ export function normalizeBase(value: string, _style = 'openai'): string {
   const raw=value.trim();if(!raw)throw new Error('Provider URL must not be empty');const url = new URL(raw.includes('://')?raw:`http://${raw}`);
   if (!['http:', 'https:'].includes(url.protocol) || !url.hostname || url.username || url.password || url.search || url.hash || raw.includes('?') || raw.includes('#')) throw new Error('Provider URL must use HTTP or HTTPS without credentials, query, or fragment');
   if(url.protocol==='http:'&&!providerHostIsLocal(url.hostname))url.protocol='https:';
-  const pathname=url.pathname.replace(/\/+$/,'');url.pathname=pathname.endsWith('/v1')?pathname:`${pathname}/v1`;
+  const pathname=url.pathname.replace(/\/+$/,'');const versioned=pathname.endsWith('/v1')||/\/v1(?:beta)?\/openai$/.test(pathname);url.pathname=versioned?pathname:`${pathname}/v1`;
   return url.toString().replace(/\/+$/, '');
 }
 export function providerAuthHeaders(style:string,rawToken:string):Record<string,string>{

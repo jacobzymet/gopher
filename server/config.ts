@@ -9,6 +9,7 @@ export type ApiStyle = 'openai' | 'anthropic' | 'responses';
 export interface Provider {
   id: string; name: string; base: string; token: string; api_style: ApiStyle;
   kind: 'custom' | 'openai-codex'; allow_insecure_tls: boolean;
+  default_model?: string;
 }
 export interface UiConfig {
   host: string; port: number; theme: 'dark' | 'light' | 'system';
@@ -17,6 +18,7 @@ export interface UiConfig {
 }
 export interface AppConfig {
   ui: UiConfig; data: { storage: StorageMode }; providers: Provider[]; active_provider_id: string;
+  max_tokens?: number; render_mode?: string; markdown?: boolean; save_sessions?: boolean;
 }
 export const FONT_BODY_IDS = ['inter', 'source-sans-3', 'ibm-plex-sans', 'atkinson-hyperlegible', 'literata'];
 export const FONT_DISPLAY_IDS = ['space-grotesk', 'syne', 'dm-sans', 'fraunces', 'instrument-sans'];
@@ -32,15 +34,41 @@ export function defaultDataDirectory(): string {
   return join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'gopher');
 }
 export function defaultConfigPath(): string { return join(defaultDataDirectory(), 'config.toml'); }
+function namedProviderEntries(value: unknown): Record<string, unknown>[] {
+  if (!value || typeof value !== 'object' || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) throw new Error('Providers must be an array or named provider tables.');
+  return Object.entries(value).map(([id, entry]) => {
+    if (!id.trim() || id !== id.trim()) throw new Error('A named provider must have a nonempty ID without surrounding whitespace.');
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry) || ![Object.prototype, null].includes(Object.getPrototypeOf(entry))) throw new Error(`Provider ${id} must be a table.`);
+    const raw = entry as Record<string, unknown>;
+    for (const field of ['id', 'base', 'base_url', 'token', 'api_key', 'kind']) if (raw[field] !== undefined && typeof raw[field] !== 'string') throw new Error(`Provider ${field} must be text.`);
+    if (raw.id !== undefined && raw.id !== id) throw new Error(`Provider ${id} has an ID that does not match its table name.`);
+    if (id === CODEX_PROVIDER_ID) throw new Error('The built-in ChatGPT provider ID cannot be used for a named custom provider.');
+    if (typeof raw.base === 'string' && typeof raw.base_url === 'string' && raw.base.trim().replace(/\/+$/, '') !== raw.base_url.trim().replace(/\/+$/, '')) throw new Error(`Provider ${id} has conflicting base and base_url values.`);
+    if (raw.token !== undefined && raw.api_key !== undefined && raw.token !== raw.api_key) throw new Error(`Provider ${id} has conflicting token and api_key values.`);
+    const base = raw.base ?? raw.base_url;
+    if (typeof base !== 'string' || !base.trim()) throw new Error(`Provider ${id} requires a nonempty base or base_url.`);
+    const protocols = ['anthropic', 'openai', 'openrouter', 'gemini', 'google'];
+    const kind = raw.kind === undefined ? (protocols.includes(id.toLowerCase()) ? id.toLowerCase() : 'custom') : String(raw.kind).trim().toLowerCase();
+    if (kind !== 'custom' && !protocols.includes(kind)) throw new Error(`Invalid named provider kind: ${kind}`);
+    const style = raw.api_style === undefined ? (kind === 'anthropic' ? 'anthropic' : 'openai') : raw.api_style;
+    let endpoint = base;
+    if (['gemini', 'google'].includes(kind) && ['openai', 'oai', 'compatible'].includes(String(style))) {
+      try {
+        const url = new URL(base);
+        if (url.protocol === 'https:' && url.hostname === 'generativelanguage.googleapis.com' && !url.port && !url.username && !url.password && !url.search && !url.hash && ['/', '/v1beta', '/v1beta/'].includes(url.pathname)) endpoint = 'https://generativelanguage.googleapis.com/v1beta/openai';
+      } catch {}
+    }
+    return { ...raw, id, kind: 'custom', base: endpoint, token: raw.token ?? raw.api_key ?? '', api_style: style };
+  });
+}
 export function normalizeProviders(value: unknown, active = ''): { providers: Provider[]; active_provider_id: string } {
-  if (!Array.isArray(value)) throw new Error('Providers must be an array.');
-  const input = value;
+  const input = Array.isArray(value) ? value : namedProviderEntries(value);
   const ids = new Set<string>();
   const providers: Provider[] = [];
   for (const item of input) {
     if (!item || typeof item !== 'object') throw new Error('Each provider must be an object.');
     const raw = item as Record<string, unknown>;
-    for (const field of ['id', 'name', 'base', 'token', 'kind', 'api_style']) if (raw[field] !== undefined && typeof raw[field] !== 'string') throw new Error(`Provider ${field} must be text.`);
+    for (const field of ['id', 'name', 'base', 'token', 'kind', 'api_style', 'default_model']) if (raw[field] !== undefined && typeof raw[field] !== 'string') throw new Error(`Provider ${field} must be text.`);
     if (raw.allow_insecure_tls !== undefined && typeof raw.allow_insecure_tls !== 'boolean') throw new Error('Provider allow_insecure_tls must be a boolean.');
     const kind = raw.kind === 'codex' ? 'openai-codex' : raw.kind ?? 'custom';
     if (kind !== 'custom' && kind !== 'openai-codex') continue;
@@ -58,7 +86,7 @@ export function normalizeProviders(value: unknown, active = ''): { providers: Pr
     let name = String(raw.name || '').trim().slice(0, 80);
     if (kind === 'openai-codex') { base = CODEX_BASE; name = 'ChatGPT'; style = 'responses'; }
     if (!name) { try { name = new URL(base).hostname; } catch { name = base; } }
-    providers.push({ id, name, base, token: String(raw.token || ''), kind, api_style: style as ApiStyle, allow_insecure_tls: kind === 'custom' && raw.allow_insecure_tls === true });
+    providers.push({ id, name, base, token: String(raw.token || ''), kind, api_style: style as ApiStyle, allow_insecure_tls: kind === 'custom' && raw.allow_insecure_tls === true, ...(raw.default_model !== undefined ? { default_model: raw.default_model as string } : {}) });
   }
   if (!providers.some(p => p.kind === 'openai-codex')) providers.push({ id: CODEX_PROVIDER_ID, name: 'ChatGPT', base: CODEX_BASE, token: '', kind: 'openai-codex', api_style: 'responses', allow_insecure_tls: false });
   return { providers, active_provider_id: providers.some(p => p.id === active) ? active : (providers.find(p => p.kind === 'custom') || providers[0])?.id || '' };
@@ -68,7 +96,10 @@ export function normalizeConfig(raw: unknown, includeBuiltins = true): AppConfig
   const input = raw as Record<string, any>;
   const config = defaultConfig();
   for (const field of ['ui', 'data']) if (input[field] !== undefined && (!input[field] || typeof input[field] !== 'object' || Array.isArray(input[field]))) throw new Error(`Configuration ${field} must be an object.`);
-  for (const field of ['active_provider_id', 'active_remote_id']) if (input[field] !== undefined && typeof input[field] !== 'string') throw new Error(`Configuration ${field} must be text.`);
+  for (const field of ['active_provider_id', 'active_remote_id', 'default_provider', 'render_mode']) if (input[field] !== undefined && typeof input[field] !== 'string') throw new Error(`Configuration ${field} must be text.`);
+  if (input.max_tokens !== undefined) { if (typeof input.max_tokens !== 'number' || !Number.isFinite(input.max_tokens)) throw new Error('Configuration max_tokens must be a finite number.'); config.max_tokens = input.max_tokens; }
+  for (const field of ['markdown', 'save_sessions'] as const) if (input[field] !== undefined) { if (typeof input[field] !== 'boolean') throw new Error(`Configuration ${field} must be a boolean.`); config[field] = input[field]; }
+  if (input.render_mode !== undefined) config.render_mode = input.render_mode;
   const ui = input.ui || {};
   for (const field of ['host', 'theme', 'font_body', 'font_display', 'font_mono', 'font_scale']) if (ui[field] !== undefined && typeof ui[field] !== 'string') throw new Error(`UI ${field} must be text.`);
   if (ui.theme !== undefined && !['dark', 'light', 'system'].includes(ui.theme)) throw new Error('Invalid UI theme.');
@@ -88,7 +119,7 @@ export function normalizeConfig(raw: unknown, includeBuiltins = true): AppConfig
   // existing conversation store stays visible. Only explicit memory mode is
   // volatile.
   config.data.storage = input.data?.storage === 'memory' ? 'memory' : 'disk';
-  const normalized = normalizeProviders(input.providers ?? input.remotes ?? [], input.active_provider_id || input.active_remote_id || '');
+  const normalized = normalizeProviders(input.providers !== undefined ? input.providers : input.remotes !== undefined ? input.remotes : [], input.active_provider_id || input.active_remote_id || input.default_provider || '');
   config.providers = includeBuiltins ? normalized.providers : [];
   config.active_provider_id = includeBuiltins ? normalized.active_provider_id : '';
   return config;
