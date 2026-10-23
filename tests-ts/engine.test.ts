@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { createServer, type RequestListener } from 'node:http';
 import { once } from 'node:events';
 import { Engine, TextRouter, compactMessages, estimateTokens, messageBudget, contextWindow, scheduleToolBatches } from '../server/engine.js';
-import { Providers, parseSSE, anthropicPayload, responsesPayload, normalizeBase, providerAuthHeaders, type ProviderEvent } from '../server/providers.js';
+import { Providers, parseSSE, anthropicPayload, responsesPayload, normalizeBase, providerAuthHeaders, type CompletionPayload, type ProviderEvent } from '../server/providers.js';
 import { Workspace, executeFilesystem, applyPatch } from '../server/tools/filesystem.js';
 import { executeTool, retrievalScope, visibleText, type ToolContext } from '../server/tools/index.js';
 import { TerminalManager } from '../server/terminal.js';
@@ -14,6 +14,10 @@ import { extractAttachment } from '../server/attachments.js';
 import type { Provider } from '../server/config.js';
 import { BoundedOutput } from '../server/tools/output.js';
 import { ResearchProgress } from '../server/tools/research.js';
+
+/** Read a nested value from untyped JSON in assertions. */
+const dig = (value: unknown, ...path: Array<string | number>): unknown => path.reduce<unknown>((current, key) => (current as Record<string | number, unknown> | undefined)?.[key], value);
+
 
 const provider:Provider={id:'test',name:'Test',base:'http://127.0.0.1:1234/v1',token:'',api_style:'openai',kind:'custom',allow_insecure_tls:false};
 async function temporary<T>(fn:(directory:string)=>Promise<T>):Promise<T>{const directory=await fs.mkdtemp(path.join(tmpdir(),'gopher-engine-'));try{return await fn(directory);}finally{await fs.rm(directory,{recursive:true,force:true,maxRetries:20,retryDelay:50});}}
@@ -55,9 +59,9 @@ test('providers translate OpenAI, Anthropic and Responses requests and streaming
 });
 
 test('provider translation preserves tools, system instructions and image inputs',()=>{
-  const payload={model:'model',messages:[{role:'system',content:'Policy'},{role:'user',content:[{type:'text',text:'See this'},{type:'image_url',image_url:{url:'data:image/png;base64,YQ=='}}]},{role:'assistant',content:null,tool_calls:[{id:'call',function:{name:'read_file',arguments:'{"path":"a"}'}}]},{role:'tool',tool_call_id:'call',content:'file'}],tools:[{type:'function',function:{name:'read_file',description:'Read',parameters:{type:'object',properties:{}}}}]};
-  const anthropic=anthropicPayload(payload);assert.equal(anthropic.system,'Policy');assert.equal(anthropic.messages[0].content[1].source.type,'base64');assert.equal(anthropic.messages[2].content[0].tool_use_id,'call');
-  const responses=responsesPayload(payload);assert.equal(responses.instructions,'Policy');assert.equal(responses.input[1].type,'function_call');assert.equal(responses.input[2].call_id,'call');
+  const payload:CompletionPayload={model:'model',messages:[{role:'system',content:'Policy'},{role:'user',content:[{type:'text',text:'See this'},{type:'image_url',image_url:{url:'data:image/png;base64,YQ=='}}]},{role:'assistant',content:null,tool_calls:[{id:'call',function:{name:'read_file',arguments:'{"path":"a"}'}}]},{role:'tool',tool_call_id:'call',content:'file'}],tools:[{type:'function',function:{name:'read_file',description:'Read',parameters:{type:'object',properties:{}}}}]};
+  const anthropic=anthropicPayload(payload);assert.equal(dig(anthropic, 'system'),'Policy');assert.equal(dig(anthropic, 'messages', 0, 'content', 1, 'source', 'type'),'base64');assert.equal(dig(anthropic, 'messages', 2, 'content', 0, 'tool_use_id'),'call');
+  const responses=responsesPayload(payload);assert.equal(dig(responses, 'instructions'),'Policy');assert.equal(dig(responses, 'input', 1, 'type'),'function_call');assert.equal(dig(responses, 'input', 2, 'call_id'),'call');
 });
 
 test('workspace filesystem pagination, exact replacement, atomic patch and confinement',async()=>temporary(async directory=>{

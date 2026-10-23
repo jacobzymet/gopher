@@ -97,3 +97,36 @@ test('read_skill is accepted as the activate_skill tool', async () => {
   assert.match(output, /Write in 5-7-5/);
   await engine.cancelAll();
 });
+
+test('a model list survives one dropped connection, and a refused completion is retried once', async () => {
+  let connections = 0;
+  await serve((request, response) => {
+    connections++;
+    if (connections === 1) { request.socket.destroy(); return; }
+    response.setHeader('content-type', 'application/json');
+    response.end('{"data":[{"id":"m"}]}');
+  }, async base => {
+    const provider: Provider = { id: 'flaky', name: 'F', base: `${base}/v1`, token: '', api_style: 'openai', kind: 'custom', allow_insecure_tls: false };
+    const { health } = await new Providers({ getProviders: () => [provider] }).probe(provider, true);
+    assert.equal(health.ok, true);
+    assert.ok(connections >= 2);
+  });
+  const placeholder = createServer();
+  placeholder.listen(0, '127.0.0.1');
+  await once(placeholder, 'listening');
+  const port = (placeholder.address() as AddressInfo).port;
+  await new Promise<void>(resolve => placeholder.close(() => resolve()));
+  const provider: Provider = { id: 'late', name: 'L', base: `http://127.0.0.1:${port}/v1`, token: '', api_style: 'openai', kind: 'custom', allow_insecure_tls: false };
+  const late = createServer((_request, response) => {
+    response.setHeader('content-type', 'application/json');
+    response.end(JSON.stringify({ choices: [{ message: { content: 'Ready now' } }] }));
+  });
+  setTimeout(() => late.listen(port, '127.0.0.1'), 150);
+  try {
+    let text = '';
+    for await (const event of new Providers({ getProviders: () => [provider] }).complete(provider, { model: 'm', messages: [{ role: 'user', content: 'Hi' }] }, AbortSignal.timeout(5000))) {
+      if (event.type === 'text') text += event.text;
+    }
+    assert.equal(text, 'Ready now');
+  } finally { late.closeAllConnections(); await new Promise<void>(resolve => late.close(() => resolve())); }
+});

@@ -1,6 +1,8 @@
 /** Readable messages for low-level network failures. */
 
-interface ErrorWithCause { code?: unknown; cause?: unknown; address?: unknown; port?: unknown; name?: unknown; message?: unknown }
+interface ErrorWithCause {
+  code?: unknown; cause?: unknown; address?: unknown; port?: unknown; name?: unknown; message?: unknown;
+}
 
 function causes(error: unknown): ErrorWithCause[] {
   const chain: ErrorWithCause[] = [];

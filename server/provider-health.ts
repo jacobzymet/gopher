@@ -11,7 +11,8 @@ export function classifyProviderError(message: string): HealthKind {
   if (text.includes('no provider')) return 'error';
   if (/\b(401|403)\b/.test(text) || text.includes('unauthorized') || text.includes('forbidden')) return 'auth';
   if (text.includes('returned no models') || text.includes('no models')) return 'empty';
-  if (text.includes('could not be resolved') || text.includes('getaddrinfo') || text.includes('not known')) return 'error';
+  if (text.includes('could not be resolved') || text.includes('getaddrinfo')
+    || text.includes('not known')) return 'error';
   const waiting = ['timed out', 'timeout', 'connection refused', 'refused', 'connection was reset', 'reset',
     'unreachable', 'stopped responding', 'host is down', 'no route to host'];
   return waiting.some(marker => text.includes(marker)) ? 'waiting' : 'error';
@@ -39,7 +40,8 @@ export function routeSignal(status: number): RouteSignal {
 export interface StyleEvidence { modelsOk: boolean; route: RouteSignal }
 
 /** Score each style from its /models probe and chat-route signal; exclusive route signals weigh most. */
-export function chooseApiStyle(base: string, token: string, openai: StyleEvidence, anthropic: StyleEvidence): ApiStyleName {
+export function chooseApiStyle(base: string, token: string, openai: StyleEvidence,
+  anthropic: StyleEvidence): ApiStyleName {
   const hint = styleHint(base, token);
   const score = (style: ApiStyleName, evidence: StyleEvidence) => (evidence.modelsOk ? 4 : 0)
     + (evidence.route === 'present' ? 2 : evidence.route === 'missing' ? -2 : 0) + (hint === style ? 2 : 0);

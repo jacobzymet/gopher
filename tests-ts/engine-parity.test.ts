@@ -16,6 +16,10 @@ import { Diagnostics, DiagnosticTrace, diagnosticContext } from '../server/diagn
 import { PageCache,searchWeb,type SearchSettings } from '../server/tools/web.js';
 import { executeTool,normalizeQuestions,type ToolContext } from '../server/tools/index.js';
 
+/** Read a nested value from untyped JSON in assertions. */
+const dig = (value: unknown, ...path: Array<string | number>): unknown => path.reduce<unknown>((current, key) => (current as Record<string | number, unknown> | undefined)?.[key], value);
+
+
 const provider: Provider = { id: 'fixture', name: 'Fixture', base: '', token: '', api_style: 'openai', kind: 'custom', allow_insecure_tls: false };
 async function temporary<T>(fn: (directory: string) => Promise<T>): Promise<T> {
   const directory = await fs.mkdtemp(path.join(tmpdir(), 'gopher-parity-'));
@@ -73,23 +77,23 @@ test('local llama, Ollama and LM Studio catalogs enrich reasoning, images and ru
 test('Anthropic and Responses conversion preserve their protocol-specific controls', () => {
   const messages = [{ role: 'system', content: 'Stable policy' }, { role: 'system', content: 'Current clock' }, { role: 'assistant', content: 'Earlier reply' }];
   const anthropic = anthropicPayload({ model: 'claude-fixture', messages, reasoning_effort: 'high', max_tokens: 16000, tools: [{ function: { name: 'read_file', parameters: { type: 'object' } } }], tool_choice: 'none' }, 'https://api.anthropic.com/v1');
-  assert.equal(anthropic.messages[0].role, 'user');
-  assert.equal(anthropic.thinking.budget_tokens, 10000);
-  assert.deepEqual(anthropic.cache_control, { type: 'ephemeral' });
-  assert.deepEqual(anthropic.system[0].cache_control, { type: 'ephemeral' });
-  assert.equal(anthropic.system[1].cache_control, undefined);
-  assert.deepEqual(anthropic.tools[0].cache_control, { type: 'ephemeral' });
-  assert.equal(anthropic.tool_choice.type, 'none');
+  assert.equal(dig(anthropic, 'messages', 0, 'role'), 'user');
+  assert.equal(dig(anthropic, 'thinking', 'budget_tokens'), 10000);
+  assert.deepEqual(dig(anthropic, 'cache_control'), { type: 'ephemeral' });
+  assert.deepEqual(dig(anthropic, 'system', 0, 'cache_control'), { type: 'ephemeral' });
+  assert.equal(dig(anthropic, 'system', 1, 'cache_control'), undefined);
+  assert.deepEqual(dig(anthropic, 'tools', 0, 'cache_control'), { type: 'ephemeral' });
+  assert.equal(dig(anthropic, 'tool_choice', 'type'), 'none');
   const custom = anthropicPayload({ model: 'claude-fixture', messages }, 'http://127.0.0.1/v1');
-  assert.equal(custom.cache_control, undefined);
-  assert.equal(typeof custom.system, 'string');
+  assert.equal(dig(custom, 'cache_control'), undefined);
+  assert.equal(typeof dig(custom, 'system'), 'string');
   const responses = responsesPayload({ model: 'fixture', messages: [{ role: 'user', content: 'Hello' }], max_output_tokens: 512, parallel_tool_calls: false, tools: [{ function: { name: 'read_file', strict: true } }], reasoning: { effort: 'none' } });
-  assert.equal(responses.instructions, undefined);
-  assert.equal(responses.store, undefined);
-  assert.equal(responses.max_output_tokens, 512);
-  assert.equal(responses.parallel_tool_calls, false);
-  assert.equal(responses.tools[0].strict, true);
-  assert.deepEqual(responses.reasoning, { effort: 'none' });
+  assert.equal(dig(responses, 'instructions'), undefined);
+  assert.equal(dig(responses, 'store'), undefined);
+  assert.equal(dig(responses, 'max_output_tokens'), 512);
+  assert.equal(dig(responses, 'parallel_tool_calls'), false);
+  assert.equal(dig(responses, 'tools', 0, 'strict'), true);
+  assert.deepEqual(dig(responses, 'reasoning'), { effort: 'none' });
   const codex = responsesPayload({ model: 'fixture', messages: [], max_tokens: 256 }, true);
   assert.equal(codex.instructions, 'You are a helpful assistant.');
   assert.equal(codex.store, false);
