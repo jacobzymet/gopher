@@ -39,8 +39,8 @@
     {
       "path": "client/chat/styles/composer.css",
       "originalSha256": "fb4208f77f984115ebbc41854f5ca0e4ef94a4d69a33ee49ca205c51bf5f3700",
-      "sha256": "fd7c62051b31a4b5ad64ef476121c63d02191f4791043bbabcf4bb6542058f28",
-      "reason": "When the chat column is narrow (sidebar and Activity open), the composer uses the existing compact Branch button and keeps its tools on one row instead of stacking them; the empty capabilities label stays on one line. On touch screens the capability chip remove button gets a larger invisible tap area that does not cover the label. Styles the cache rate label; it is hidden in the narrow composer layout.",
+      "sha256": "23f38b44dc2f5ca03210fc8a9b28c561d4ee12b2da948b041092d9633d702c7c",
+      "reason": "When the chat column is narrow (sidebar and Activity open), the composer uses the existing compact Branch button and keeps its tools on one row instead of stacking them; the empty capabilities label stays on one line. On touch screens the capability chip remove button gets a larger invisible tap area that does not cover the label. Prompt reuse is grouped under the context details with an aligned percentage and subtle divider, removing the standalone cache label from the composer toolbar.",
       "verifiedBy": [
         "tests/chat-ux.test.cjs",
         "Visual check at 1024px with sidebar and Activity open, idle and streaming",
@@ -69,8 +69,8 @@
     {
       "path": "client/chat.html",
       "originalSha256": "2c7002d85cab929c8257479006982d769627719b7b91e4229fb30dd90f8438f3",
-      "sha256": "53675d29ddc5bc9181396ed6c8894b210a4f7faa1a01a8558a90d4a51b4ed929",
-      "reason": "Adds the prompt-cache rate label beside the context meter and a cache line in its tooltip.",
+      "sha256": "693fa127baf7d806667a085dd88e33f899a3196a77884f56b21d2b0b0b590c7e",
+      "reason": "Groups prompt-cache reuse and token counts inside the context tooltip, removing the standalone toolbar label.",
       "verifiedBy": [
         "tests/prompt-cache.test.cjs"
       ]
@@ -78,8 +78,8 @@
     {
       "path": "client/chat/scripts/input.ts",
       "originalSha256": "a4aef8e439addb8d6f72776e4e89ffbea38ebee51e92d64ff59f5cb64e51c37b",
-      "sha256": "e901dd347a6c41529a0277006cc00802178812021bfa2e2e55b75fe83bd165ac",
-      "reason": "The context meter also shows the provider-reported prompt-cache rate for the running turn or the latest reply.",
+      "sha256": "3803bc6544abb48792c8d67f68fc630e651e4156e5a983423e285968e9cbded6",
+      "reason": "Shows provider-reported prompt reuse for the running turn or latest reply in a dedicated context-tooltip section with token counts; hides the section when cache data is unavailable.",
       "verifiedBy": [
         "tests/prompt-cache.test.cjs"
       ]

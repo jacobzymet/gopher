@@ -68,7 +68,7 @@ function labelHarness() {
       add: (name) => classes.add(name), remove: (name) => classes.delete(name), contains: (name) => classes.has(name),
     } };
   };
-  const elements = { contextCacheRate: element(), contextUsageCache: element() };
+  const elements = { contextCacheRate: element(), contextUsageCache: element(), contextCacheDetail: element() };
   const context = vm.createContext({
     document: { getElementById: (id) => elements[id] || null },
   });
@@ -77,7 +77,7 @@ function labelHarness() {
   return { context, elements };
 }
 
-test('the composer shows the cache rate of the running turn, else the latest reply from the model', () => {
+test('the context tooltip shows prompt reuse for the running turn, else the latest reply from the model', () => {
   const { context, elements } = labelHarness();
   const convo = { messages: [
     { role: 'user', content: 'q' },
@@ -85,17 +85,18 @@ test('the composer shows the cache rate of the running turn, else the latest rep
       cachedTokens: 750, cachedPromptTokens: 1000 },
   ] };
   context.syncContextCacheRate(context.contextCacheSnapshot(convo, 'm', null));
-  assert.equal(elements.contextCacheRate.textContent, '75% cached');
-  assert.equal(elements.contextCacheRate.classList.contains('is-hidden'), false);
-  assert.match(elements.contextUsageCache.textContent, /Prompt cache · 75%/);
+  assert.equal(elements.contextCacheRate.textContent, '75% reused');
+  assert.equal(elements.contextUsageCache.classList.contains('is-hidden'), false);
+  assert.equal(elements.contextCacheDetail.textContent, '750 / 1,000 prompt tokens · latest turn');
 
   const live = { cachedTokens: 1900, cachedPromptTokens: 2000 };
   context.syncContextCacheRate(context.contextCacheSnapshot(convo, 'm', live));
-  assert.equal(elements.contextCacheRate.textContent, '95% cached');
+  assert.equal(elements.contextCacheRate.textContent, '95% reused');
 
   // A newer reply without cache data hides the label instead of showing a stale rate.
   convo.messages.push({ role: 'assistant', content: 'b', contextModel: 'm', promptTokens: 1200 });
   context.syncContextCacheRate(context.contextCacheSnapshot(convo, 'm', null));
-  assert.equal(elements.contextCacheRate.classList.contains('is-hidden'), true);
+  assert.equal(elements.contextUsageCache.classList.contains('is-hidden'), true);
   assert.equal(elements.contextCacheRate.textContent, '');
+  assert.equal(elements.contextCacheDetail.textContent, '');
 });

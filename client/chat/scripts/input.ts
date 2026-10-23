@@ -205,26 +205,24 @@ function contextCacheSnapshot(convo: Conversation | null, activeModel: string, l
   return null;
 }
 
-/** The cache rate label beside the context meter, and its line in the meter's tooltip. */
+/** Keep prompt reuse in the context tooltip, away from the composer actions. */
 function syncContextCacheRate(snapshot: { cached: number; prompt: number } | null) {
   const label = document.getElementById('contextCacheRate');
-  const line = document.getElementById('contextUsageCache');
-  if (!label || !line) return;
+  const section = document.getElementById('contextUsageCache');
+  const detail = document.getElementById('contextCacheDetail');
+  if (!label || !section || !detail) return;
   if (!snapshot || !(snapshot.prompt > 0)) {
-    label.classList.add('is-hidden');
-    line.classList.add('is-hidden');
+    section.classList.add('is-hidden');
     label.textContent = '';
-    line.textContent = '';
+    detail.textContent = '';
     return;
   }
-  const pct = Math.round((Math.min(snapshot.cached, snapshot.prompt) / snapshot.prompt) * 100);
-  label.textContent = pct + '% cached';
-  label.title = formatContextTokenCount(snapshot.cached) + ' of ' + formatContextTokenCount(snapshot.prompt)
-    + ' prompt tokens were read from the provider’s prompt cache in the latest turn.';
-  line.textContent = 'Prompt cache · ' + pct + '% (' + formatContextTokenCount(snapshot.cached) + ' / '
-    + formatContextTokenCount(snapshot.prompt) + ' tokens)';
-  label.classList.remove('is-hidden');
-  line.classList.remove('is-hidden');
+  const cached = Math.min(snapshot.cached, snapshot.prompt);
+  const pct = Math.round((cached / snapshot.prompt) * 100);
+  label.textContent = pct + '% reused';
+  detail.textContent = formatContextTokenCount(cached) + ' / ' + formatContextTokenCount(snapshot.prompt)
+    + ' prompt tokens · latest turn';
+  section.classList.remove('is-hidden');
 }
 
 function syncContextUsage(convo: Conversation | null = null, liveStats: StreamUsage | null = null, liveRemote: ModelOption | null = null) {

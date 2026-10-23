@@ -599,7 +599,6 @@ html[data-theme="light"] .plus-menu-icon.is-agent { color: oklch(48% 0.16 305); 
   }
   /* An empty usage meter is the least useful control when space is tight. */
   .composer-buttons .context-usage.is-unavailable { display: none; }
-  .composer-buttons .context-cache-rate { display: none; }
   /* Still too narrow: the send group moves to its own row, right-aligned,
      rather than squeezing the tools into a vertical stack. */
   .composer-tools { flex: 0 0 auto; flex-wrap: nowrap; }
@@ -1083,17 +1082,6 @@ html[data-theme="light"] .plus-menu-icon.is-agent { color: oklch(48% 0.16 305); 
   background: var(--surface-hover);
 }
 .context-usage.is-warn { color: var(--color-warn); }
-/* Share of the prompt the provider read from its cache, beside the context meter. */
-.context-cache-rate {
-  flex: 0 0 auto;
-  margin-left: -0.15rem;
-  color: var(--color-muted);
-  font-size: var(--text-xs);
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-  white-space: nowrap;
-  cursor: default;
-}
 .context-usage.is-danger { color: var(--color-danger); }
 .context-usage.is-unavailable { color: var(--color-muted); }
 .context-usage.is-unavailable .context-usage-icon { opacity: 0.64; }
@@ -1174,6 +1162,26 @@ html[data-theme="light"] .plus-menu-icon.is-agent { color: oklch(48% 0.16 305); 
 }
 .context-usage-tooltip span {
   display: block;
+}
+.context-usage-tooltip .context-usage-cache {
+  display: grid;
+  gap: 0.28rem;
+  margin-top: 0.35rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--color-rule);
+}
+.context-usage-tooltip .context-cache-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.context-cache-heading strong {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+#contextCacheDetail {
+  color: var(--color-muted);
 }
 .chat-shell.is-incognito .composer-buttons .context-usage {
   border-color: var(--color-rule-2);
