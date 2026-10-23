@@ -8,6 +8,13 @@ const baseline = require('./fixtures/original-ui-sha256.json');
 const securityOverrides = require('./fixtures/vendor-security-overrides.json');
 const root = resolve(__dirname, '..');
 const digest = value => createHash('sha256').update(value).digest('hex');
+// A script split into ordered parts (scripts/<name>/NN-*.ts) is read as the parts joined in order.
+const { existsSync, readdirSync } = require('node:fs');
+const readScript = path => {
+  const directory = path.replace(/.ts$/, '');
+  if (existsSync(path) || !existsSync(directory)) return readFileSync(path, 'utf8');
+  return readdirSync(directory).filter(file => file.endsWith('.ts')).sort().map(file => readFileSync(resolve(directory, file), 'utf8')).join('');
+};
 
 test('the original HTML and every stylesheet retain their exact bytes', () => {
   assert.equal(baseline.assets.length, 13);
@@ -26,7 +33,7 @@ test('the original HTML and every stylesheet retain their exact bytes', () => {
 
 test('all first-party browser behavior retains the frozen original runtime', () => {
   for (const asset of baseline.runtime) {
-    let code = transformSync(readFileSync(resolve(root, asset.path), 'utf8'), {
+    let code = transformSync(readScript(resolve(root, asset.path)), {
       loader: 'ts', target: 'es2022', legalComments: 'none',
     }).code;
     // Ignore non-rendering theme initialization and the synthetic load event.
