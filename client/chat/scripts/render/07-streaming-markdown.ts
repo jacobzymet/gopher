@@ -275,14 +275,13 @@ function paintIncrementalMarkdown(host: HTMLElement, markdown: string, { streami
     tailEl.innerHTML = tailSource.trim() ? renderMarkdown(tailSource, { cache: false }) : '';
     tailEl.dataset.tailMd = tailKey;
     if (openFence) {
+      // Skip highlighting an unfinished block, but still give it the code-block frame
+      // (background and header) so it does not appear only once the fence closes.
       (tailEl.querySelectorAll('pre > code') as NodeListOf<HTMLElement>).forEach((el) => {
         el.dataset.highlighted = 'skip';
       });
-      enhanceCiteFavicons(tailEl);
-      enhanceMarkdownTables(tailEl);
-    } else {
-      enhanceCodeBlocks(tailEl);
     }
+    enhanceCodeBlocks(tailEl);
     const kids = (tailEl.querySelectorAll(':scope > :not(.stream-caret)') as NodeListOf<HTMLElement>);
     if (sealedGrew || prevTailKids === 0) markStreamSettle(kids, 0);
     else if (kids.length > prevTailKids) markStreamSettle(kids, prevTailKids);

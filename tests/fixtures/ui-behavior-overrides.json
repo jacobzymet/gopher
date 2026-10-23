@@ -18,8 +18,8 @@
     {
       "path": "client/chat/scripts/render.ts",
       "originalSha256": "4c037c488dec43bdef7e2223dee03fee7b8b90ca1ec0877abbc4e7e4bb00611c",
-      "sha256": "4246fe0f9c1601b59189e45368695cb01788188a9297569fb8cca3fc4588f0ca",
-      "reason": "A failed last reply gets a visible Retry action that re-sends the user's message through the existing unchanged-edit path. Rendered Markdown is cached (bounded, never for streaming text, cleared on lock) so reopening a long chat does not parse every reply again.",
+      "sha256": "72f9d736e24e4b73f2d23e2a4c698b4a05bf439fa15176a76cecc7f006b410dd",
+      "reason": "A failed last reply gets a visible Retry action that re-sends the user's message through the existing unchanged-edit path. Rendered Markdown is cached (bounded, never for streaming text, cleared on lock) so reopening a long chat does not parse every reply again. A code block that is still streaming gets its frame and background (highlighting still waits for the closing fence).",
       "verifiedBy": [
         "tests/chat-ux.test.cjs",
         "tests/markdown-cache.test.cjs"

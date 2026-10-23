@@ -264,3 +264,29 @@ test('on touch screens small composer and code buttons get a full-size tap area'
     assert.equal(hits.label, true, 'the chip label is not covered');
   }, phone);
 });
+
+test('a streaming code block has its frame and background before the fence closes', browserTest, async () => {
+  await withFixtureApp((response) => answer(response, 'ok'), async (page) => {
+    const result = await page.evaluate(() => {
+      const bubble = document.createElement('div');
+      bubble.className = 'msg-bubble';
+      const host = document.createElement('div');
+      bubble.appendChild(host);
+      chatThread.appendChild(bubble);
+      const fence = String.fromCharCode(96).repeat(3);
+      paintIncrementalMarkdown(host, 'Save as mini.c:\n\n' + fence + 'c\n#include <stdio.h>\nint main(void) {', { streaming: true });
+      const block = host.querySelector('.stream-tail .md-code-block');
+      const code = block?.querySelector('pre > code');
+      const style = (el) => getComputedStyle(el).backgroundColor;
+      const transparent = (color) => color === 'transparent' || /rgba\(0, 0, 0, 0\)/.test(color);
+      const frame = block && [block, block.querySelector('pre')].some((el) => !transparent(style(el)));
+      const out = {
+        framed: !!block, header: !!block?.querySelector('.md-code-header'), background: !!frame,
+        skip: code?.dataset.highlighted, text: code?.textContent.includes('int main'),
+      };
+      bubble.remove();
+      return out;
+    });
+    assert.deepEqual(result, { framed: true, header: true, background: true, skip: 'skip', text: true });
+  });
+});
