@@ -117,7 +117,7 @@ function paintLiveThinkOnly(rootEl: HTMLElement, cleaned: string) {
   if (!streamEl) return false;
   if (streamEl.dataset.thinkRaw !== openThink.content) {
     streamEl.dataset.thinkRaw = openThink.content;
-    streamEl.innerHTML = renderThinkMarkdown(openThink.content);
+    streamEl.innerHTML = renderThinkMarkdown(openThink.content, { cache: false });
   }
   enhanceCodeBlocks(rootEl);
   streamEl.scrollTop = streamEl.scrollHeight;

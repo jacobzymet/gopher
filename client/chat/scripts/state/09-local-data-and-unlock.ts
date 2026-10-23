@@ -246,6 +246,8 @@ function clearMemoryAfterLock() {
   clearPendingReplyQuote();
   composerMentionIds.clear();
   if (typeof setMarkdownImages === 'function') setMarkdownImages(null);
+  // Rendered replies are decrypted chat text; drop them with everything else.
+  if (typeof clearMarkdownCache === 'function') clearMarkdownCache();
   if (typeof latestState !== 'undefined') latestState = null;
   chatThread.replaceChildren();
   if (typeof traceSidebarBody !== 'undefined') traceSidebarBody?.replaceChildren();

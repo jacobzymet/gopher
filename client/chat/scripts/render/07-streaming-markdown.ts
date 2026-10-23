@@ -259,7 +259,7 @@ function paintIncrementalMarkdown(host: HTMLElement, markdown: string, { streami
 
   const prevSealed = sealedEl.dataset.sealedMd || '';
   if (sealedEl.dataset.sealedMd !== sealed) {
-    const sealedHtml = sealed.trim() ? renderMarkdown(sealed) : '';
+    const sealedHtml = sealed.trim() ? renderMarkdown(sealed, { cache: false }) : '';
     sealedEl.innerHTML = sealedHtml;
     sealedEl.dataset.sealedMd = sealed;
     enhanceCodeBlocks(sealedEl);
@@ -272,7 +272,7 @@ function paintIncrementalMarkdown(host: HTMLElement, markdown: string, { streami
   const prevTailKids = (tailEl.querySelectorAll(':scope > :not(.stream-caret)') as NodeListOf<HTMLElement>).length;
   const sealedGrew = sealed.length > prevSealed.length;
   if (tailEl.dataset.tailMd !== tailKey) {
-    tailEl.innerHTML = tailSource.trim() ? renderMarkdown(tailSource) : '';
+    tailEl.innerHTML = tailSource.trim() ? renderMarkdown(tailSource, { cache: false }) : '';
     tailEl.dataset.tailMd = tailKey;
     if (openFence) {
       (tailEl.querySelectorAll('pre > code') as NodeListOf<HTMLElement>).forEach((el) => {
@@ -335,7 +335,7 @@ function renderAssistantHtml(text: string, { streaming = false } = {}) {
   const flushText = () => {
     if (textBuf) {
       const source = streaming ? stabilizeStreamingMarkdown(textBuf) : textBuf;
-      html += renderMarkdown(source);
+      html += renderMarkdown(source, { cache: !streaming });
       textBuf = '';
     }
   };

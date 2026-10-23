@@ -5,22 +5,24 @@
     {
       "path": "client/chat/scripts/runtime.ts",
       "originalSha256": "df149a5e1c9a4bd6ee0b8f12731e2d20c254c7bfc59df32cb25a559937090d6f",
-      "sha256": "375b12ab9c875cca9533a4b4512dc5f7abdf0ed6752030acc32a6e42dc5a2f6c",
-      "reason": "sendMessage, runAssistantTurn and driveAssistantSse split into named functions of 60 lines or fewer, with awaits kept at the same points so sends and turns start in the same tick as before. A finished failed reply refreshes its Retry action. A rejected unlock passphrase is selected so typing again replaces it.",
+      "sha256": "f386555277dce36eca15137eb437b951cacb95b257b692a8d113d306e826b303",
+      "reason": "sendMessage, runAssistantTurn and driveAssistantSse split into named functions of 60 lines or fewer, with awaits kept at the same points so sends and turns start in the same tick as before. A finished failed reply refreshes its Retry action. A rejected unlock passphrase is selected so typing again replaces it. Live thinking text skips the Markdown cache.",
       "verifiedBy": [
         "tests/send-races.test.cjs",
         "tests/tool-activity.test.cjs",
         "tests/session-lifecycle.test.cjs",
-        "tests/chat-ux.test.cjs"
+        "tests/chat-ux.test.cjs",
+        "tests/markdown-cache.test.cjs"
       ]
     },
     {
       "path": "client/chat/scripts/render.ts",
       "originalSha256": "4c037c488dec43bdef7e2223dee03fee7b8b90ca1ec0877abbc4e7e4bb00611c",
-      "sha256": "c04c34c341f1400c424dc196bcd9f45833fddc32fdb75bc96271683ba858b56c",
-      "reason": "A failed last reply gets a visible Retry action that re-sends the user's message through the existing unchanged-edit path.",
+      "sha256": "4246fe0f9c1601b59189e45368695cb01788188a9297569fb8cca3fc4588f0ca",
+      "reason": "A failed last reply gets a visible Retry action that re-sends the user's message through the existing unchanged-edit path. Rendered Markdown is cached (bounded, never for streaming text, cleared on lock) so reopening a long chat does not parse every reply again.",
       "verifiedBy": [
-        "tests/chat-ux.test.cjs"
+        "tests/chat-ux.test.cjs",
+        "tests/markdown-cache.test.cjs"
       ]
     },
     {
@@ -50,6 +52,15 @@
       "verifiedBy": [
         "tests/chat-ux.test.cjs",
         "Visual check of a failed reply"
+      ]
+    },
+    {
+      "path": "client/chat/scripts/state.ts",
+      "originalSha256": "739a8547444202ec2c6c7afd1a824bd67302ec7bc516c1a9b6a092b1e1cc8ad6",
+      "sha256": "bb338cde90c4fa88afc805326665341dcb5d054bbd385fb17e249495cab5877b",
+      "reason": "Locking encrypted data also clears the rendered-Markdown cache, which holds decrypted chat text.",
+      "verifiedBy": [
+        "tests/markdown-cache.test.cjs"
       ]
     }
   ]

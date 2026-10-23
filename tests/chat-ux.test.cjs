@@ -191,3 +191,40 @@ test('a rejected unlock passphrase is selected so typing again replaces it', bro
     await page.waitForFunction(() => storageReady && !diskEncryptionLocked(), null, { timeout: 20000 });
   });
 });
+
+test('a long chat opens at the bottom and scrolling up keeps the reading position', browserTest, async () => {
+  await withFixtureApp((response) => answer(response, 'ok'), async (page) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    const result = await page.evaluate(async () => {
+      const frame = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const body = 'Reply with `code`:\n\n```js\nconst x = 1;\n```\n\n| a | b |\n| - | - |\n| 1 | 2 |\n\n' + 'Text. '.repeat(120);
+      const messages = [];
+      for (let i = 0; i < 80; i++) messages.push({ role: 'user', content: 'Question ' + i }, { role: 'assistant', content: body + i });
+      conversations.push(normalizeConversation({ id: 'long-chat', title: 'Long chat', titleEdited: true, messages }));
+      selectConversation('long-chat');
+      await frame();
+      await frame();
+      const v = chatViewport;
+      const gapAtOpen = Math.round(v.scrollHeight - v.scrollTop - v.clientHeight);
+      let worstJump = 0;
+      for (let i = 0; i < 40 && v.scrollTop > 400; i++) {
+        const top = v.getBoundingClientRect().top;
+        const anchor = [...document.querySelectorAll('#chatThread > .msg')].find(row => row.getBoundingClientRect().bottom > top + 5);
+        const before = anchor.getBoundingClientRect().top;
+        v.scrollTop -= 400;
+        await frame();
+        worstJump = Math.max(worstJump, Math.abs(anchor.getBoundingClientRect().top - before - 400));
+      }
+      const target = document.querySelector('#chatThread > .msg[data-msg-index="10"]');
+      target.scrollIntoView({ block: 'center' });
+      await frame();
+      await frame();
+      const rect = target.getBoundingClientRect();
+      const view = v.getBoundingClientRect();
+      return { gapAtOpen, worstJump: Math.round(worstJump), targetInView: rect.bottom > view.top && rect.top < view.bottom };
+    });
+    assert.ok(Math.abs(result.gapAtOpen) <= 2, 'opens at the bottom: ' + result.gapAtOpen);
+    assert.ok(result.worstJump <= 2, 'scrolling up never jumps: ' + result.worstJump);
+    assert.equal(result.targetInView, true);
+  });
+});

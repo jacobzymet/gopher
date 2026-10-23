@@ -404,15 +404,57 @@ function restoreMarkdownMath(html: string, slots: MathSlot[]) {
   });
 }
 
-function renderMarkdown(text: string) {
+/**
+ * Sanitized HTML for recently rendered Markdown, so reopening a long chat does not parse and
+ * sanitize every reply again. Output depends only on the source text (image refs already
+ * applied) and fixed configuration. Bounded by total characters; cleared when data locks.
+ */
+const markdownHtmlCache = new Map<string, string>();
+const MARKDOWN_CACHE_MAX_CHARS = 6_000_000;
+const MARKDOWN_CACHE_MAX_SOURCE = 64 * 1024;
+let markdownHtmlCacheChars = 0;
+
+function clearMarkdownCache() {
+  markdownHtmlCache.clear();
+  markdownHtmlCacheChars = 0;
+}
+
+function rememberMarkdownHtml(source: string, html: string) {
+  markdownHtmlCache.set(source, html);
+  markdownHtmlCacheChars += source.length + html.length;
+  for (const [key, value] of markdownHtmlCache) {
+    if (markdownHtmlCacheChars <= MARKDOWN_CACHE_MAX_CHARS) break;
+    markdownHtmlCache.delete(key);
+    markdownHtmlCacheChars -= key.length + value.length;
+  }
+}
+
+/** Render Markdown to sanitized HTML. Pass `cache: false` for text that is still streaming. */
+function renderMarkdown(text: string, { cache = true } = {}) {
   if (!text) return '';
   const source = applyMarkdownImageRefs(String(text));
   if (!window.marked || !window.DOMPurify) {
     return '<p>' + escapeHtml(source).replace(/\n/g, '<br>') + '</p>';
   }
+  const cacheable = cache && source.length <= MARKDOWN_CACHE_MAX_SOURCE;
+  if (cacheable) {
+    const hit = markdownHtmlCache.get(source);
+    if (hit !== undefined) {
+      // Refresh recency: Map iteration order is insertion order.
+      markdownHtmlCache.delete(source);
+      markdownHtmlCache.set(source, hit);
+      return hit;
+    }
+  }
+  const html = renderMarkdownSource(source);
+  if (cacheable) rememberMarkdownHtml(source, html);
+  return html;
+}
+
+function renderMarkdownSource(source: string) {
   const shielded = shieldMarkdownMath(source);
-  const raw = window.marked.parse(shielded.text, { async: false });
-  const clean = window.DOMPurify.sanitize(raw, {
+  const raw = window.marked!.parse(shielded.text, { async: false });
+  const clean = window.DOMPurify!.sanitize(raw, {
     USE_PROFILES: { html: true },
     FORBID_TAGS: ['style', 'form', 'iframe', 'object', 'embed', 'base', 'link', 'meta'],
     FORBID_ATTR: ['style', 'id', 'name'],

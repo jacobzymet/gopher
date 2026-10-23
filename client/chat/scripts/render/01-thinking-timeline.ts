@@ -25,8 +25,8 @@ function parseThinkSegments(text: string) {
   return segments;
 }
 
-function renderThinkMarkdown(content: unknown) {
-  return renderMarkdown(String(content || '').replace(/\s+$/, ''));
+function renderThinkMarkdown(content: unknown, { cache = true } = {}) {
+  return renderMarkdown(String(content || '').replace(/\s+$/, ''), { cache });
 }
 
 const THINK_CHEVRON =
@@ -82,7 +82,7 @@ function renderThinkBlock(content: unknown, { open, streaming, forceOpen = false
   const mode = settings.thinking;
   if (mode === 'hidden') return '';
   const live = streaming && open;
-  const md = renderThinkMarkdown(content);
+  const md = renderThinkMarkdown(content, { cache: !live });
   // Live ticker stays chrome-less unless the sidebar forces a details shell.
   if (live && mode !== 'visible' && !forceOpen) {
     return wrapTimelineStep(

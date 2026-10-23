@@ -288,7 +288,7 @@ function paintTraceSidebarContent(message: RenderMessage | null | undefined, { l
       if (streamEl) {
         if (streamEl.dataset.thinkRaw !== openThink.content) {
           streamEl.dataset.thinkRaw = openThink.content;
-          streamEl.innerHTML = renderThinkMarkdown(openThink.content);
+          streamEl.innerHTML = renderThinkMarkdown(openThink.content, { cache: false });
         }
         streamEl.scrollTop = streamEl.scrollHeight;
       }
