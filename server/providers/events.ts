@@ -1,5 +1,6 @@
 import { parseSSE, readBounded } from './http.js';
 import { asArray, asRecord, asString, type JsonRecord, type ProviderEvent, type Usage } from './types.js';
+import { normalizeUsage } from './usage.js';
 
 /** Normalizing provider replies (single JSON bodies and SSE streams, in all three styles) to events. */
 
@@ -141,7 +142,8 @@ function openaiEvent(item: JsonRecord, events: ProviderEvent[]): void {
     events.push({ type: 'tool', index, id: asString(call.id), name: asString(fn.name) || asString(call.name),
       arguments: args });
   }
-  if (item.usage) events.push({ type: 'usage', usage: item.usage as Usage });
+  // llama.cpp reports prompt-cache reuse in timings next to usage.
+  if (item.usage) events.push({ type: 'usage', usage: normalizeUsage(item.usage as Usage, item.timings) });
   const progress = item.progress || item.prompt_progress;
   if (progress) events.push({ type: 'progress', data: asRecord(progress) });
 }

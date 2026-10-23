@@ -163,7 +163,8 @@ function conflictHarness() {
   load(state, 'state.js', ['conversationModelId']);
   load(state, 'controls.js', ['markOutboundStarting', 'clearOutboundStarting', 'outboundStartIsCurrent']);
   load(state, 'runtime.js', ['runAssistantTurn', 'dropLiveSubscriber', 'readyTurnModel', 'claimTurnSlot', 'turnMark', 'clearStopMarkers', 'waitForPreviousCancel',
-    'trimmedSetting', 'turnSkillSettings', 'applyTurnMode', 'turnApiMessages', 'turnRequestBody', 'saveChatForRetrieval',
+    'trimmedSetting', 'turnSkillSettings', 'applyTurnMode', 'turnApiMessages', 'appendTurnClock',
+    'turnRequestBody', 'saveChatForRetrieval',
     'postCompletion', 'sendTurnRequest']);
   const run = (overrides = {}) => state.runAssistantTurn(convo, {
     useAgent: false, skills: {}, text: 'queued prompt', dispatchedMessage: user,
@@ -180,7 +181,7 @@ function conflictHarness() {
   };
 }
 
-test('outbound prompts retain stage instructions and place the fresh clock after stable context', async () => {
+test('outbound prompts keep a stable system prefix and carry the fresh clock on the newest user message', async () => {
   const h = conflictHarness();
   h.state.buildSystemPrompt = (_, opts) => {
     assert.equal(opts.includeTime, false);
@@ -191,8 +192,7 @@ test('outbound prompts retain stage instructions and place the fresh clock after
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(h.requests[0].messages, [
     { role: 'system', content: 'Stable instructions and memory\n\nVerify independently' },
-    { role: 'system', content: 'Now: 2026-10-01 12:01' },
-    { role: 'user', content: 'queued prompt' },
+    { role: 'user', content: 'queued prompt\n\nNow: 2026-10-01 12:01' },
   ]);
   h.respond(200);
   await pending;

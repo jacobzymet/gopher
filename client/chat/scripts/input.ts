@@ -182,6 +182,51 @@ function contextUsageSnapshot(convo: Conversation | null, activeModel: string, l
   return latestConversationContextUsage(convo, activeModel);
 }
 
+/**
+ * Prompt-cache use for the running turn, else the latest reply from this model: tokens the
+ * provider served from its prompt cache out of the prompt tokens it reported on. Null when the
+ * provider does not report caching.
+ */
+function contextCacheSnapshot(convo: Conversation | null, activeModel: string, liveStats: StreamUsage | null) {
+  const livePrompt = exactContextTokenCount(liveStats?.cachedPromptTokens);
+  if (livePrompt) return { cached: exactContextTokenCount(liveStats?.cachedTokens) ?? 0, prompt: livePrompt };
+  if (!convo || !Array.isArray(convo.messages)) return null;
+  for (let i = convo.messages.length - 1; i >= 0; i -= 1) {
+    const message = convo.messages[i];
+    if (!message || message.role !== 'assistant') continue;
+    const model = String(message.contextModel || message.model || '').trim();
+    if (activeModel && model && model !== activeModel) continue;
+    const prompt = exactContextTokenCount(message.cachedPromptTokens);
+    const cached = exactContextTokenCount(message.cachedTokens);
+    if (prompt && cached != null) return { cached, prompt };
+    // The newest reply from this model decides; an older one would show a stale rate.
+    if (exactContextTokenCount(message.promptTokens) != null) return null;
+  }
+  return null;
+}
+
+/** The cache rate label beside the context meter, and its line in the meter's tooltip. */
+function syncContextCacheRate(snapshot: { cached: number; prompt: number } | null) {
+  const label = document.getElementById('contextCacheRate');
+  const line = document.getElementById('contextUsageCache');
+  if (!label || !line) return;
+  if (!snapshot || !(snapshot.prompt > 0)) {
+    label.classList.add('is-hidden');
+    line.classList.add('is-hidden');
+    label.textContent = '';
+    line.textContent = '';
+    return;
+  }
+  const pct = Math.round((Math.min(snapshot.cached, snapshot.prompt) / snapshot.prompt) * 100);
+  label.textContent = pct + '% cached';
+  label.title = formatContextTokenCount(snapshot.cached) + ' of ' + formatContextTokenCount(snapshot.prompt)
+    + ' prompt tokens were read from the provider’s prompt cache in the latest turn.';
+  line.textContent = 'Prompt cache · ' + pct + '% (' + formatContextTokenCount(snapshot.cached) + ' / '
+    + formatContextTokenCount(snapshot.prompt) + ' tokens)';
+  label.classList.remove('is-hidden');
+  line.classList.remove('is-hidden');
+}
+
 function syncContextUsage(convo: Conversation | null = null, liveStats: StreamUsage | null = null, liveRemote: ModelOption | null = null) {
   if (!contextUsage) return;
   const activeConvo = convo || conversations.find((item) => item.id === activeId) || null;
@@ -195,6 +240,9 @@ function syncContextUsage(convo: Conversation | null = null, liveStats: StreamUs
     activeModel,
     liveStats || liveStream?.usageStats || null
   );
+  syncContextCacheRate(activeConvo
+    ? contextCacheSnapshot(activeConvo, activeModel, liveStats || liveStream?.usageStats || null)
+    : null);
 
   contextUsage.classList.remove('is-warn', 'is-danger', 'is-unavailable');
   const ring = (contextUsage.querySelector('.context-usage-ring') as HTMLElement);

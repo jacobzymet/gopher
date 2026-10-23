@@ -19,7 +19,7 @@ interface ChatMessage {
   model?: string; contextModel?: string; completionTokens?: number; promptTokens?: number;
   contextCompletionTokens?: number | null; contextPromptTokens?: number | null;
   contextTokens?: number; contextWindowTokens?: number; tokensPerSec?: number;
-  workDurationMs?: number; compact?: boolean; liveTurnId?: string; status?: string;
+  workDurationMs?: number; compact?: boolean; cachedTokens?: number; cachedPromptTokens?: number; liveTurnId?: string; status?: string;
   steered?: boolean; loopRunId?: string; loopPhaseId?: string; loopPhaseLabel?: string;
   loopPhaseIndex?: number | null; loopPhaseTotal?: number | null;
 }
@@ -130,6 +130,8 @@ interface StreamDom {
 interface StreamUsage {
   completionTokens: number; promptTokens: number; contextPromptTokens: number | null;
   contextCompletionTokens: number | null; providerTokPerSec: number | null; upstreamModel: string | null;
+  /** Prompt tokens the provider served from its cache, and the prompt tokens of those same reports. */
+  cachedTokens?: number | null; cachedPromptTokens?: number | null;
 }
 interface LoopPhaseContext { runId?: string; id?: string; label?: string; index?: number; total?: number }
 interface PendingSteer { item: OutboundItem; text: string; applied?: boolean }

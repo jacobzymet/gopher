@@ -183,7 +183,9 @@ test('real chat model picks survive switching, default changes, reload, and back
         response.end(JSON.stringify({ choices: [{ message: { content: 'Fixture title' } }] }));
         return;
       }
-      completions.push({ model: payload.model, prompt: payload.messages.filter(message => message.role === 'user').at(-1)?.content });
+      // The newest user message carries the clock line; match on the prompt text before it.
+      const prompt = payload.messages.filter(message => message.role === 'user').at(-1)?.content;
+      completions.push({ model: payload.model, prompt: typeof prompt === 'string' ? prompt.replace(/\n\nNow: [^\n]*$/, '') : prompt });
       response.setHeader('content-type', 'text/event-stream');
       response.end('data: {"choices":[{"delta":{"content":"Answer"}}]}\n\ndata: [DONE]\n\n');
     } else {

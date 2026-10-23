@@ -53,6 +53,12 @@ function ingestStreamUsage(stats: StreamUsage | null | undefined, json: UsageFra
     if (hasCompletion) {
       stats.contextCompletionTokens = completion;
     }
+    // Only reports that say how much came from the prompt cache count toward the cache rate.
+    const cached = usage.prompt_tokens_details?.cached_tokens;
+    if (hasPrompt && typeof cached === 'number' && Number.isFinite(cached) && cached >= 0) {
+      stats.cachedTokens = (stats.cachedTokens || 0) + Math.min(cached, prompt);
+      stats.cachedPromptTokens = (stats.cachedPromptTokens || 0) + prompt;
+    }
   }
   const timings = json.timings;
   if (timings && typeof timings === 'object') {
@@ -95,6 +101,8 @@ function finalizeTurnStats(stats: StreamUsage | null | undefined, firstTokenAt: 
       : null,
     tokensPerSec: tokensPerSec != null && Number.isFinite(tokensPerSec) ? tokensPerSec : null,
     upstreamModel: stats.upstreamModel || null,
+    cachedTokens: Number.isFinite(stats.cachedTokens) ? stats.cachedTokens! : null,
+    cachedPromptTokens: Number.isFinite(stats.cachedPromptTokens) ? stats.cachedPromptTokens! : null,
   };
 }
 

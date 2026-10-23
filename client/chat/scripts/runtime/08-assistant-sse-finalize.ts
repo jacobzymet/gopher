@@ -124,6 +124,10 @@ function sseApplyStats(message: ChatMessage, finalStats: FinalTurnStats | null) 
   if (finalStats?.contextTokens != null) message.contextTokens = finalStats.contextTokens;
   if (finalStats?.contextWindowTokens != null) message.contextWindowTokens = finalStats.contextWindowTokens;
   if (finalStats?.contextModel) message.contextModel = finalStats.contextModel;
+  if (finalStats?.cachedTokens != null && finalStats.cachedPromptTokens) {
+    message.cachedTokens = finalStats.cachedTokens;
+    message.cachedPromptTokens = finalStats.cachedPromptTokens;
+  }
 }
 
 interface SseReply {

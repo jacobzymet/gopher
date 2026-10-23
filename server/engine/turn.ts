@@ -13,6 +13,7 @@ import type { JsonObject } from '../storage.js';
 import { record } from '../diagnostics.js';
 import { archiveRecord, compactChatMessages, compactMessages, contextWindow, messageBudget } from './context.js';
 import { TextRouter } from './text-router.js';
+import { normalizeUsage } from '../providers/usage.js';
 import { delta, sse, type LiveRun } from './live.js';
 import { emitToolResult, executeCalls, previewArguments, type AgentEmit, type ToolExecutor, type ToolResult,
   type Waiter } from './tool-round.js';
@@ -236,11 +237,7 @@ export class AgentTurn {
   }
 
   private emitUsage(usage: Extract<ProviderEvent, { type: 'usage' }>['usage']): void {
-    const prompt = usage.prompt_tokens ?? usage.input_tokens, completion = usage.completion_tokens
-      ?? usage.output_tokens;
-    const total = usage.total_tokens ?? ((prompt ?? 0) + (completion ?? 0));
-    this.deps.emit(sse(null,
-      { choices: [], usage: { ...usage, prompt_tokens: prompt, completion_tokens: completion, total_tokens: total } }));
+    this.deps.emit(sse(null, { choices: [], usage: normalizeUsage(usage) }));
   }
 
   /** Stream one model reply. Returns null when a stalled stream should be retried. */

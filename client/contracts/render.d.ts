@@ -11,7 +11,7 @@ interface ConversationNotification {
 }
 interface UsageFrame {
   prompt_progress?: { total?: unknown };
-  usage?: { completion_tokens?: unknown; prompt_tokens?: unknown };
+  usage?: { completion_tokens?: unknown; prompt_tokens?: unknown; prompt_tokens_details?: { cached_tokens?: unknown } };
   timings?: { predicted_per_second?: unknown; predicted_n?: unknown; predicted_ms?: unknown };
   model?: unknown;
 }

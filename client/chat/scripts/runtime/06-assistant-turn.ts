@@ -151,13 +151,29 @@ function turnApiMessages(convo: Conversation, speakerBot: ReturnType<typeof getB
   });
   const systemParts = [systemPrompt, String(loopTurnDirective || '').trim()].filter(Boolean);
   if (systemParts.length) {
-    // Keep the changing clock after the stable prompt and backend agent rules.
-    apiMessages.unshift(
-      { role: 'system', content: systemParts.join('\n\n') },
-      { role: 'system', content: buildTimePrompt() },
-    );
+    const clock = buildTimePrompt();
+    // The clock rides on the newest user message, so the system prompt, tools and earlier
+    // history stay byte-identical between turns and providers can serve them from cache.
+    const clocked = appendTurnClock(apiMessages, clock);
+    apiMessages.unshift({ role: 'system', content: systemParts.join('\n\n') });
+    if (!clocked) apiMessages.splice(1, 0, { role: 'system', content: clock });
   }
   return apiMessages;
+}
+
+/** Add the clock to the trailing user message's API copy; false when the turn ends otherwise. */
+function appendTurnClock(apiMessages: Array<{ role: string; content: JsonValue | undefined }>, clock: string) {
+  const last = apiMessages[apiMessages.length - 1];
+  if (!clock || !last || last.role !== 'user') return false;
+  if (typeof last.content === 'string') {
+    last.content = last.content ? last.content + '\n\n' + clock : clock;
+    return true;
+  }
+  if (Array.isArray(last.content)) {
+    last.content = [...last.content, { type: 'text', text: clock }];
+    return true;
+  }
+  return false;
 }
 
 interface TurnRequest {

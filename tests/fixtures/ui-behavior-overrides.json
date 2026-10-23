@@ -5,24 +5,26 @@
     {
       "path": "client/chat/scripts/runtime.ts",
       "originalSha256": "df149a5e1c9a4bd6ee0b8f12731e2d20c254c7bfc59df32cb25a559937090d6f",
-      "sha256": "f386555277dce36eca15137eb437b951cacb95b257b692a8d113d306e826b303",
-      "reason": "sendMessage, runAssistantTurn and driveAssistantSse split into named functions of 60 lines or fewer, with awaits kept at the same points so sends and turns start in the same tick as before. A finished failed reply refreshes its Retry action. A rejected unlock passphrase is selected so typing again replaces it. Live thinking text skips the Markdown cache.",
+      "sha256": "01f2052be0c852c221a0dada610aa9ab27d9767cc38dace95c6b646605ea1023",
+      "reason": "sendMessage, runAssistantTurn and driveAssistantSse split into named functions of 60 lines or fewer, with awaits kept at the same points so sends and turns start in the same tick as before. A finished failed reply refreshes its Retry action. A rejected unlock passphrase is selected so typing again replaces it. Live thinking text skips the Markdown cache. The clock is sent on the newest user message instead of a leading system message, so the cached prompt prefix survives between turns; replies save cached token counts.",
       "verifiedBy": [
         "tests/send-races.test.cjs",
         "tests/tool-activity.test.cjs",
         "tests/session-lifecycle.test.cjs",
         "tests/chat-ux.test.cjs",
-        "tests/markdown-cache.test.cjs"
+        "tests/markdown-cache.test.cjs",
+        "tests/prompt-cache.test.cjs"
       ]
     },
     {
       "path": "client/chat/scripts/render.ts",
       "originalSha256": "4c037c488dec43bdef7e2223dee03fee7b8b90ca1ec0877abbc4e7e4bb00611c",
-      "sha256": "72f9d736e24e4b73f2d23e2a4c698b4a05bf439fa15176a76cecc7f006b410dd",
-      "reason": "A failed last reply gets a visible Retry action that re-sends the user's message through the existing unchanged-edit path. Rendered Markdown is cached (bounded, never for streaming text, cleared on lock) so reopening a long chat does not parse every reply again. A code block that is still streaming gets its frame and background (highlighting still waits for the closing fence).",
+      "sha256": "bbacd104afd687f74a0392d3c2793df39f42254bc9fd2748ec3c2a7eb567c5df",
+      "reason": "A failed last reply gets a visible Retry action that re-sends the user's message through the existing unchanged-edit path. Rendered Markdown is cached (bounded, never for streaming text, cleared on lock) so reopening a long chat does not parse every reply again. A code block that is still streaming gets its frame and background (highlighting still waits for the closing fence). Turn usage stats add up cached prompt tokens.",
       "verifiedBy": [
         "tests/chat-ux.test.cjs",
-        "tests/markdown-cache.test.cjs"
+        "tests/markdown-cache.test.cjs",
+        "tests/prompt-cache.test.cjs"
       ]
     },
     {
@@ -37,11 +39,12 @@
     {
       "path": "client/chat/styles/composer.css",
       "originalSha256": "fb4208f77f984115ebbc41854f5ca0e4ef94a4d69a33ee49ca205c51bf5f3700",
-      "sha256": "742309fd8ca3318e210e052ea70192364b303e29d70798676fb2f450234a0f6f",
-      "reason": "When the chat column is narrow (sidebar and Activity open), the composer uses the existing compact Branch button and keeps its tools on one row instead of stacking them; the empty capabilities label stays on one line. On touch screens the capability chip remove button gets a larger invisible tap area that does not cover the label.",
+      "sha256": "fd7c62051b31a4b5ad64ef476121c63d02191f4791043bbabcf4bb6542058f28",
+      "reason": "When the chat column is narrow (sidebar and Activity open), the composer uses the existing compact Branch button and keeps its tools on one row instead of stacking them; the empty capabilities label stays on one line. On touch screens the capability chip remove button gets a larger invisible tap area that does not cover the label. Styles the cache rate label; it is hidden in the narrow composer layout.",
       "verifiedBy": [
         "tests/chat-ux.test.cjs",
-        "Visual check at 1024px with sidebar and Activity open, idle and streaming"
+        "Visual check at 1024px with sidebar and Activity open, idle and streaming",
+        "tests/prompt-cache.test.cjs"
       ]
     },
     {
@@ -61,6 +64,24 @@
       "reason": "Locking encrypted data also clears the rendered-Markdown cache, which holds decrypted chat text.",
       "verifiedBy": [
         "tests/markdown-cache.test.cjs"
+      ]
+    },
+    {
+      "path": "client/chat.html",
+      "originalSha256": "2c7002d85cab929c8257479006982d769627719b7b91e4229fb30dd90f8438f3",
+      "sha256": "53675d29ddc5bc9181396ed6c8894b210a4f7faa1a01a8558a90d4a51b4ed929",
+      "reason": "Adds the prompt-cache rate label beside the context meter and a cache line in its tooltip.",
+      "verifiedBy": [
+        "tests/prompt-cache.test.cjs"
+      ]
+    },
+    {
+      "path": "client/chat/scripts/input.ts",
+      "originalSha256": "a4aef8e439addb8d6f72776e4e89ffbea38ebee51e92d64ff59f5cb64e51c37b",
+      "sha256": "e901dd347a6c41529a0277006cc00802178812021bfa2e2e55b75fe83bd165ac",
+      "reason": "The context meter also shows the provider-reported prompt-cache rate for the running turn or the latest reply.",
+      "verifiedBy": [
+        "tests/prompt-cache.test.cjs"
       ]
     }
   ]
