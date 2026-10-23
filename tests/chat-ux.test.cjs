@@ -64,7 +64,7 @@ test('Retry does nothing while a turn is running in the chat', () => {
 });
 
 /** Run `fn(page)` against the app wired to a local provider whose streaming replies come from `stream`. */
-async function withFixtureApp(stream, fn) {
+async function withFixtureApp(stream, fn, pageOptions = {}) {
   const provider = createServer(async (request, response) => {
     response.setHeader('content-type', 'application/json');
     if (request.url === '/v1/models') return response.end(JSON.stringify({ data: [{ id: 'fixture-model' }] }));
@@ -95,7 +95,7 @@ async function withFixtureApp(stream, fn) {
     }
     assert.ok(origin, logs);
     browser = await chromium.launch(browserLaunchOptions());
-    const page = await browser.newPage();
+    const page = await browser.newPage(pageOptions);
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.route('**/*', route => (new URL(route.request().url()).origin === origin ? route.continue() : route.abort()));
@@ -227,4 +227,40 @@ test('a long chat opens at the bottom and scrolling up keeps the reading positio
     assert.ok(result.worstJump <= 2, 'scrolling up never jumps: ' + result.worstJump);
     assert.equal(result.targetInView, true);
   });
+});
+
+test('on touch screens small composer and code buttons get a full-size tap area', browserTest, async () => {
+  const phone = { viewport: { width: 375, height: 812 }, hasTouch: true, isMobile: true };
+  await withFixtureApp((response) => answer(response, 'Code:\n\n```js\nconst x = 1;\n```'), async (page) => {
+    assert.equal(await page.evaluate(() => matchMedia('(pointer: coarse)').matches), true);
+    await page.evaluate(async () => {
+      composerInput.value = 'show code';
+      await sendMessage();
+    });
+    await page.waitForFunction(() => document.querySelector('.msg-bubble .md-code-copy') && !activeStreams.size);
+    await page.evaluate(() => {
+      settings.agentMode = true;
+      renderComposerModes();
+    });
+    const hits = await page.evaluate(() => {
+      const hit = (el, dx, dy) => {
+        const r = el.getBoundingClientRect();
+        const found = document.elementFromPoint(r.left + r.width / 2 + dx, r.top + r.height / 2 + dy);
+        return found === el || el.contains(found);
+      };
+      const copy = document.querySelector('.msg-bubble .md-code-copy');
+      copy.scrollIntoView({ block: 'center' });
+      const chip = document.querySelector('.composer-mode-chip button');
+      const label = chip?.parentElement.querySelector('span');
+      const lr = label?.getBoundingClientRect();
+      return {
+        copy: hit(copy, 0, 18) && hit(copy, -18, 0),
+        chip: chip ? hit(chip, 14, 0) && hit(chip, 0, 14) : null,
+        label: lr ? document.elementFromPoint(lr.left + lr.width / 2, lr.top + lr.height / 2) === label : null,
+      };
+    });
+    assert.equal(hits.copy, true, 'a tap just outside the copy icon copies');
+    assert.equal(hits.chip, true, 'a tap just outside the chip remove button removes it');
+    assert.equal(hits.label, true, 'the chip label is not covered');
+  }, phone);
 });

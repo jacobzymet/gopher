@@ -37,8 +37,8 @@
     {
       "path": "client/chat/styles/composer.css",
       "originalSha256": "fb4208f77f984115ebbc41854f5ca0e4ef94a4d69a33ee49ca205c51bf5f3700",
-      "sha256": "d7e01cd57688d79a659c3fcd3cd7bb11bb1b096fcc5a5fc054f9086dc0a0c311",
-      "reason": "When the chat column is narrow (sidebar and Activity open), the composer uses the existing compact Branch button and keeps its tools on one row instead of stacking them; the empty capabilities label stays on one line.",
+      "sha256": "742309fd8ca3318e210e052ea70192364b303e29d70798676fb2f450234a0f6f",
+      "reason": "When the chat column is narrow (sidebar and Activity open), the composer uses the existing compact Branch button and keeps its tools on one row instead of stacking them; the empty capabilities label stays on one line. On touch screens the capability chip remove button gets a larger invisible tap area that does not cover the label.",
       "verifiedBy": [
         "tests/chat-ux.test.cjs",
         "Visual check at 1024px with sidebar and Activity open, idle and streaming"
@@ -47,8 +47,8 @@
     {
       "path": "client/chat/styles/content.css",
       "originalSha256": "e843fc2c59c2fd6bc55b723561dbb7c45dad8ced7bb88006fc159ef79ed7838f",
-      "sha256": "d2a866bb36db285ac02f5f3ef7f330d31ef073c673639f5ecc841e57680267a4",
-      "reason": "Style for the always-visible Retry action on a failed reply, matching the other message actions.",
+      "sha256": "d0a959cf420b1bd73f91134470ee8d3ca66a5777762b9f61dd05e388f837f6a2",
+      "reason": "Style for the always-visible Retry action on a failed reply, matching the other message actions. On touch screens the code copy button gets a larger invisible tap area.",
       "verifiedBy": [
         "tests/chat-ux.test.cjs",
         "Visual check of a failed reply"

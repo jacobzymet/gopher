@@ -804,6 +804,9 @@ html[data-theme="light"] .msg-bubble .hljs-params { color: oklch(40% 0.1 210); }
 }
 @media (hover: none), (pointer: coarse) {
   .msg-action { opacity: 1; min-width: 2.75rem; min-height: 2.75rem; }
+  /* A full-size tap area for code copy without changing the header's look. */
+  .msg-bubble .md-code-copy { position: relative; }
+  .msg-bubble .md-code-copy::after { content: ''; position: absolute; inset: -0.5rem; }
   .search-dialog-hint { display: none; }
 }
 .settings-nav {

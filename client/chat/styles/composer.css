@@ -503,6 +503,16 @@ html[data-theme="light"] .plus-menu-icon.is-agent { color: oklch(48% 0.16 305); 
   flex: 0 0 auto;
 }
 .composer-mode-chip button:hover { color: var(--color-ink); }
+/* Touch: a larger invisible tap area for the small remove button, mostly to the right so a tap
+   on the chip label does not turn the capability off. */
+@media (hover: none), (pointer: coarse) {
+  .composer-mode-chip button { position: relative; }
+  .composer-mode-chip button::after {
+    content: '';
+    position: absolute;
+    inset: -0.75rem -0.6rem -0.75rem -0.3rem;
+  }
+}
 /* Circular send/stop: an unmistakable single target at the corner. */
 .composer-buttons .btn-mic,
 .composer-buttons .btn-send,
