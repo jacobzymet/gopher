@@ -4,7 +4,7 @@ import { Providers } from './providers.js';
 import { terminals } from './terminal.js';
 import { browsers } from './tools/browser.js';
 import { skillsCatalog, type UserSkill } from './skills.js';
-import { executeTool, needsApproval, retrievalScope, risk, toolDefinitions, type ToolCall, type ToolContext, type ToolOutcome } from './tools/index.js';
+import { canonicalToolName, executeTool, needsApproval, retrievalScope, risk, toolDefinitions, type ToolCall, type ToolContext, type ToolOutcome } from './tools/index.js';
 import { agentPrompt, applyToolDescriptions } from './tools/prompts.js';
 import { ResearchProgress } from './tools/research.js';
 import { record } from './diagnostics.js';
@@ -155,8 +155,8 @@ export class Engine {
       }}catch(error){if(!signal.aborted&&(error as any).code==='provider_stalled'&&stallRetries++<1){this.agent(run,{phase:'content_clear',...(reasoning?{reasoning}:{})});this.agent(run,{phase:'notice',message:'The model stalled; retrying that step.'});continue;}throw error;}stallRetries=0;
       router.push('',true);
       const calls:ToolCall[]=[];
-      if(usedNative)for(const entry of pending.values()){let args:any;try{args=JSON.parse(entry.raw||'{}');}catch{args={__invalid_json:entry.raw};}calls.push({id:entry.id,wire_id:entry.wire_id,name:entry.name,arguments:args});}
-      else if(useTools)for(const match of rawText.matchAll(/<tool_call>\s*([\s\S]*?)\s*<\/tool_call>/g)){try{const value=JSON.parse(match[1]);const name=value.name||value.function?.name;const args=value.arguments||value.function?.arguments||{};if(name)calls.push({id:`tool_${randomUUID()}`,name,arguments:typeof args==='string'?JSON.parse(args):args});}catch{}}
+      if(usedNative)for(const entry of pending.values()){let args:any;try{args=JSON.parse(entry.raw||'{}');}catch{args={__invalid_json:entry.raw};}calls.push({id:entry.id,wire_id:entry.wire_id,name:canonicalToolName(entry.name),arguments:args});}
+      else if(useTools)for(const match of rawText.matchAll(/<tool_call>\s*([\s\S]*?)\s*<\/tool_call>/g)){try{const value=JSON.parse(match[1]);const name=value.name||value.function?.name;const args=value.arguments||value.function?.arguments||{};if(name)calls.push({id:`tool_${randomUUID()}`,name:canonicalToolName(name),arguments:typeof args==='string'?JSON.parse(args):args});}catch{}}
       if(!useTools||!calls.length){
         if(run.steers.length){if(visible)messages.push({role:'assistant',content:visible});continue;}
         const researchIncomplete=request.deep_research&&!forceFinal&&!research.ready();

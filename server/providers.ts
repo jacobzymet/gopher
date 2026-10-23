@@ -2,9 +2,16 @@ import type { Provider } from './config.js';
 import { prepareCodex, refreshCodexSecret, clearSubscriptionCache, codexClientVersion } from './subscription.js';
 import { record } from './diagnostics.js';
 import { isIP } from 'node:net';
-import { thinkingCapability, thinkingFromProps, visionCapability, contextCapability } from './tools/capabilities.js';
+import { createHash } from 'node:crypto';
+import { applyThinkingControl, thinkingCapability, thinkingFromProps, visionCapability, contextCapability } from './tools/capabilities.js';
+
+/** Titles only need the opening of a message. */
+const TITLE_SNIPPET_CHARS = 1_000;
 import { localCodexModels } from './subscription.js';
 import { promptText } from './tools/prompts.js';
+import { chooseApiStyle, classifyProviderError, routeSignal, type RouteSignal } from './provider-health.js';
+import { describeNetworkError } from './network-errors.js';
+import { sanitizeTitle } from './titles.js';
 
 export type { Provider } from './config.js';
 export interface ModelOption { model: string; name: string; provider_id: string; provider_name: string; base: string; api_style: string; context_length?: number; thinking_supported?: boolean; reasoning_supported?: boolean; vision?: boolean; connect_kind?: string; [key: string]: unknown }
@@ -158,9 +165,11 @@ export class Providers {
   }
   async probe(provider: Provider, force = false): Promise<{health: ProviderHealth; models: ModelOption[]}> {
     const generation=this.generation;let refreshError:unknown;if(provider.kind==='openai-codex'&&provider.token)try{await this.refresh(provider);}catch(error){refreshError=error;}
-    const key = `${provider.id}:${provider.base}:${provider.token}:${provider.api_style}`; const cached = this.cache.get(key);
+    // Cache keys identify a credential by digest so raw tokens are not retained as map keys.
+    const credential = createHash('sha256').update(provider.token).digest('base64url');
+    const key = `${provider.id}:${provider.base}:${credential}:${provider.api_style}`; const cached = this.cache.get(key);
     if (!force && cached && Date.now() - cached.at < 30_000) return cached;
-    let health: ProviderHealth; let models: ModelOption[] = [];
+    let health: ProviderHealth; let models: ModelOption[] = []; let networkFailure = false;
     try {
       if(refreshError)throw refreshError;if(generation!==this.generation)throw new Error('Provider session was cleared');
       const response = await providerFetch(provider, provider.kind === 'openai-codex' ? `models?client_version=${await codexClientVersion()}` : 'models', { signal: AbortSignal.timeout(6000) });
@@ -179,8 +188,14 @@ export class Providers {
         models=[...new Map(models.map(model=>[model.model,model])).values()];if(provider.api_style==='openai'&&providerHostIsLocal(new URL(canonicalBase).hostname))await this.enrichLocal(provider,models);
         health = { ok: Boolean(models.length), kind: models.length ? 'ready' : 'empty', model: models[0]?.model, message: models.length ? `${models.length} models available` : 'Connected; no models returned', model_count: models.length, checked_at: Date.now() };
       }
-    } catch (error) { health = { ok: false, kind: provider.kind === 'openai-codex' && !provider.token ? 'auth' : 'unreachable', message: (error as Error).message, error: (error as Error).message, model_count: 0, checked_at: Date.now() }; }
-    if (!models.length && cached?.models.length && health.kind === 'unreachable') models = cached.models;
+    } catch (error) {
+      const message = error instanceof SyntaxError ? 'The provider returned an invalid model list.' : describeNetworkError(error);
+      const kind = provider.kind === 'openai-codex' && !provider.token ? 'auth' : classifyProviderError(message);
+      health = { ok: false, kind, message, error: message, model_count: 0, checked_at: Date.now() };
+      networkFailure = true;
+    }
+    // A brief outage keeps the last good catalog so the model picker does not empty out.
+    if (!models.length && cached?.models.length && networkFailure && health.kind !== 'auth') models = cached.models;
     if(!models.length&&provider.kind==='openai-codex'&&provider.token&&!['auth','empty'].includes(health.kind))models=(await localCodexModels()).map(item=>({...item,id:`remote|${provider.id}|${provider.base}|${item.model}`,provider_id:provider.id,provider_name:provider.name,base:provider.base,api_style:provider.api_style,request_style:provider.api_style,ready:true,port:443}));
     const result = { at: Date.now(), health, models }; if(generation===this.generation){this.cache.set(key, result); this.health.set(provider.id, health);}return result;
   }
@@ -245,11 +260,62 @@ export class Providers {
     }
     yield { type: 'done' };
   }
-  async title(provider: Provider, model: string, message: string): Promise<string> {
-    let text = '';
-    const system=await promptText('title.system'),user=await promptText('title.user',{snippet:message.slice(0,12_000)});
-    for await (const part of this.complete(provider, { model, stream:false,messages: [{ role: 'system', content: system }, { role: 'user', content: user }], max_tokens: 100 }, AbortSignal.timeout(25_000))) if (part.type === 'text') text += part.text;
-    return text.replace(/<think>[\s\S]*?<\/think>/g, '').trim().replace(/^["'`]+|["'`]+$/g, '').slice(0, 160) || 'New conversation';
+  /** A catalog entry from the probe cache, without triggering a new probe. */
+  private cachedModel(provider: Provider, model: string): ModelOption | undefined {
+    for (const entry of this.cache.values()) {
+      const found = entry.models.find(item => item.provider_id === provider.id && item.model === model);
+      if (found) return found;
+    }
+    return undefined;
+  }
+  async title(provider: Provider, model: string, message: string, signal?: AbortSignal): Promise<string> {
+    const system = await promptText('title.system');
+    const user = await promptText('title.user', { snippet: message.slice(0, TITLE_SNIPPET_CHARS) });
+    const base: Record<string, unknown> = {
+      model, stream: false, max_tokens: 100, thinking_effort: 'off',
+      messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+    };
+    applyThinkingControl(base, this.cachedModel(provider, model));
+    // When the catalog has no exact control, still ask OpenAI-compatible servers not to think.
+    const knobs = provider.api_style === 'openai' && !('reasoning' in base) && !('reasoning_effort' in base)
+      && !('chat_template_kwargs' in base);
+    const payload = knobs ? { ...base, reasoning_effort: 'none', chat_template_kwargs: { enable_thinking: false } } : base;
+    const timeout = AbortSignal.timeout(25_000);
+    const collect = async (body: Record<string, unknown>) => {
+      let text = '', reasoning = '';
+      for await (const part of this.complete(provider, body, signal ? AbortSignal.any([signal, timeout]) : timeout)) {
+        if (part.type === 'text') text += part.text || '';
+        if (part.type === 'reasoning') reasoning += part.text || '';
+      }
+      return sanitizeTitle(text) ?? sanitizeTitle(reasoning);
+    };
+    let title: string | undefined;
+    try { title = await collect(payload); }
+    catch (error) {
+      // Strict OpenAI-compatible hosts reject unknown reasoning fields; retry the same small request without them.
+      if (!knobs || !/\(400\)/.test(String((error as Error)?.message))) throw error;
+      title = await collect(base);
+    }
+    return title || 'New conversation';
+  }
+  /** Probe both API styles at once and pick the one the server actually speaks. */
+  async detectApiStyle(provider: Provider, force = false) {
+    const routeFor = async (style: 'openai' | 'anthropic'): Promise<RouteSignal> => {
+      try {
+        const path = style === 'anthropic' ? 'messages' : 'chat/completions';
+        const response = await providerFetch({ ...provider, api_style: style }, path, { signal: AbortSignal.timeout(6000) });
+        await response.body?.cancel();
+        return routeSignal(response.status);
+      } catch { return 'unknown'; }
+    };
+    const [openai, anthropic, openaiRoute, anthropicRoute] = await Promise.all([
+      this.probe({ ...provider, api_style: 'openai' }, force), this.probe({ ...provider, api_style: 'anthropic' }, force),
+      routeFor('openai'), routeFor('anthropic'),
+    ]);
+    const evidence = (probe: typeof openai, route: RouteSignal) => ({ modelsOk: probe.models.length > 0, route });
+    const style = chooseApiStyle(provider.base, provider.token, evidence(openai, openaiRoute), evidence(anthropic, anthropicRoute));
+    const winner = style === 'anthropic' ? anthropic : openai, other = style === 'anthropic' ? openai : anthropic;
+    return { style, probe: winner.health.ok || !other.health.ok ? winner : { ...winner, health: other.health } };
   }
 }
 

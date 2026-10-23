@@ -12,6 +12,9 @@ export interface ToolOutcome { text: string; ok: boolean; running?: boolean; com
 export interface ToolContext { id: string; conversationId?: string; profileId?: string | null; skills: AgentSkills; userSkills: UserSkill[]; signal: AbortSignal; history: Map<string, {name: string; arguments: any; text: string}>; pages?:PageCache;getStore?: () => Promise<any>; getPreferences?: () => Promise<any>; clarify: (questions: any[]) => Promise<any> }
 const S = { type: 'string' }, N = { type: 'integer' }, B = { type: 'boolean' };
 const FILE_TOOLS = new Set(['read_file','list_dir','glob','grep','write_file','str_replace','delete_file','apply_patch']);
+/** Models trained on other agents sometimes use a different name for the same tool. */
+const TOOL_ALIASES: Record<string, string> = { read_skill: 'activate_skill' };
+export function canonicalToolName(name: string): string { return TOOL_ALIASES[name] ?? name; }
 export function risk(name: string): string { return ['write_file','str_replace','delete_file','apply_patch'].includes(name) ? 'write' : name === 'run_terminal' ? 'terminal' : name.startsWith('browser_') ? 'browser' : 'safe'; }
 export function needsApproval(name: string, mode: string): boolean { return !['ask_user','wait_terminal','read_tool_history','list_chats','search_chats','read_chat'].includes(name) && (mode !== 'auto_safe' || ['write','terminal'].includes(risk(name))); }
 function tool(name: string, description: string, properties: any = {}, required: string[] = []): any { return { type: 'function', function: { name, description, parameters: { type: 'object', properties, required } } }; }

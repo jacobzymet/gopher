@@ -215,9 +215,15 @@ export async function createApp(options: ServerOptions = {}) {
           if (String(body.token || '').trimStart().startsWith('{')) throw new HttpError(400, 'ChatGPT sessions cannot be sent to a custom URL.');
           const provider: Provider = { id: saved?.id || randomUUID(), kind: saved?.kind || 'custom', name: saved?.name || '', base: saved?.kind === 'openai-codex' ? saved.base : normalizeBase(String(body.base || saved?.base || '')), token: body.token || saved?.token || '', api_style: body.api_style || saved?.api_style || 'openai', allow_insecure_tls: body.allow_insecure_tls === true };
           const force = body.force === true;
-          let probe = await providers.probe(provider, force); let detected = false;
-          if (!body.api_style && provider.kind === 'custom' && !(probe.health as any).ok) { const alternate = { ...provider, api_style: 'anthropic' as const }; const next = await providers.probe(alternate, force); if ((next.health as any).ok || next.models.length) { provider.api_style = 'anthropic'; probe = next; detected = true; } }
-          assertActive(); health.set(provider.id, probe.health); return json(response, { ok: Boolean((probe.health as any).ok || probe.models.length), base: provider.base, api_style: provider.api_style, detected, refreshed: force, models: probe.models.length, health: probe.health });
+          // A saved provider is tested with its saved style first; detection runs for new
+          // providers set to Auto, or when the saved style no longer answers.
+          let probe = saved || body.api_style ? await providers.probe(provider, force) : null; let detected = false;
+          if (!body.api_style && provider.kind === 'custom' && !probe?.health.ok) {
+            const detection = await providers.detectApiStyle(provider, force);
+            if (!probe || detection.probe.health.ok) { provider.api_style = detection.style; probe = detection.probe; detected = provider.api_style !== saved?.api_style; }
+          }
+          probe ??= await providers.probe(provider, force);
+          assertActive(); health.set(provider.id, probe.health); return json(response, { ok: Boolean(probe.health.ok || probe.models.length), base: provider.base, api_style: provider.api_style, detected, refreshed: force, models: probe.models.length, health: probe.health });
         }
         if (path === '/api/providers' && method === 'GET') return json(response, providerResponse());
         if (path === '/api/providers' && method === 'POST') {
@@ -226,7 +232,7 @@ export async function createApp(options: ServerOptions = {}) {
           let style = body.api_style || 'openai';
           if (!['openai', 'anthropic', 'responses'].includes(style)) throw new HttpError(400, 'Invalid provider API style.');
           const provider: Provider = { id: randomUUID(), name: providerName(body.name, base), base, token: String(body.token || '').trim(), api_style: style, kind: 'custom', allow_insecure_tls: body.allow_insecure_tls === true };
-          if (!body.api_style) { const first = await providers.probe(provider); if (!(first.health as any).ok && !first.models.length) { const alternate = { ...provider, api_style: 'anthropic' as const }; const second = await providers.probe(alternate); if ((second.health as any).ok || second.models.length) provider.api_style = 'anthropic'; } }
+          if (!body.api_style) provider.api_style = (await providers.detectApiStyle(provider)).style;
           assertActive(); const next = structuredClone(storage.config);
           const existing = next.providers.findIndex(item => item.api_style === provider.api_style && normalizeBase(item.base, item.api_style) === base);
           if (existing >= 0) { if (next.providers[existing].kind !== 'custom') throw new HttpError(400, 'Built-in providers keep a fixed address. Use Connect or Disconnect.'); provider.id = next.providers[existing].id; if (body.token === undefined) provider.token = next.providers[existing].token; next.providers[existing] = provider; }
