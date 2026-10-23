@@ -41,7 +41,12 @@ function sendHarness() {
     newId: () => 'outbound-1', isConvoBusy: () => false, getOutboundQueue: () => [],
     dispatchOutboundTurn: (convo, item) => sent.push({ id: convo.id, item }),
   });
-  load(state, 'runtime.js', ['composerSendIsCurrent', 'sendMessage']);
+  load(state, 'runtime.js', [
+    'composerSendIsCurrent', 'sendMessage', 'composerEditTarget', 'composerReplyTarget', 'composerModelReady',
+    'newComposerAttempt', 'prepareSendAttachments', 'branchConversation', 'openBranchConversation',
+    'openDraftConversation', 'clearComposerAfterSend', 'composerOutbound', 'queueOrDispatch', 'finishComposerSend',
+    'composerDiagnosticContext',
+  ]);
   return { state, sent, hints, attachment, finish: () => resolvePrep([attachment]), preparations: () => preparations };
 }
 
@@ -157,7 +162,9 @@ function conflictHarness() {
   });
   load(state, 'state.js', ['conversationModelId']);
   load(state, 'controls.js', ['markOutboundStarting', 'clearOutboundStarting', 'outboundStartIsCurrent']);
-  load(state, 'runtime.js', ['runAssistantTurn', 'dropLiveSubscriber']);
+  load(state, 'runtime.js', ['runAssistantTurn', 'dropLiveSubscriber', 'readyTurnModel', 'claimTurnSlot', 'turnMark', 'clearStopMarkers', 'waitForPreviousCancel',
+    'trimmedSetting', 'turnSkillSettings', 'applyTurnMode', 'turnApiMessages', 'turnRequestBody', 'saveChatForRetrieval',
+    'postCompletion', 'sendTurnRequest']);
   const run = (overrides = {}) => state.runAssistantTurn(convo, {
     useAgent: false, skills: {}, text: 'queued prompt', dispatchedMessage: user,
     queueItem: { id: 'queued-1' }, previousTitle: 'title',

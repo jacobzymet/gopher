@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "description": "Intentional changes to frozen first-party scripts. Each entry records the original hash, the reviewed hash, why it changed, and which tests cover the behavior.",
+  "assets": [
+    {
+      "path": "client/chat/scripts/runtime.ts",
+      "originalSha256": "df149a5e1c9a4bd6ee0b8f12731e2d20c254c7bfc59df32cb25a559937090d6f",
+      "sha256": "20a59c67fa2ef2b1c9efc5feb5fe1ca542d6d7f1b2bd4b31148c6b2ebc5baa95",
+      "reason": "sendMessage, runAssistantTurn and driveAssistantSse split into named functions of 60 lines or fewer. Same steps in the same order, with awaits kept at the same points so no-attachment sends and non-cancel turns still start in the same tick.",
+      "verifiedBy": ["tests/send-races.test.cjs", "tests/tool-activity.test.cjs", "tests/session-lifecycle.test.cjs", "E2E browser suite"]
+    }
+  ]
+}

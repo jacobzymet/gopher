@@ -36,15 +36,14 @@ function harness(timeline = []) {
   vm.runInContext(declaration(runtime, 'timelineOrderSignature'), context);
   vm.runInContext(declaration(runtime, 'setStreamThinkingLabel'), context);
 
-  const eventStart = runtime.indexOf('  const onAgentEvent = (payload) => {');
-  const eventEnd = runtime.indexOf('  if (stream.catchingUp)', eventStart);
-  assert.ok(eventStart >= 0 && eventEnd > eventStart);
-  vm.runInContext(runtime.slice(eventStart, eventEnd) + '\nthis.onAgentEvent = onAgentEvent;', context);
-
-  const persistStart = runtime.indexOf('  const persistedParts = stream.timeline.length');
-  const persistEnd = runtime.indexOf('  if (viewing && dom)', persistStart);
-  assert.ok(persistStart >= 0 && persistEnd > persistStart);
-  vm.runInContext('function persist() {\n' + runtime.slice(persistStart, persistEnd) + '\nreturn persistedParts;\n}', context);
+  // Agent events are handled by top-level sse* functions; bind them to this harness's stream.
+  for (const name of [
+    'sseRefreshNotifications', 'sseContentClear', 'sseToolPrepare', 'sseToolExecuting', 'sseSettleCommandSessions',
+    'sseRememberImage', 'sseApplyToolResult', 'sseAddToolResult', 'sseToolResult', 'sseClarify', 'sseClarifyDone',
+    'sseSteer', 'sseStatus', 'sseNotice', 'sseAgentEvent', 'ssePersistedParts',
+  ]) vm.runInContext(declaration(runtime, name), context);
+  vm.runInContext('this.onAgentEvent = (payload) => sseAgentEvent({ convo, stream, typer }, payload);', context);
+  vm.runInContext('function persist() { return ssePersistedParts(stream); }', context);
   return context;
 }
 
