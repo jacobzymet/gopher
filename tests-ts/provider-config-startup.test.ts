@@ -53,7 +53,7 @@ test('named provider tables preserve settings and saved data through startup and
     assert.equal(storage.config.render_mode, 'markdown');
     assert.equal(storage.config.markdown, true);
     assert.equal(storage.config.save_sessions, true);
-    assert.equal((await storage.loadChats()).conversations[0].messages[0].content, 'kept');
+    assert.equal((await storage.loadChats()).conversations?.[0]?.messages?.[0].content, 'kept');
     assert.equal((await storage.loadPreferences()).theme, 'light');
     const expected = structuredClone(storage.config);
     await storage.close();
@@ -71,7 +71,7 @@ test('named provider tables preserve settings and saved data through startup and
     assert.equal(storage.unlocked, false);
     await storage.unlock('named-provider-passphrase');
     assert.deepEqual(storage.config, expected);
-    assert.equal((await storage.loadChats()).conversations[0].id, 'kept-chat');
+    assert.equal((await storage.loadChats()).conversations?.[0]?.id, 'kept-chat');
   } finally {
     await storage?.close();
     await rm(directory, { recursive: true, force: true });

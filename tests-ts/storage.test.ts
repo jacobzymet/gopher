@@ -27,12 +27,12 @@ test('legacy conversation arrays and profile stores retain every record', async 
     await writeFile(join(f.directory, 'chats.json'), JSON.stringify([{ id: 'original', messages: [{ content: 'kept' }] }]));
     const storage = await f.open();
     const store = await storage.loadChats();
-    assert.equal(store.conversations[0].messages[0].content, 'kept');
+    assert.equal(store.conversations?.[0]?.messages?.[0].content, 'kept');
     const profiles = { activeProfileId: 'work', profiles: [{ id: 'work', projects: [{ id: 'p1' }], conversations: store.conversations }] };
     await storage.saveChats(profiles);
     assert.deepEqual(await storage.loadChats(), { ...profiles, version: 3, profiles: [{ ...profiles.profiles[0], bots: [] }] });
     await assert.rejects(storage.saveChats({ profiles: null }), /Profiles/);
-    assert.equal((await storage.loadChats()).profiles[0].id, 'work');
+    assert.equal((await storage.loadChats()).profiles?.[0]?.id, 'work');
     assert.throws(() => normalizeStore({ projects: 'invalid' }), /arrays/);
   } finally { await f.cleanup(); }
 });
@@ -45,7 +45,7 @@ test('a data directory has exactly one active writer and can reopen after close'
     await storage.close();
     const reopened = await f.open();
     await reopened.saveChats([{ id: 'ok' }]);
-    assert.equal((await reopened.loadChats()).conversations[0].id, 'ok');
+    assert.equal((await reopened.loadChats()).conversations?.[0]?.id, 'ok');
   } finally { await f.cleanup(); }
 });
 
@@ -77,13 +77,13 @@ test('encryption protects chats, preferences, provider topology, skills and diag
     storage = await f.open();
     assert.equal(storage.encrypted, true); assert.equal(storage.unlocked, false);
     await storage.unlock('correct horse battery');
-    assert.equal((await storage.loadChats()).conversations[0].title, 'Private title');
+    assert.equal((await storage.loadChats()).conversations?.[0]?.title, 'Private title');
     assert.equal(storage.config.providers.find(p => p.id === 'secret-provider')?.token, 'private-api-key');
     assert.equal((await storage.listSkills())[0]?.id, skill.id);
     assert.equal(storage.diagnostics.view().entries[0]?.data.includes('do-not-log'), false);
     await storage.disableEncryption('correct horse battery');
     assert.equal(storage.encrypted, false);
-    assert.equal(JSON.parse(await readFile(join(f.directory, 'chats.json'), 'utf8')).conversations[0].title, 'Private title');
+    assert.equal(JSON.parse(await readFile(join(f.directory, 'chats.json'), 'utf8')).conversations?.[0]?.title, 'Private title');
     await assert.rejects(readFile(join(f.directory, 'provider-tokens.json')), /ENOENT/);
     await assert.rejects(readFile(join(f.directory, 'diagnostics.json')), /ENOENT/);
     assert.equal((await storage.listSkills())[0]?.content, 'Internal workflow');
@@ -172,7 +172,7 @@ test('an interrupted encryption transition resumes from its authenticated snapsh
     assert.equal(storage.transitionPending, true);
     await storage.unlock('recovery-password');
     assert.equal(storage.transitionPending, false);
-    assert.equal((await storage.loadChats()).conversations[0].id, 'recovered');
+    assert.equal((await storage.loadChats()).conversations?.[0]?.id, 'recovered');
     assert.equal((await storage.loadPreferences()).theme, 'light');
   } finally { key.fill(0); await f.cleanup(); }
 });
@@ -184,9 +184,9 @@ test('memory mode is volatile and returning to disk persists current edits', asy
     await storage.saveChats([{ id: 'disk' }]);
     await storage.setStorageMode('memory');
     await storage.saveChats([{ id: 'memory' }]);
-    assert.equal(JSON.parse(await readFile(join(f.directory, 'chats.json'), 'utf8')).conversations[0].id, 'disk');
+    assert.equal(JSON.parse(await readFile(join(f.directory, 'chats.json'), 'utf8')).conversations?.[0]?.id, 'disk');
     await storage.setStorageMode('disk');
-    assert.equal(JSON.parse(await readFile(join(f.directory, 'chats.json'), 'utf8')).conversations[0].id, 'memory');
+    assert.equal(JSON.parse(await readFile(join(f.directory, 'chats.json'), 'utf8')).conversations?.[0]?.id, 'memory');
   } finally { await f.cleanup(); }
 });
 
@@ -471,7 +471,7 @@ test('abrupt process exit releases native data locks without stale PID leases', 
       catch (cause) { if (attempt === 19) throw cause; await new Promise(resolve => setTimeout(resolve, 100)); }
     }
     assert.ok(storage); await storage.saveChats([{ id: 'recovered-after-process-exit' }]);
-    assert.equal((await storage.loadChats()).conversations[0].id, 'recovered-after-process-exit');
+    assert.equal((await storage.loadChats()).conversations?.[0]?.id, 'recovered-after-process-exit');
   } finally { await f.cleanup(); }
 });
 
@@ -519,7 +519,7 @@ test('retired browser storage markers migrate to disk without hiding existing ch
     await writeFile(join(f.directory, 'chats.json'), '[{"id":"preserved-disk-history"}]');
     const storage = await f.open();
     assert.equal(storage.storageMode, 'disk'); assert.equal(storage.dataInfo().browser_storage, false);
-    assert.equal((await storage.loadChats()).conversations[0].id, 'preserved-disk-history');
+    assert.equal((await storage.loadChats()).conversations?.[0]?.id, 'preserved-disk-history');
     await assert.rejects(storage.setStorageMode('browser'), /has been removed/);
     assert.match(await readFile(f.configPath, 'utf8'), /storage = "disk"/);
   } finally { await f.cleanup(); }
