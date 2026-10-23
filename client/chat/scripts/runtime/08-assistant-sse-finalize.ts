@@ -185,6 +185,7 @@ function sseCommitMessage(turn: SseTurn, message: ChatMessage, dom: ActiveStream
     dom.row.dataset.raw = committedMessage.content || '';
     syncMessageSpeaker(dom.row, committedMessage);
     settleAssistantRow(dom.row, committedMessage, { animateCollapse: true });
+    syncRetryAction(dom.row);
   }
   convo.updatedAt = Date.now();
   if (typeof recordConversationNotification === 'function') {

@@ -17,9 +17,26 @@ const readScript = path => {
   return readdirSync(directory).filter(file => file.endsWith('.ts')).sort().map(file => readFileSync(resolve(directory, file), 'utf8')).join('');
 };
 
-test('the original HTML and every stylesheet retain their exact bytes', () => {
+// A frozen file may change only through a reviewed entry in ui-behavior-overrides.json, which
+// records the original hash, the reviewed hash, the reason, and the tests that cover it.
+const overrides = new Map(behaviorOverrides.assets.map(asset => [asset.path, asset]));
+
+test('every reviewed UI override names a frozen file, its original hash, a reason and tests', () => {
+  assert.equal(behaviorOverrides.schemaVersion, 1);
+  assert.equal(overrides.size, behaviorOverrides.assets.length);
+  const frozen = new Map([...baseline.assets, ...baseline.runtime].map(asset => [asset.path, asset.sha256]));
+  for (const [path, override] of overrides) {
+    assert.ok(frozen.has(path), 'override for unknown file ' + path);
+    assert.equal(override.originalSha256, frozen.get(path), path);
+    assert.match(override.sha256, /^[0-9a-f]{64}$/, path);
+    assert.ok(override.reason && override.verifiedBy.length, path);
+  }
+});
+
+test('the original HTML and every stylesheet retain their exact bytes or a reviewed override', () => {
   assert.equal(baseline.assets.length, 13);
   for (const asset of baseline.assets) {
+    const override = overrides.get(asset.path);
     let bytes = readFileSync(resolve(root, asset.path));
     // Normalize toolchain labels before comparing the reference HTML.
     if (asset.path === 'client/chat.html') {
@@ -28,23 +45,13 @@ test('the original HTML and every stylesheet retain their exact bytes', () => {
         'require Rust and your platform’s build dependencies.',
       ));
     }
-    assert.equal(digest(bytes), asset.sha256, asset.path);
+    assert.equal(digest(bytes), override?.sha256 || asset.sha256, asset.path);
   }
 });
 
-// A frozen script may change only through a reviewed entry in ui-behavior-overrides.json.
 test('all first-party browser behavior retains the frozen original runtime or a reviewed override', () => {
-  assert.equal(behaviorOverrides.schemaVersion, 1);
-  const overrides = new Map(behaviorOverrides.assets.map(asset => [asset.path, asset]));
-  assert.equal(overrides.size, behaviorOverrides.assets.length);
-  const frozen = new Set(baseline.runtime.map(asset => asset.path));
-  for (const path of overrides.keys()) assert.ok(frozen.has(path), 'override for unknown script ' + path);
   for (const asset of baseline.runtime) {
     const override = overrides.get(asset.path);
-    if (override) {
-      assert.equal(override.originalSha256, asset.sha256, asset.path);
-      assert.ok(override.reason && override.verifiedBy.length, asset.path);
-    }
     let code = transformSync(readScript(resolve(root, asset.path)), {
       loader: 'ts', target: 'es2022', legalComments: 'none',
     }).code;

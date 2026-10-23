@@ -156,6 +156,15 @@ html[data-theme="light"] .msg-bubble .hljs-params { color: oklch(40% 0.1 210); }
 .msg-action:focus-visible,
 .msg-action.is-copied { opacity: 1; }
 .msg-action:hover { color: var(--color-accent); background: var(--accent-wash); }
+/* A failed reply keeps its Retry visible; it is the next thing to do. */
+.msg-action.msg-action-retry {
+  opacity: 1;
+  gap: 0.3rem;
+  padding: 0.3rem 0.55rem;
+  line-height: 1;
+  font: inherit;
+  font-size: var(--text-xs);
+}
 .msg-action.is-copied { color: var(--color-ok); }
 .msg.is-editing .msg-actions { display: none; }
 .msg.is-editing .msg-meta { display: none; }

@@ -296,6 +296,70 @@ function attachMessageActions(row: HTMLElement) {
   }
 
   footer.appendChild(actions);
+  syncRetryAction(row);
+}
+
+const RETRY_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path>' +
+    '<path d="M3 3v5h5"></path>' +
+  '</svg>';
+
+/** The index of the user message a failed last reply answered, or -1 when it cannot be retried. */
+function retryableUserIndex(convo: Conversation | null | undefined, index: number): number {
+  const messages = convo?.messages;
+  if (!messages || !Number.isInteger(index) || index !== messages.length - 1) return -1;
+  const message = messages[index];
+  if (!message || message.role !== 'assistant' || !message.error) return -1;
+  return messages[index - 1]?.role === 'user' ? index - 1 : -1;
+}
+
+/** Show Retry on a failed last reply while nothing is running in its chat; remove it otherwise. */
+function syncRetryAction(row: HTMLElement) {
+  const actions = row.querySelector(':scope > .msg-footer > .msg-actions') as HTMLElement | null;
+  if (!actions || !row.classList.contains('msg-role-assistant')) return;
+  const convo = conversations.find((item) => item.id === activeId);
+  const retryable = retryableUserIndex(convo, Number(row.dataset.msgIndex)) >= 0
+    && !(convo && isConvoBusy(convo.id));
+  const existing = actions.querySelector(':scope > .msg-action-retry');
+  if (!retryable) {
+    existing?.remove();
+    return;
+  }
+  if (existing) return;
+  const retryBtn = document.createElement('button');
+  retryBtn.type = 'button';
+  retryBtn.className = 'msg-action msg-action-retry';
+  retryBtn.setAttribute('aria-label', 'Retry this reply');
+  retryBtn.title = 'Send your message again';
+  retryBtn.innerHTML = RETRY_ICON + '<span>Retry</span>';
+  retryBtn.addEventListener('click', () => retryFailedReply(row));
+  actions.insertBefore(retryBtn, actions.firstChild);
+}
+
+/** Refresh every Retry button in the open thread (after a turn starts or ends). */
+function syncRetryActions() {
+  if (typeof chatThread === 'undefined' || !chatThread) return;
+  (chatThread.querySelectorAll('.msg-role-assistant') as NodeListOf<HTMLElement>).forEach(syncRetryAction);
+}
+
+/** Send the failed reply's user message again, exactly as an unchanged edit would. */
+function retryFailedReply(row: HTMLElement) {
+  const convo = conversations.find((item) => item.id === activeId);
+  const userIndex = retryableUserIndex(convo, Number(row.dataset.msgIndex));
+  if (!convo || userIndex < 0 || isConvoBusy(convo.id)) {
+    syncRetryAction(row);
+    return;
+  }
+  const userRow = chatThread.querySelector(
+    '.msg-role-user[data-msg-index="' + userIndex + '"]'
+  ) as HTMLElement | null;
+  const text = userRow?.dataset.raw || convo.messages[userIndex].content || '';
+  if (!userRow || !text.trim()) {
+    showComposerHint('Could not find the message to retry. Edit it to send again.');
+    return;
+  }
+  void submitEditedMessage(userRow, text);
 }
 
 function buildBubble(role: string, content: string | undefined, index: number, message: ChatMessage, { animate = false } = {}) {

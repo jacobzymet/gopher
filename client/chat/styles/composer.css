@@ -457,9 +457,14 @@ html[data-theme="light"] .plus-menu-icon.is-agent { color: oklch(48% 0.16 305); 
 }
 .composer-modes:empty { display: none; }
 .composer-capabilities-empty {
+  display: block;
   color: var(--color-muted);
   font-size: var(--text-xs);
   line-height: 1.75rem;
+  /* One line in a narrow column instead of an orphaned second word. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .composer-mode-chip {
   display: inline-flex;
@@ -571,6 +576,24 @@ html[data-theme="light"] .plus-menu-icon.is-agent { color: oklch(48% 0.16 305); 
     min-width: 2.1rem;
     padding: 0;
   }
+}
+/* The same compact Branch button when the window is wide but the chat column is
+   narrow (sidebar and Activity both open), so the tool buttons never stack. */
+.composer-actions { container: composer-actions / inline-size; }
+@container composer-actions (max-width: 340px) {
+  .composer-buttons .btn-branch-label { display: none; }
+  .composer-buttons .btn-branch {
+    width: 2.1rem;
+    min-width: 2.1rem;
+    padding: 0;
+  }
+  /* An empty usage meter is the least useful control when space is tight. */
+  .composer-buttons .context-usage.is-unavailable { display: none; }
+  /* Still too narrow: the send group moves to its own row, right-aligned,
+     rather than squeezing the tools into a vertical stack. */
+  .composer-tools { flex: 0 0 auto; flex-wrap: nowrap; }
+  .composer-actions { flex-wrap: wrap; }
+  .composer-buttons { margin-left: auto; }
 }
 .composer-attachments {
   display: flex;

@@ -274,5 +274,6 @@ function syncComposerStreamUi() {
     if (convo && getOutboundQueue(activeId).length) renderOutboundQueue(convo);
   }
   if (typeof syncSidebarBusyUi === 'function') syncSidebarBusyUi();
+  if (typeof syncRetryActions === 'function') syncRetryActions();
 }
 
