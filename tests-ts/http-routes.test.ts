@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { request, type IncomingHttpHeaders } from 'node:http';
+import { createServer, request, type IncomingHttpHeaders } from 'node:http';
+import { once } from 'node:events';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -115,4 +116,65 @@ test('API routing, bodies and methods keep their status codes and messages', asy
     const cancel = await f.send('/api/chat/cancel', { method: 'POST', data: { conversation_id: 'idle' } });
     assert.deepEqual(cancel.body, { ok: true, cancelled: false, settled: true });
   } finally { await f.cleanup(); }
+});
+
+test('a refused body closes its connection, so a reused keep-alive socket keeps working', async () => {
+  const f = await fixture();
+  try {
+    const big = await f.send('/api/chat/title', { method: 'POST', raw: 'x', headers: { 'content-length': String(17 * 1024 * 1024) } });
+    assert.equal(big.status, 413);
+    assert.equal(big.headers.connection, 'close');
+    assert.equal((await f.send('/api/state')).status, 200);
+  } finally { await f.cleanup(); }
+});
+
+test('request bodies are validated: empty writes cannot replace saved data and wrong types are refused', async () => {
+  const f = await fixture();
+  try {
+    await f.send('/api/data/store', { method: 'PUT', data: [{ id: 'kept', title: 'Kept' }] });
+    const empty = await f.send('/api/data/store', { method: 'PUT', raw: '' });
+    assert.equal(empty.status, 400); assert.equal(empty.body.error, 'Request body is required.');
+    assert.equal((await f.send('/api/data/store')).body.conversations[0].title, 'Kept');
+    assert.equal((await f.send('/api/data/preferences', { method: 'PUT' })).status, 400);
+    const typed = await f.send('/api/data/encryption/unlock', { method: 'POST', data: { passphrase: 12345 } });
+    assert.equal(typed.status, 400); assert.equal(typed.body.error, 'The passphrase must be text.');
+    const array = await f.send('/api/chat/approve', { method: 'POST', data: ['not', 'an', 'object'] });
+    assert.equal(array.status, 400); assert.equal(array.body.error, 'Request body must be a JSON object.');
+    const steer = await f.send('/api/chat/steer', { method: 'POST', data: { id: 'x', text: 'hi', client_id: 7 } });
+    assert.equal(steer.status, 400); assert.equal(steer.body.error, 'The client id must be text.');
+  } finally { await f.cleanup(); }
+});
+
+test('a title request cancelled by the client also cancels the upstream model call', async () => {
+  let upstreamClosed: () => void = () => {};
+  const closed = new Promise<void>(resolve => { upstreamClosed = resolve; });
+  const upstream = createServer((req, res) => {
+    if (req.url === '/v1/models') { res.setHeader('content-type', 'application/json'); res.end('{"data":[{"id":"m"}]}'); return; }
+    req.resume();
+    res.on('close', () => upstreamClosed());
+    res.writeHead(200, { 'content-type': 'application/json' });
+  });
+  upstream.listen(0, '127.0.0.1');
+  await once(upstream, 'listening');
+  const base = `http://127.0.0.1:${(upstream.address() as { port: number }).port}/v1`;
+  const f = await fixture();
+  try {
+    const added = await f.send('/api/providers', { method: 'POST', data: { name: 'Slow', base, api_style: 'openai' } });
+    const provider = added.body.providers.find((item: { name: string }) => item.name === 'Slow');
+    const payload = JSON.stringify({ message: 'Hello there', model: 'm', provider_id: provider.id });
+    const cookie = (f.bootstrap.headers['set-cookie']?.[0] || '').split(';')[0]!;
+    const req = request({ host: '127.0.0.1', port: f.port, path: '/api/chat/title', method: 'POST', agent: false,
+      headers: { cookie, 'content-type': 'application/json', 'content-length': String(Buffer.byteLength(payload)) } });
+    req.on('error', () => {});
+    req.end(payload);
+    await new Promise(resolve => setTimeout(resolve, 300));
+    const started = Date.now();
+    req.destroy();
+    await Promise.race([closed, new Promise((_, reject) => setTimeout(() => reject(new Error('upstream call was not cancelled')), 5000))]);
+    assert.ok(Date.now() - started < 5000);
+  } finally {
+    await f.cleanup();
+    upstream.closeAllConnections();
+    await new Promise<void>(resolve => upstream.close(() => resolve()));
+  }
 });

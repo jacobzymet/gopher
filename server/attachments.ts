@@ -1,4 +1,3 @@
-import path from 'node:path';
 export interface ExtractRequest { filename?: string; mime?: string; content_base64: string }
 export interface ExtractResponse { text: string; kind: 'pdf' | 'text'; filename: string }
 export function decodeAttachment(raw: string): Buffer {
