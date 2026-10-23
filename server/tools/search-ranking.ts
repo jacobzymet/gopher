@@ -48,7 +48,8 @@ export function isSearchEngineUrl(url: string): boolean {
   if (host.includes('duckduckgo.com') || host === 'bing.com' || host.endsWith('.bing.com')) return true;
   if (['search.yahoo.com', 'search.brave.com', 'news.google.com', 'news.yahoo.com'].includes(host)) return true;
   if (host.endsWith('.news.yahoo.com')) return true;
-  return host.includes('google.') && ['/search', '/url?', '/aclk', '/topics', '/news'].some(part => lower.includes(part));
+  return host.includes('google.')
+    && ['/search', '/url?', '/aclk', '/topics', '/news'].some(part => lower.includes(part));
 }
 
 /** Search-engine, advertising and sign-in pages are never useful search results. */

@@ -105,7 +105,8 @@ async function duckDuckGoPage(url: string, init: RequestInit, signal: AbortSigna
 }
 
 /** Query DuckDuckGo HTML (GET and POST) and Lite together; any endpoint that answers contributes. */
-export async function duckDuckGo(query: string, settings: EngineSettings, signal: AbortSignal): Promise<SourcedResults[]> {
+export async function duckDuckGo(query: string, settings: EngineSettings,
+  signal: AbortSignal): Promise<SourcedResults[]> {
   const params = duckDuckGoParams(query, settings);
   const headers = browserHeaders(acceptLanguage(settings.searchRegion));
   const limit = settings.searchResultCount;
@@ -182,13 +183,15 @@ export async function searxng(query: string, settings: EngineSettings, signal: A
   try {
     type Body = { results?: Array<{ title?: string; url?: string; content?: string }> };
     const body = await jsonBody<Body>(await request());
-    const results = await cleanResults((body.results ?? []).map(item => ({ ...item, snippet: item.content })), limit * 2);
+    const results = await cleanResults((body.results ?? []).map(item => ({ ...item, snippet: item.content })),
+      limit * 2);
     if (results.length) return [{ source: 'searxng', results }];
   } catch (error) { if (signal.aborted) throw error; }
   url.searchParams.delete('format');
   const html = await boundedText(await request());
   const entries = [...html.matchAll(/<h[234][^>]*>\s*<a[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)];
-  const results = await cleanResults(entries.map(entry => ({ url: decodeEntities(entry[1]!), title: inlineText(entry[2]!) })), limit * 2);
+  const results = await cleanResults(entries.map(entry => ({ url: decodeEntities(entry[1]!),
+    title: inlineText(entry[2]!) })), limit * 2);
   return results.length ? [{ source: 'searxng', results }] : [];
 }
 
@@ -219,7 +222,8 @@ async function parallelMcp(query: string, settings: EngineSettings, signal: Abor
     jsonrpc: '2.0', id: 1, method: 'initialize',
     params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'gopher', version: '0.1.0' } },
   };
-  const initialized = await safeFetch(endpoint, signal, { method: 'POST', headers: common, body: JSON.stringify(initialize) });
+  const initialized = await safeFetch(endpoint, signal,
+    { method: 'POST', headers: common, body: JSON.stringify(initialize) });
   const sessionId = initialized.headers.get('mcp-session-id');
   await boundedText(initialized);
   if (!sessionId) throw new Error('Parallel MCP did not return a session identifier');
@@ -244,22 +248,26 @@ async function parallelMcp(query: string, settings: EngineSettings, signal: Abor
   }
 }
 
-export async function parallel(query: string, settings: EngineSettings, signal: AbortSignal, apiKey?: string): Promise<SourcedResults[]> {
+export async function parallel(query: string, settings: EngineSettings, signal: AbortSignal,
+  apiKey?: string): Promise<SourcedResults[]> {
   if (!apiKey) return [{ source: 'parallel', results: await parallelMcp(query, settings, signal) }];
   const advanced: Record<string, unknown> = { max_results: settings.searchResultCount };
   const country = regionCountry(settings.searchRegion);
   if (country) advanced.location = country;
   const days = recencyDays(settings.searchRecency);
-  if (days) advanced.source_policy = { after_date: new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10) };
+  if (days) advanced.source_policy = { after_date: new Date(Date.now() - days * 86_400_000).toISOString().slice(0,
+    10) };
   const response = await safeFetch('https://api.parallel.ai/v1/search', signal, {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': apiKey },
-    body: JSON.stringify({ objective: query, search_queries: [query], mode: settings.parallelMode, advanced_settings: advanced }),
+    body: JSON.stringify({ objective: query, search_queries: [query], mode: settings.parallelMode,
+      advanced_settings: advanced }),
   });
   const body = await jsonBody<ParallelBody>(response);
   return [{ source: 'parallel', results: await cleanResults(body.results ?? [], settings.searchResultCount) }];
 }
 
-export async function tinyfish(query: string, settings: EngineSettings, signal: AbortSignal, apiKey?: string): Promise<SourcedResults[]> {
+export async function tinyfish(query: string, settings: EngineSettings, signal: AbortSignal,
+  apiKey?: string): Promise<SourcedResults[]> {
   if (!apiKey) throw new Error('No API key is configured for TinyFish. Open Settings → Web search to add one.');
   const url = new URL('https://api.search.tinyfish.ai/');
   url.searchParams.set('query', query);

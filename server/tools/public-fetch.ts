@@ -112,7 +112,8 @@ export interface PublicFetchDependencies {
   request?: typeof fetch;
   agent?: (lookup: LookupFunction) => Agent;
 }
-export type PublicFetch = (raw: string, signal: AbortSignal, init?: RequestInit, redirects?: number) => Promise<Response>;
+export type PublicFetch = (raw: string, signal: AbortSignal, init?: RequestInit,
+  redirects?: number) => Promise<Response>;
 
 export function createPublicFetch(dependencies: PublicFetchDependencies = {}): PublicFetch {
   const resolver = dependencies.resolve || resolveAddresses;

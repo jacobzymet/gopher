@@ -26,7 +26,8 @@ const LABELS: Record<SearchProvider, string> = {
 };
 
 /** At balanced and deep settings, read the top result pages and append their text to the snippets. */
-async function enrichForDepth(results: SearchResult[], settings: SearchSettings, signal: AbortSignal, cache?: PageCache) {
+async function enrichForDepth(results: SearchResult[], settings: SearchSettings, signal: AbortSignal,
+  cache?: PageCache) {
   if (settings.searchDepth === 'fast' || settings.searchPageCount === 0) {
     return results.map(item => ({ ...item, snippet: item.snippet.slice(0, 1200) }));
   }
@@ -59,7 +60,8 @@ export async function searchWeb(query: string, settings: SearchSettings, signal:
     if (!results.length) throw new Error(`${provider} returned no usable results`);
     const label = LABELS[provider];
     const mode = provider === 'parallel' ? ` · ${credentials.parallel ? settings.parallelMode : 'free MCP'}` : '';
-    return { provider: label, results: await enrichForDepth(results, settings, signal, cache), note: `${label}${mode} · ${settings.searchDepth}` };
+    return { provider: label, results: await enrichForDepth(results, settings, signal, cache),
+      note: `${label}${mode} · ${settings.searchDepth}` };
   };
   if (settings.searchProvider !== 'auto') return run(settings.searchProvider);
   const order: SearchProvider[] = settings.searxngUrl.trim() ? ['searxng', 'duckduckgo'] : ['duckduckgo'];
@@ -67,13 +69,15 @@ export async function searchWeb(query: string, settings: SearchSettings, signal:
   for (const provider of order) {
     try {
       const result = await run(provider);
-      return errors.length ? { ...result, note: `${result.note} · fallback after ${errors.join('; ').slice(0, 180)}` } : result;
+      return errors.length
+        ? { ...result, note: `${result.note} · fallback after ${errors.join('; ').slice(0, 180)}` } : result;
     } catch (error) {
       if (signal.aborted) throw error;
       errors.push(`${provider}: ${describeNetworkError(error)}`);
     }
   }
-  const hint = settings.searxngUrl.trim() ? '' : ' DuckDuckGo may be blocking automated searches; set a SearXNG instance '
+  const hint = settings.searxngUrl.trim()
+    ? '' : ' DuckDuckGo may be blocking automated searches; set a SearXNG instance '
     + 'or choose Parallel or TinyFish in Settings → Web search.';
   throw new Error(`Auto search failed. ${errors.join('; ').slice(0, 600)}${hint}`);
 }
