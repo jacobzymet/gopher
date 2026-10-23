@@ -358,7 +358,7 @@ function readSettingsForm() {
     diagnosticsEnabled: !!(document.getElementById('settingDiagnosticsEnabled') as HTMLInputElement)?.checked,
     approvalMode: (document.querySelector('#approvalModeToggle [data-approval-mode].is-active') as HTMLElement)?.dataset.approvalMode
       || settings.approvalMode
-      || 'manual',
+      || DEFAULT_SETTINGS.approvalMode,
     agentMode: settings.agentMode,
     deepResearch: settings.deepResearch,
     attachmentsMode: (document.getElementById('settingAttachmentsMode') as HTMLSelectElement).value,

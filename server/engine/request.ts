@@ -5,7 +5,7 @@ import type { ChatMessage } from '../providers.js';
  * (agent mode, deep research, skills). Parameters Gopher does not know pass through to the provider.
  */
 
-export type ApprovalMode = 'manual' | 'auto_safe';
+export type ApprovalMode = 'manual' | 'auto_safe' | 'auto_all';
 
 /** Agent capabilities and their settings. Flags are enabled by any truthy value, as before. */
 export interface AgentSkills {

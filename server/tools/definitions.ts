@@ -24,9 +24,9 @@ export function risk(name: string): Risk {
   return name.startsWith('browser_') ? 'browser' : 'safe';
 }
 
-/** Manual mode asks for every call; auto-safe mode asks only for writes and terminal commands. */
+/** Auto-all skips approval; auto-safe still asks for writes and terminal commands. */
 export function needsApproval(name: string, mode: string): boolean {
-  if (ALWAYS_ALLOWED.includes(name)) return false;
+  if (mode === 'auto_all' || ALWAYS_ALLOWED.includes(name)) return false;
   return mode !== 'auto_safe' || risk(name) === 'write' || risk(name) === 'terminal';
 }
 

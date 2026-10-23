@@ -203,6 +203,57 @@ test('connection feedback tolerates a transient failure and recovers after a suc
   assert.equal(updates, 2);
 });
 
+function welcomeHarness() {
+  const element = () => ({
+    dataset: {}, children: [], classList: { toggle() {} },
+    replaceChildren() { this.children = []; },
+    appendChild(child) { this.children.push(child); }, addEventListener() {},
+  });
+  const host = element();
+  const state = harness({
+    localDataLoadError: '', serverReady: false, modelMenuOptions: [],
+    document: { getElementById: () => host, createElement: element },
+    shortcutLabel: value => value,
+  });
+  load(state, ['renderWelcomeTools']);
+  return { state, host };
+}
+
+test('welcome cards stay stable while the saved provider catalog loads and the picker catches up', () => {
+  const { state, host } = welcomeHarness();
+  let starters;
+  for (const network of [
+    null,
+    { remote_saved: true, remote_checking: true, remote_catalog_pending: true, remote_models: [] },
+    { remote_saved: true, remote_checking: true, remote_models: [] },
+    { remote_saved: true, remote_catalog_pending: true, remote_models: [] },
+    { remote_saved: true, remote_models: [{ id: 'saved-model', ready: false }] },
+    { remote_saved: true, remote_models: [{ id: 'saved-model', ready: true }] },
+  ]) {
+    state.latestState = network ? { network } : null;
+    state.renderWelcomeTools();
+    assert.equal(host.dataset.mode, 'ready', JSON.stringify(network));
+    assert.equal(host.children[0].className, 'welcome-starters');
+    assert.equal(host.children[0].children.length, 3);
+    if (starters) assert.equal(host.children[0], starters);
+    starters = host.children[0];
+  }
+});
+
+test('welcome setup appears only after discovery finishes without a configured model', () => {
+  for (const network of [
+    { remote_saved: false, remote_models: [] },
+    { remote_saved: true, remote_models: [] },
+    { remote_saved: true, remote_models: [{ id: 'sign-in', connect_kind: 'openai-codex' }] },
+  ]) {
+    const { state, host } = welcomeHarness();
+    state.latestState = { network };
+    state.renderWelcomeTools();
+    assert.equal(host.dataset.mode, 'connect');
+    assert.equal(host.children[0].className, 'welcome-connect');
+  }
+});
+
 test('workspace browser flows preserve drafts across navigation and reload, search all messages, find formatted text, and export', {
   skip: !appTestsEnabled || !chromium, timeout: 90000,
 }, async () => {

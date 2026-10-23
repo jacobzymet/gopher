@@ -493,7 +493,10 @@ function renderWelcomeTools() {
   const hidden = !!activeId || draftIncognito || isBotsSurface() || diskEncryptionLocked() || !!localDataLoadError;
   host.classList.toggle('is-hidden', hidden);
   if (hidden) return;
-  const noModels = !!latestState && !serverReady && !modelMenuOptions.some((option) => !option.connectKind);
+  const network = latestState?.network;
+  // An empty catalog during discovery is not evidence that setup is needed.
+  const noModels = !!network && !network.remote_checking && !network.remote_catalog_pending
+    && !(network.remote_models || []).some((model) => !model.connect_kind);
   const mode = noModels ? 'connect' : 'ready';
   if (host.dataset.mode === mode) return;
   host.dataset.mode = mode;

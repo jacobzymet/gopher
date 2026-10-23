@@ -84,7 +84,7 @@ function turnSkillSettings(skills: AssistantTurnOptions['skills'], convo: Conver
     })(),
     approval_mode: APPROVAL_MODES.includes(settings.approvalMode)
       ? settings.approvalMode
-      : 'manual',
+      : DEFAULT_SETTINGS.approvalMode,
     filesystem: !!settings.skillFilesystem,
     workspace_root: sessionWorkspaceRoot(),
     terminal: !!settings.skillTerminal,

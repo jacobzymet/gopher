@@ -19,7 +19,9 @@ function defaultBotsTurn() {
         ? settings.webSearchTinyfishApiKey.trim()
         : '',
       fetch_url: !!settings.skillFetchUrl,
-      approval_mode: settings.approvalMode === 'auto_safe' ? 'auto_safe' : 'manual',
+      approval_mode: APPROVAL_MODES.includes(settings.approvalMode)
+        ? settings.approvalMode
+        : DEFAULT_SETTINGS.approvalMode,
       filesystem: !!settings.skillFilesystem,
       workspace_root: sessionWorkspaceRoot(),
       terminal: !!settings.skillTerminal,

@@ -811,12 +811,17 @@
             <p class="settings-pane-lede">The model can use these tools in Agent mode. Open the composer <strong>+</strong> menu to select a tool, or type <code>@</code> to use a tool one time.</p>
             <div class="settings-section">
               <h3 class="settings-section-title">Approvals</h3>
-              <p class="field-hint" style="margin:0 0 0.75rem">This setting applies to all capabilities below. File writes and terminal commands always require your approval.</p>
+              <p class="field-hint" style="margin:0 0 0.75rem">This setting applies to all enabled capabilities below. Safe auto-approval is the default; file edits and terminal commands still ask first.</p>
               <div class="segmented segmented-stack" id="approvalModeToggle" role="tablist" aria-label="Tool approval">
-                <button type="button" data-approval-mode="auto_safe" role="tab" aria-selected="false">Auto-approve safe actions</button>
-                <button type="button" data-approval-mode="manual" class="is-active" role="tab" aria-selected="true">Ask before every action</button>
+                <button type="button" data-approval-mode="auto_safe" class="is-active" role="tab" aria-selected="true">Auto-approve safe actions</button>
+                <button type="button" data-approval-mode="manual" role="tab" aria-selected="false">Ask before every action</button>
+                <button type="button" data-approval-mode="auto_all" class="approval-mode-all" role="tab" aria-selected="false" aria-label="Approve all actions" aria-describedby="approvalAllWarning">
+                  <svg class="approval-mode-warning-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 3.9 2.1 18a2 2 0 0 0 1.7 3h16.4a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4m0 4h.01"/></svg>
+                  <span>Approve all actions</span>
+                  <span class="approval-mode-tooltip" id="approvalAllWarning" role="tooltip">Dangerous: enabled tools can edit or delete files, run terminal commands, and control the browser without asking. Only use with tasks and models you trust.</span>
+                </button>
               </div>
-              <p class="field-hint" style="margin-top:0.65rem">Auto-approve safe actions lets web searches, URL retrieval, file reads, and browser control proceed without asking. Ask before every action pauses each request until you choose Allow or Deny. Changes apply to new turns.</p>
+              <p class="field-hint" style="margin-top:0.65rem">Safe auto-approval lets web searches, URL retrieval, file reads, and browser control proceed without asking. Ask before every action pauses tool requests for approval. Approve all actions also allows file edits and terminal commands without asking. Changes apply to new turns.</p>
             </div>
             <div class="settings-section">
               <h3 class="settings-section-title">Web search</h3>
@@ -991,7 +996,7 @@
                 <span>
                   <strong style="color:var(--color-ink);font-weight:600">Enable browser</strong>
                   <span style="display:block;color:var(--color-muted);font-size:var(--text-xs);margin-top:0.2rem">
-                    Let the model open and control Chrome or Edge. This capability requires Agent mode and your approval. Chrome or Edge must be installed.
+                    Let the model open and control Chrome or Edge. Requires Agent mode and follows your approval setting. Chrome or Edge must be installed.
                   </span>
                 </span>
               </label>
@@ -1015,7 +1020,7 @@
                 <span>
                   <strong style="color:var(--color-ink);font-weight:600">Enable terminal</strong>
                   <span style="display:block;color:var(--color-muted);font-size:var(--text-xs);margin-top:0.2rem">
-                    Let the model run one command at a time in the workspace for this chat. Each command requires your approval. The app blocks commands that can destroy data or increase privileges.
+                    Let the model run one command at a time in the workspace for this chat. Commands ask for approval unless Approve all actions is selected. The app blocks commands that can destroy data or increase privileges.
                   </span>
                 </span>
               </label>

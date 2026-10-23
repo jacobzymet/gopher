@@ -81,7 +81,7 @@ const CHAT_BACKGROUND_POSITIONS = [
   'top left', 'top right', 'bottom left', 'bottom right',
 ];
 const PROJECT_MEMORY_MODES = ['default', 'project_only'];
-const APPROVAL_MODES = ['manual', 'auto_safe'];
+const APPROVAL_MODES = ['manual', 'auto_safe', 'auto_all'];
 const DEFAULT_PROFILE_ID = 'personal';
 const PROFILE_CONTEXT_KEYS: Array<'about' | 'instructions' | 'memory'> = ['about', 'instructions', 'memory'];
 const DEFAULT_SETTINGS = {
@@ -108,7 +108,7 @@ const DEFAULT_SETTINGS = {
   fetchUrlMaxChars: 8000,
   webSearchPageMaxChars: 0,
   skillDeepResearch: true,
-  approvalMode: 'manual',
+  approvalMode: 'auto_safe',
   diagnosticsEnabled: false,
   skillFilesystem: false,
   skillTerminal: false,

@@ -1245,7 +1245,7 @@ function resolveTurnSkills(mentionIds: Set<string>) {
       })(),
       approval_mode: APPROVAL_MODES.includes(settings.approvalMode)
         ? settings.approvalMode
-        : 'manual',
+        : DEFAULT_SETTINGS.approvalMode,
       filesystem,
       workspace_root: sessionWorkspaceRoot(),
       terminal: terminalCap,

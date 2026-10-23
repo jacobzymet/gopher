@@ -90,7 +90,7 @@ export class AgentTurn {
   // ------------------------------------------------------------------ preparation
 
   private configureSkills(): void {
-    this.skills = { chat_retrieval: true, approval_mode: 'manual', ...this.request.skills };
+    this.skills = { chat_retrieval: true, approval_mode: 'auto_safe', ...this.request.skills };
     if (!this.deepResearch) return;
     Object.assign(this.skills, { web_search: true, fetch_url: true, web_search_depth: 'deep' });
     this.skills.web_search_max_results = Math.max(10, Number(this.skills.web_search_max_results) || 0);

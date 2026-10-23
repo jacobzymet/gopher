@@ -88,7 +88,7 @@ function syncTerminalSkillControls() {
 function syncApprovalModeControls() {
   const mode = APPROVAL_MODES.includes(settings.approvalMode)
     ? settings.approvalMode
-    : 'manual';
+    : DEFAULT_SETTINGS.approvalMode;
   (document.querySelectorAll('#approvalModeToggle [data-approval-mode]') as NodeListOf<HTMLElement>).forEach((btn) => {
     const on = btn.dataset.approvalMode === mode;
     btn.classList.toggle('is-active', on);

@@ -5,15 +5,17 @@
     {
       "path": "client/chat/scripts/runtime.ts",
       "originalSha256": "df149a5e1c9a4bd6ee0b8f12731e2d20c254c7bfc59df32cb25a559937090d6f",
-      "sha256": "01f2052be0c852c221a0dada610aa9ab27d9767cc38dace95c6b646605ea1023",
-      "reason": "sendMessage, runAssistantTurn and driveAssistantSse split into named functions of 60 lines or fewer, with awaits kept at the same points so sends and turns start in the same tick as before. A finished failed reply refreshes its Retry action. A rejected unlock passphrase is selected so typing again replaces it. Live thinking text skips the Markdown cache. The clock is sent on the newest user message instead of a leading system message, so the cached prompt prefix survives between turns; replies save cached token counts.",
+      "sha256": "55597d2fd62b1f975ad29aab6cc8b33427d45034c428c85c02af6b191183dc49",
+      "reason": "sendMessage, runAssistantTurn and driveAssistantSse split into named functions of 60 lines or fewer, with awaits kept at the same points so sends and turns start in the same tick as before. A finished failed reply refreshes its Retry action. A rejected unlock passphrase is selected so typing again replaces it. Live thinking text skips the Markdown cache. The clock is sent on the newest user message instead of a leading system message, so the cached prompt prefix survives between turns; replies save cached token counts. Uses the safe default when assembling assistant-turn approval settings.",
       "verifiedBy": [
         "tests/send-races.test.cjs",
         "tests/tool-activity.test.cjs",
         "tests/session-lifecycle.test.cjs",
         "tests/chat-ux.test.cjs",
         "tests/markdown-cache.test.cjs",
-        "tests/prompt-cache.test.cjs"
+        "tests/prompt-cache.test.cjs",
+        "tests/chat-retrieval.test.cjs",
+        "tests/notifications.test.cjs"
       ]
     },
     {
@@ -30,10 +32,12 @@
     {
       "path": "client/chat/scripts/controls.ts",
       "originalSha256": "7275ad7af97dd249ddc19b964b9f59e22f73eb2b8f0b37e5d33340bb319a2f6e",
-      "sha256": "837e47205231f8c8f89035361bd9227965a1f47d4e3daa07f012fd28574bddd3",
-      "reason": "Stream start and end refresh Retry actions, so Retry hides while a turn runs.",
+      "sha256": "5023e1814df43cf559388ec2056cb2e349754a151dc64d0f29a41be4f24adfc8",
+      "reason": "Stream start and end refresh Retry actions, so Retry hides while a turn runs. Displays and saves the safe default while preserving all three approval modes.",
       "verifiedBy": [
-        "tests/chat-ux.test.cjs"
+        "tests/chat-ux.test.cjs",
+        "tests/chat-retrieval.test.cjs",
+        "tests/notifications.test.cjs"
       ]
     },
     {
@@ -60,29 +64,64 @@
     {
       "path": "client/chat/scripts/state.ts",
       "originalSha256": "739a8547444202ec2c6c7afd1a824bd67302ec7bc516c1a9b6a092b1e1cc8ad6",
-      "sha256": "bb338cde90c4fa88afc805326665341dcb5d054bbd385fb17e249495cab5877b",
-      "reason": "Locking encrypted data also clears the rendered-Markdown cache, which holds decrypted chat text.",
+      "sha256": "3090a037647cd5901508ca5f551b45bb98001c96e1eb857a22dbadadfcd960bb",
+      "reason": "Locking encrypted data also clears the rendered-Markdown cache, which holds decrypted chat text. Adds explicit auto_all approval mode and defaults new or unset preferences to auto_safe while preserving saved choices.",
       "verifiedBy": [
-        "tests/markdown-cache.test.cjs"
+        "tests/markdown-cache.test.cjs",
+        "tests/chat-retrieval.test.cjs",
+        "tests/notifications.test.cjs"
       ]
     },
     {
       "path": "client/chat.html",
       "originalSha256": "2c7002d85cab929c8257479006982d769627719b7b91e4229fb30dd90f8438f3",
-      "sha256": "693fa127baf7d806667a085dd88e33f899a3196a77884f56b21d2b0b0b590c7e",
-      "reason": "Groups prompt-cache reuse and token counts inside the context tooltip, removing the standalone toolbar label.",
+      "sha256": "7eb94b59935ea3e7daab32558a5bd34025ff3a8f3738eb02c3f6247994bd641c",
+      "reason": "Groups prompt-cache reuse and token counts inside the context tooltip, removing the standalone toolbar label. Adds explicit approve-all with a warning icon and accessible danger tooltip, selects safe auto-approval by default, and explains approval behavior for enabled tools.",
       "verifiedBy": [
-        "tests/prompt-cache.test.cjs"
+        "tests/prompt-cache.test.cjs",
+        "tests/chat-retrieval.test.cjs",
+        "tests/notifications.test.cjs"
       ]
     },
     {
       "path": "client/chat/scripts/input.ts",
       "originalSha256": "a4aef8e439addb8d6f72776e4e89ffbea38ebee51e92d64ff59f5cb64e51c37b",
-      "sha256": "3803bc6544abb48792c8d67f68fc630e651e4156e5a983423e285968e9cbded6",
-      "reason": "Shows provider-reported prompt reuse for the running turn or latest reply in a dedicated context-tooltip section with token counts; hides the section when cache data is unavailable.",
+      "sha256": "05e277c3ec382a3853e3c70f48da4bc8619c43faf247f6a0522ffc4779560448",
+      "reason": "Shows provider-reported prompt reuse for the running turn or latest reply in a dedicated context-tooltip section with token counts; hides the section when cache data is unavailable. Uses the safe default when assembling turn approval settings.",
       "verifiedBy": [
-        "tests/prompt-cache.test.cjs"
+        "tests/prompt-cache.test.cjs",
+        "tests/chat-retrieval.test.cjs",
+        "tests/notifications.test.cjs"
       ]
+    },
+    {
+      "path": "client/chat/scripts/workspace.ts",
+      "originalSha256": "768e1294759c483b94efadffcba242d315f373ad26ef50771185c74e3c63f118",
+      "sha256": "f99e63d6d5bf40efdb405652773f9e79078862b19a719198f411edb585c3169c",
+      "reason": "The welcome screen shows model setup only after provider discovery finishes with no selectable models. It reads the server catalog directly so an unpopulated picker cannot flash setup for configured users.",
+      "verifiedBy": [
+        "tests/workspace.test.cjs"
+      ]
+    },
+    {
+      "path": "client/chat/styles/terminal.css",
+      "originalSha256": "66d10d63f3bfcb90599e16779b23a69b4f1dd32a03671fa13b40a97ec8c42fbb",
+      "reason": "Styles the approve-all warning icon and responsive tooltip shown on hover or focus; constrains the approval control to its settings column so choices wrap on narrow screens.",
+      "verifiedBy": [
+        "tests/chat-retrieval.test.cjs",
+        "tests/notifications.test.cjs"
+      ],
+      "sha256": "d52b4abc257e73e762bef85c81e288bcb483b4889486d321e468a8d6f8e3fc65"
+    },
+    {
+      "path": "client/chat/scripts/bots.ts",
+      "originalSha256": "784bb34a42b7e7790ad89e305a0842d93082ed7b34a3a5b428fa69c20b96c6df",
+      "reason": "Forwards all three approval modes to Loop turns and uses the safe default when unset.",
+      "verifiedBy": [
+        "tests/chat-retrieval.test.cjs",
+        "tests/notifications.test.cjs"
+      ],
+      "sha256": "222b8319e620b8735bb649581556b8ab48d6e49abfce9f3bebfd5f07e9617345"
     }
   ]
 }

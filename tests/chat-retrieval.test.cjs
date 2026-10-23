@@ -52,6 +52,21 @@ test('past-chat retrieval defaults on and an explicit off survives normalization
   assert.equal(context.resolveTurnSkills(new Set()).useAgent, false);
 });
 
+test('approval preferences default to safe mode and preserve explicit choices across persistence and turns', () => {
+  const context = settingsContext();
+  load(context, read('bots'), 'defaultBotsTurn');
+  for (const parsed of [null, {}, { approvalMode: 'invalid' }]) {
+    assert.equal(context.normalizeSettings(parsed).approvalMode, 'auto_safe');
+  }
+  for (const mode of ['auto_safe', 'manual', 'auto_all']) {
+    context.settings = context.normalizeSettings({ agentMode: true, approvalMode: mode });
+    const stored = JSON.parse(JSON.stringify(context.preferencesPayload(context.settings)));
+    assert.equal(context.normalizeSettings(stored).approvalMode, mode);
+    assert.equal(context.resolveTurnSkills(new Set()).skills.approval_mode, mode);
+    assert.equal(context.defaultBotsTurn().skills.approval_mode, mode);
+  }
+});
+
 test('project prompts preserve saved memory without silently injecting sibling messages', () => {
   const context = settingsContext();
   context.settings = context.normalizeSettings({ memory: 'Saved preference' });

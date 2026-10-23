@@ -349,3 +349,43 @@
   width: max-content;
   max-width: 100%;
 }
+#approvalModeToggle {
+  position: relative;
+  min-width: 0;
+  width: auto;
+}
+.segmented .approval-mode-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.approval-mode-warning-icon {
+  width: 0.95rem;
+  height: 0.95rem;
+  flex: 0 0 auto;
+  color: var(--color-warn);
+}
+.approval-mode-tooltip {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  z-index: 10;
+  width: min(20rem, calc(100vw - 4rem));
+  box-sizing: border-box;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--color-rule-2);
+  border-radius: var(--radius-md);
+  background: var(--color-paper-3);
+  box-shadow: var(--shadow-3);
+  color: var(--color-ink-2);
+  font-size: var(--text-xs);
+  font-weight: 400;
+  line-height: 1.5;
+  text-align: left;
+  visibility: hidden;
+  pointer-events: none;
+}
+.approval-mode-all:hover .approval-mode-tooltip,
+.approval-mode-all:focus .approval-mode-tooltip {
+  visibility: visible;
+}
