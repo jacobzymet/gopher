@@ -130,7 +130,9 @@ export class Diagnostics {
     const value = raw as { entries?: unknown; timings?: unknown; last_id?: unknown; dropped?: unknown };
     const entries = value.entries ?? [], timings = value.timings ?? [];
     if (!Array.isArray(entries) || !Array.isArray(timings)) throw new Error('Could not read diagnostics.');
-    if (!entries.every(validEntry) || !timings.every(validEntry)) throw new Error('Could not read diagnostics entries.');
+    if (!entries.every(validEntry) || !timings.every(validEntry)) {
+      throw new Error('Could not read diagnostics entries.');
+    }
     this.entries = structuredClone(entries);
     this.timings = structuredClone(timings.slice(-MAX_TIMINGS));
     this.lastId = entries.reduce((largest, entry) => Math.max(largest, entry.id), Number(value.last_id) || 0);

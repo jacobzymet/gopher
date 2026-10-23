@@ -85,7 +85,9 @@ function status(error: unknown): number | undefined {
 /** Fetch a public page; some news stacks reject the first request, so 403/406 retries once with a looser Accept. */
 export async function fetchPublicUrl(raw: string, signal: AbortSignal, maxChars = 16_000,
   request: PublicFetch = safeFetch): Promise<FetchedPage> {
-  if (!scrapeableUrl(raw)) throw new Error('fetch_url only reads web pages, not files such as PDFs, images or archives.');
+  if (!scrapeableUrl(raw)) {
+    throw new Error('fetch_url only reads web pages, not files such as PDFs, images or archives.');
+  }
   let response: Response;
   try {
     response = await request(raw, signal, { headers: browserHeaders() });

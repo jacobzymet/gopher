@@ -26,7 +26,9 @@ export function upsertSkill(input: SkillUpsert, existing?: UserSkill): UserSkill
   }
   if (input.description !== undefined) skill.description = boundedText(input.description, 280, 'Skill description');
   if (input.content !== undefined) {
-    if (typeof input.content !== 'string' || Buffer.byteLength(input.content) > 65536) throw new Error('Skill content must be text of at most 65536 bytes.');
+    if (typeof input.content !== 'string' || Buffer.byteLength(input.content) > 65536) {
+      throw new Error('Skill content must be text of at most 65536 bytes.');
+    }
     skill.content = input.content;
   }
   if (input.enabled !== undefined) {
@@ -56,9 +58,13 @@ export function validateSkills(value: unknown): UserSkill[] {
   if (!Array.isArray(value) || value.length > MAX_SKILLS) throw new Error('Invalid skill store.');
   const ids = new Set<string>();
   return value.map(raw => {
-    if (!raw || typeof raw !== 'object' || !isSafeSkillId(raw.id) || ids.has(raw.id)) throw new Error('Invalid or duplicate skill id in local store.');
+    if (!raw || typeof raw !== 'object' || !isSafeSkillId(raw.id) || ids.has(raw.id)) {
+      throw new Error('Invalid or duplicate skill id in local store.');
+    }
     ids.add(raw.id);
-    if (typeof raw.content !== 'string' || typeof raw.name !== 'string' || typeof raw.description !== 'string' || typeof raw.enabled !== 'boolean' || !Number.isFinite(raw.created_at) || !Number.isFinite(raw.updated_at)) throw new Error('Invalid skill store.');
+    if (typeof raw.content !== 'string' || typeof raw.name !== 'string' || typeof raw.description !== 'string' || typeof raw.enabled !== 'boolean' || !Number.isFinite(raw.created_at) || !Number.isFinite(raw.updated_at)) {
+      throw new Error('Invalid skill store.');
+    }
     return { ...raw } as UserSkill;
   });
 }

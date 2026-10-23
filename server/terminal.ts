@@ -92,7 +92,9 @@ export class TerminalManager {
     terminal.closing = (async () => {
       if (process.platform === 'win32') {
         terminal.pty.kill();
-        if (!await until(() => terminal.exited, TERMINATE_EXIT_MS)) throw new Error('The terminal did not exit after being closed. Retry closing it.');
+        if (!await until(() => terminal.exited, TERMINATE_EXIT_MS)) {
+          throw new Error('The terminal did not exit after being closed. Retry closing it.');
+        }
       } else await stopUnixGroup(terminal.pty.pid, () => terminal.exited);
       this.terminals.delete(id);
     })();
@@ -114,7 +116,9 @@ export class TerminalManager {
     this.lifecycleEpoch++;
     const closing = [...this.terminals.keys()].map(id => this.close(id)).concat(this.commands.closeAll());
     const failures = (await Promise.allSettled(closing)).filter((result): result is PromiseRejectedResult => result.status === 'rejected');
-    if (failures.length) throw new AggregateError(failures.map(result => result.reason), 'Some terminal processes could not be stopped. Retry before continuing.');
+    if (failures.length) {
+      throw new AggregateError(failures.map(result => result.reason), 'Some terminal processes could not be stopped. Retry before continuing.');
+    }
   }
 }
 

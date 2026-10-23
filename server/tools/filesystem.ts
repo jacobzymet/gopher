@@ -112,7 +112,9 @@ async function readFilePage(ws: Workspace, args: Args, signal?: AbortSignal): Pr
 function replaceText(content: string, args: Args): string {
   const old = String(args.old_string ?? args.old ?? '').replace(/\r\n/g, '\n');
   const replacement = args.new_string ?? args.new, replaceAll = args.replace_all ?? args.allow_multiple;
-  if (!old || typeof replacement !== 'string') throw new Error('old_string must be nonempty and new_string must be text');
+  if (!old || typeof replacement !== 'string') {
+    throw new Error('old_string must be nonempty and new_string must be text');
+  }
   if (Buffer.byteLength(old) > EDIT_LIMIT
     || Buffer.byteLength(replacement) > EDIT_LIMIT) throw new Error('Replacement text exceeds 16 MB');
   const normalized = content.replace(/\r\n/g, '\n');
@@ -120,7 +122,9 @@ function replaceText(content: string, args: Args): string {
   for (let cursor = 0,
     at = normalized.indexOf(old); at >= 0; at = normalized.indexOf(old,
       cursor)) { matches.push(at); cursor = at + old.length; }
-  if (!matches.length) throw new Error('old_string was not found; no changes were made. LF and CRLF are treated as equivalent.');
+  if (!matches.length) {
+    throw new Error('old_string was not found; no changes were made. LF and CRLF are treated as equivalent.');
+  }
   if (matches.length > 1
     && !replaceAll) throw new Error('old_string occurs more than once. Include more context or set replace_all.');
   // Map offsets in the LF-normalized text back to the original text.

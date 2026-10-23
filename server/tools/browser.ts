@@ -26,7 +26,9 @@ const VIEWPORT = { width: 1440, height: 1000 };
 
 export function httpUrl(raw: unknown): string {
   const url = new URL(String(raw));
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Use an absolute HTTP(S) URL without embedded credentials');
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
+    throw new Error('Use an absolute HTTP(S) URL without embedded credentials');
+  }
   return url.toString();
 }
 
@@ -98,7 +100,9 @@ async function screenshot(page: Page, workspace: string, args: Args, signal?: Ab
 /** One browser action; most return a fresh snapshot of the page afterwards. */
 async function act(page: Page, name: string, workspace: string, args: Args, signal?: AbortSignal): Promise<BrowserResult> {
   const locator = () => {
-    if (typeof args.ref !== 'string' || !/^e\d+$/.test(args.ref)) throw new Error('Use an element ref from the latest browser snapshot');
+    if (typeof args.ref !== 'string' || !/^e\d+$/.test(args.ref)) {
+      throw new Error('Use an element ref from the latest browser snapshot');
+    }
     return page.locator(`[data-gopher-ref="${args.ref}"]`).first();
   };
   if (name === 'browser_navigate') await page.goto(httpUrl(args.url), { waitUntil: 'domcontentloaded' });

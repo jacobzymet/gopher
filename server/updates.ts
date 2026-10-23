@@ -34,7 +34,9 @@ export class UpdateService {
   constructor(private options: UpdateOptions = {}) {}
   version(): string { const value = this.options.currentCommit ?? commit; return `master@${value.slice(0, 12)}${(this.options.modified ?? dirty) ? '+modified' : ''}`; }
   async check(force = false): Promise<UpdateStatus> {
-    if (!force && this.cache && Date.now() - this.cache.at < 6 * 60 * 60 * 1000) return structuredClone(this.cache.value);
+    if (!force && this.cache && Date.now() - this.cache.at < 6 * 60 * 60 * 1000) {
+      return structuredClone(this.cache.value);
+    }
     const current = this.options.currentCommit ?? commit;
     const status: UpdateStatus = { current: this.version(), current_commit: /^[a-f\d]{40}$/.test(current) ? current : null, latest: null, branch: 'master', commit_url: `${repository}/commits/master`, update_available: false, can_install: false, checked: true, error: null };
     const request = this.options.fetch || fetch;
@@ -42,7 +44,9 @@ export class UpdateService {
       const response = await request('https://api.github.com/repos/jacobzymet/gopher/commits/master', { headers: { accept: 'application/vnd.github+json', 'user-agent': 'Gopher' }, signal: AbortSignal.timeout(12_000), redirect: 'error' });
       if (!response.ok) throw new Error(`GitHub returned ${response.status}.`);
       const payload = await response.json() as { sha?: string };
-      if (!payload.sha || !/^[a-f\d]{40}$/i.test(payload.sha)) throw new Error('GitHub did not return a valid master commit.');
+      if (!payload.sha || !/^[a-f\d]{40}$/i.test(payload.sha)) {
+        throw new Error('GitHub did not return a valid master commit.');
+      }
       status.latest = payload.sha.toLowerCase(); status.commit_url = `${repository}/commit/${status.latest}`;
       status.update_available = current !== status.latest || (this.options.modified ?? dirty);
       if (status.update_available) {
@@ -62,7 +66,9 @@ export class UpdateService {
     this.applying = true;
     try {
       const status = await this.check(true);
-      if (!status.can_install || !status.latest) throw new Error(status.install_blocked || status.error || 'No compatible update is available.');
+      if (!status.can_install || !status.latest) {
+        throw new Error(status.install_blocked || status.error || 'No compatible update is available.');
+      }
       const built = await (this.options.build || buildRelease)({ releasesDirectory: this.options.updatesDirectory || join(dataDirectory(), 'updates'), commit: status.latest, onOutput: text => record('update.build', { text }) });
       if (built.commit !== status.latest) throw new Error('The built commit did not match the requested update.');
       const pointer = this.options.releasePointer || process.env.GOPHER_RELEASE_POINTER;

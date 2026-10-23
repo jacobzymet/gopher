@@ -53,7 +53,9 @@ export async function ensureDarwinPtyHelpers(packageRoot?: string): Promise<void
     const helper = join(root, directory, 'spawn-helper');
     let stat;
     try { stat = await fs.lstat(helper); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue; throw error; }
-    if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('The installed macOS terminal helper is not a regular file. Reinstall Gopher dependencies.');
+    if (!stat.isFile() || stat.isSymbolicLink()) {
+      throw new Error('The installed macOS terminal helper is not a regular file. Reinstall Gopher dependencies.');
+    }
     found = true;
     if ((stat.mode & 0o111) === 0o111) continue;
     try { await fs.chmod(helper, (stat.mode & 0o7777) | 0o111); }

@@ -44,7 +44,9 @@ export async function pickWorkspace(): Promise<string | null> {
 export async function openExternal(value: string, isPath = false): Promise<void> {
   if (!isPath) {
     const url = new URL(value);
-    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new Error('Only HTTP and HTTPS links can be opened.');
+    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) {
+      throw new Error('Only HTTP and HTTPS links can be opened.');
+    }
   }
   if (process.send) { await native(isPath ? 'open-path' : 'open-url', value); return; }
   const command = process.platform === 'win32' ? 'explorer.exe' : process.platform === 'darwin' ? 'open' : 'xdg-open';

@@ -46,7 +46,9 @@ export class RegexMatcher {
   }
   match(lines: string[], limit: number, signal?: AbortSignal): Promise<MatchResult> {
     if (signal?.aborted) return Promise.reject(signal.reason);
-    if (this.failure || this.closed) return Promise.reject(this.failure || new Error('Regular expression worker is closed'));
+    if (this.failure || this.closed) {
+      return Promise.reject(this.failure || new Error('Regular expression worker is closed'));
+    }
     const id = ++this.sequence;
     return new Promise((resolve, reject) => {
       const abort = () => { const cause = signal?.reason ?? new Error('Regular expression was cancelled'); this.fail(cause); void this.close(); };

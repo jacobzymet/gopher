@@ -13,7 +13,9 @@ const TEXT_EXTENSIONS = /\.(txt|md|markdown|csv|tsv|jsonl?|xml|html?|css|[cm]?js
 export function decodeAttachment(raw: string): Buffer {
   const payload = String(raw || '').trim().replace(/^data:[^,]*,/, '').trim();
   if (payload.length > MAX_BASE64_CHARS) throw new Error('Attachment is too large to extract (max 8 MB)');
-  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(payload) || payload.length % 4 === 1) throw new Error('Invalid base64 attachment payload');
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(payload) || payload.length % 4 === 1) {
+    throw new Error('Invalid base64 attachment payload');
+  }
   const buffer = Buffer.from(payload, 'base64');
   if (buffer.length > MAX_ATTACHMENT_BYTES) throw new Error('Attachment is too large to extract (max 8 MB)');
   return buffer;
@@ -29,7 +31,9 @@ export function normalizeExtractedText(text: string): string {
 export async function extractAttachment(request: ExtractRequest): Promise<ExtractResponse> {
   const filename = request.filename?.trim() || 'attachment';
   const mime = request.mime?.trim().toLowerCase() || '';
-  if (filename.length > 255 || mime.length > 255) throw new Error('Attachment metadata is too long (max 255 characters)');
+  if (filename.length > 255 || mime.length > 255) {
+    throw new Error('Attachment metadata is too long (max 255 characters)');
+  }
   const bytes = decodeAttachment(request.content_base64);
   if (mime.includes('pdf') || filename.toLowerCase().endsWith('.pdf')) {
     const pdf = await import('pdf-parse');

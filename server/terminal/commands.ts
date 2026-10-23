@@ -120,8 +120,12 @@ export class CommandSessions {
   async wait(owner: string, args: Args, workspace?: string, signal?: AbortSignal): Promise<CommandResult> {
     signal?.throwIfAborted();
     const session = this.commands.get(String(args.session_id));
-    if (!session || session.expired || session.owner !== owner) throw new Error('Command session was not found in this conversation');
-    if (workspace && (await Workspace.open(workspace)).root !== session.workspace) throw new Error('Command session belongs to another workspace');
+    if (!session || session.expired || session.owner !== owner) {
+      throw new Error('Command session was not found in this conversation');
+    }
+    if (workspace && (await Workspace.open(workspace)).root !== session.workspace) {
+      throw new Error('Command session belongs to another workspace');
+    }
     signal?.throwIfAborted();
     session.touched = Date.now();
     session.expiry.refresh();
@@ -190,7 +194,9 @@ export class CommandSessions {
         await stopUnixGroup(pid, () => session.exited);
         session.groupGone = true;
       } else if (!pid && !session.exited) session.process.kill();
-      if (!await until(() => session.exited, TERMINATE_EXIT_MS)) throw new Error('The command did not exit after forced termination. Retry stopping the session.');
+      if (!await until(() => session.exited, TERMINATE_EXIT_MS)) {
+        throw new Error('The command did not exit after forced termination. Retry stopping the session.');
+      }
       this.finish(session, session.code);
     })();
     try { await session.closing; } catch (error) { session.closing = undefined; throw error; }

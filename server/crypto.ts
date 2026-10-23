@@ -100,7 +100,9 @@ export function encryptBytes(key: Buffer, plaintext: Buffer, aad: string): Envel
 export function decryptBytes(key: Buffer, value: unknown, aad: string): Buffer {
   if (!isEnvelope(value)) throw new Error('Invalid encrypted envelope.');
   const nonce = base64(value.nonce, 'nonce'), ciphertext = base64(value.ciphertext, 'ciphertext');
-  if (nonce.length !== NONCE_BYTES || ciphertext.length < TAG_BYTES) throw new Error('Invalid encryption nonce or ciphertext length.');
+  if (nonce.length !== NONCE_BYTES || ciphertext.length < TAG_BYTES) {
+    throw new Error('Invalid encryption nonce or ciphertext length.');
+  }
   try {
     const cipher = createDecipheriv('aes-256-gcm', key, nonce);
     if (value.gopher_crypto === 2) cipher.setAAD(Buffer.from(aad));
