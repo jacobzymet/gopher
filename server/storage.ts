@@ -254,6 +254,7 @@ export class AppStorage {
   private closed = false;
   private helperLease = process.platform === 'win32';
   private memory = { chats: normalizeStore([]), preferences: {} as JsonObject, skills: [] as UserSkill[] };
+  private documents = new Map<string, { stamp: string; value: JsonObject }>();
   private legacyProviders: { providers: Provider[]; active_provider_id: string } | null = null;
   private constructor(configPath: string, config: AppConfig) { this.configPath = resolve(configPath); this.root = dirname(this.configPath); this.config = config; if (this.helperLease) windowsHelperUsers++; }
   static async open(configPath = defaultConfigPath()): Promise<AppStorage> {
@@ -333,17 +334,85 @@ export class AppStorage {
   }
   private encodeFile(name: string, aad: string, value: unknown, key = this.key): Promise<void> { return writeJson(join(this.root, name), key ? encryptValue(key, value, aad) : value); }
   private inMemory(): boolean { return this.storageMode !== 'disk'; }
-  private async chatsInternal(): Promise<JsonObject> { this.requireUnlocked(); return this.inMemory() ? structuredClone(this.memory.chats) : normalizeStore(await this.decodeFile('chats.json', AAD.chats, normalizeStore([]))); }
+  /**
+   * Identity of a data file. Any write (ours or external) changes it, and so does a permission
+   * change (ctime), so a tampered ACL or mode falls through to readPrivate, which repairs it.
+   */
+  private async fileStamp(name: string): Promise<string | null> {
+    const info = await inspect(join(this.root, name));
+    return info ? `${info.dev}:${info.ino}:${info.size}:${info.mtimeMs}:${info.ctimeMs}` : null;
+  }
+  /** The stamp without ctime: what a read must leave unchanged for its result to be cacheable. */
+  private static contentPart(stamp: string | null): string | null { return stamp && stamp.slice(0, stamp.lastIndexOf(':')); }
+  /**
+   * Decode a document and cache it under the stamp observed after reading. Reading may repair the
+   * file's permissions (changing only ctime); if its content identity changed during the read,
+   * the result is returned but not cached.
+   */
+  private async decodeAndRemember(name: string, decode: () => Promise<JsonObject>): Promise<JsonObject> {
+    const before = await this.fileStamp(name);
+    const value = await decode();
+    const after = await this.fileStamp(name);
+    if (after !== null && AppStorage.contentPart(after) === AppStorage.contentPart(before)) this.documents.set(name, { stamp: after, value });
+    else this.documents.delete(name);
+    return value;
+  }
+  /**
+   * Decrypting and parsing a large chats.json takes long enough to slow every turn and every
+   * chat-retrieval tool call, so decoded documents are cached while their file is unchanged.
+   * The cache is cleared whenever the key changes or the session locks, so plaintext never
+   * outlives the key. Cached values are shared and must not be mutated.
+   */
+  private async cachedDocument(name: string, decode: () => Promise<JsonObject>): Promise<JsonObject> {
+    const stamp = await this.fileStamp(name);
+    const cached = this.documents.get(name);
+    if (cached && stamp !== null && cached.stamp === stamp) return cached.value;
+    return this.decodeAndRemember(name, decode);
+  }
+  private async rememberDocument(name: string, value: JsonObject): Promise<void> {
+    const stamp = await this.fileStamp(name);
+    if (stamp === null) this.documents.delete(name); else this.documents.set(name, { stamp, value });
+  }
+  private async sharedChats(): Promise<JsonObject> {
+    this.requireUnlocked();
+    if (this.inMemory()) return this.memory.chats;
+    return this.cachedDocument('chats.json', async () => normalizeStore(await this.decodeFile('chats.json', AAD.chats, normalizeStore([]))));
+  }
+  private async chatsInternal(): Promise<JsonObject> { return structuredClone(await this.sharedChats()); }
   loadChats(): Promise<JsonObject> { return this.serial(() => this.chatsInternal()); }
+  /** The current store without copying it; callers must treat the result as read-only. */
+  readChats(): Promise<Readonly<JsonObject>> { return this.serial(() => this.sharedChats()); }
   async saveChats(value: unknown): Promise<void> {
     const normalized = normalizeStore(value);
-    return this.serial(async () => { this.requireUnlocked(); if (this.inMemory()) this.memory.chats = normalized; else await this.encodeFile('chats.json', AAD.chats, normalized); });
+    return this.serial(async () => {
+      this.requireUnlocked();
+      if (this.inMemory()) { this.memory.chats = normalized; return; }
+      this.documents.delete('chats.json');
+      await this.encodeFile('chats.json', AAD.chats, normalized);
+      await this.rememberDocument('chats.json', normalized);
+    });
   }
-  private async preferencesInternal(): Promise<JsonObject> { this.requireUnlocked(); return this.inMemory() ? structuredClone(this.memory.preferences) : objectValue(await this.decodeFile('preferences.json', AAD.preferences, {})); }
+  private async sharedPreferences(): Promise<JsonObject> {
+    this.requireUnlocked();
+    if (this.inMemory()) return this.memory.preferences;
+    return this.cachedDocument('preferences.json', async () => objectValue(await this.decodeFile('preferences.json', AAD.preferences, {})));
+  }
+  private async preferencesInternal(): Promise<JsonObject> { return structuredClone(await this.sharedPreferences()); }
   loadPreferences(): Promise<JsonObject> { return this.serial(() => this.preferencesInternal()); }
+  /** The current preferences without copying them; callers must treat the result as read-only. */
+  readPreferences(): Promise<Readonly<JsonObject>> { return this.serial(() => this.sharedPreferences()); }
   async savePreferences(value: unknown): Promise<void> {
     const preferences = structuredClone(objectValue(value));
-    return this.serial(async () => { this.requireUnlocked(); if (this.inMemory()) this.memory.preferences = preferences; else await this.encodeFile('preferences.json', AAD.preferences, preferences); this.diagnostics.configure(preferences.diagnosticsEnabled === true); });
+    return this.serial(async () => {
+      this.requireUnlocked();
+      if (this.inMemory()) this.memory.preferences = preferences;
+      else {
+        this.documents.delete('preferences.json');
+        await this.encodeFile('preferences.json', AAD.preferences, preferences);
+        await this.rememberDocument('preferences.json', preferences);
+      }
+      this.diagnostics.configure(preferences.diagnosticsEnabled === true);
+    });
   }
   private providerPayload(config = this.config) { return { version: 2, provider_config: { providers: config.providers, active_provider_id: config.active_provider_id } }; }
   private restoreProviders(payload: any): void {
@@ -460,7 +529,7 @@ export class AppStorage {
   flushDiagnostics(): Promise<void> { return this.serial(() => this.flushDiagnosticsInternal()); }
   clearDiagnostics(): Promise<void> { return this.serial(async () => { this.requireUnlocked(); await removePrivate(join(this.root, 'diagnostics.json')); this.diagnostics.clear(); this.diagnostics.configure((await this.preferencesInternal()).diagnosticsEnabled === true); await this.flushDiagnosticsInternal(); }); }
   private lockInternal(): void {
-    this.diagnostics.suspend(); this.key?.fill(0); this.key = null;
+    this.diagnostics.suspend(); this.key?.fill(0); this.key = null; this.documents.clear();
     if (this.encrypted) { for (const provider of this.config.providers) provider.token = ''; this.config.providers = []; this.config.active_provider_id = ''; this.memory = { chats: normalizeStore([]), preferences: {}, skills: [] }; }
   }
   lock(): Promise<void> { return this.serial(async () => { try { await this.flushDiagnosticsInternal(); } finally { this.lockInternal(); } }); }
@@ -500,8 +569,10 @@ export class AppStorage {
         if (!this.meta) throw new StoreError('Disk encryption is not enabled.');
         const key = await this.keyFor(passphrase, this.meta);
         try {
-          normalizeStore(await this.decodeFile('chats.json', AAD.chats, null, key, true));
-          objectValue(await this.decodeFile('preferences.json', AAD.preferences, null, key, true));
+          // Validating the key decrypts both documents; keep them so the first reads are instant.
+          this.documents.clear();
+          await this.decodeAndRemember('chats.json', async () => normalizeStore(await this.decodeFile('chats.json', AAD.chats, null, key, true)));
+          await this.decodeAndRemember('preferences.json', async () => objectValue(await this.decodeFile('preferences.json', AAD.preferences, null, key, true)));
           const legacy = !this.meta.verifier;
           if (this.legacyProviders && !this.config.providers.some(provider => provider.kind === 'custom')) {
             this.config.providers = structuredClone(this.legacyProviders.providers);
@@ -547,6 +618,7 @@ export class AppStorage {
     await this.applyTransition(record, snapshot, key, false);
   }
   private async applyTransition(record: Transition, snapshot: Snapshot, key: Buffer, restoreDiagnostics = true): Promise<void> {
+    this.documents.clear();
     try {
       const chats = normalizeStore(snapshot.chats), preferences = objectValue(snapshot.preferences), skills = validateSkills(snapshot.skills);
       this.restoreProviders(snapshot.provider_tokens);
@@ -635,6 +707,7 @@ export class AppStorage {
       if (mode === this.storageMode) return;
       const chats = await this.chatsInternal(), preferences = await this.preferencesInternal(), skills = await this.skillsInternal();
       const previous = this.config.data.storage;
+      this.documents.clear();
       this.config.data.storage = mode;
       try {
         if (mode === 'disk') { await this.encodeFile('chats.json', AAD.chats, chats); await this.encodeFile('preferences.json', AAD.preferences, preferences); await this.saveSkillsInternal(skills); }

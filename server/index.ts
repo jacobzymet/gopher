@@ -63,7 +63,7 @@ export async function createApp(options: ServerOptions = {}) {
     await storage.saveConfig(next);
     providerRevision++;
   } });
-  const engine = new Engine({ providers, getStore: () => storage.loadChats(), getPreferences: () => storage.loadPreferences(), getSkills: () => storage.listSkills(), onEvent: (_event, data) => record('agent.event', data) });
+  const engine = new Engine({ providers, getStore: () => storage.readChats(), getPreferences: () => storage.readPreferences(), getSkills: () => storage.listSkills(), onEvent: (_event, data) => record('agent.event', data) });
   const token = randomBytes(32).toString('base64url');
   const sockets = new WebSocketServer({ noServer: true });
   const streams = new Set<ServerResponse>();
@@ -186,10 +186,10 @@ export async function createApp(options: ServerOptions = {}) {
         if (path === '/api/data' && method === 'GET') return json(response, storage.dataInfo());
         if (path === '/api/data' && method === 'POST') { await storage.setStorageMode(body.storage || (body.browser_storage ? 'browser' : 'disk')); return json(response, storage.dataInfo()); }
         if (path === '/api/data/open' && method === 'POST') { await openExternal(storage.root, true); return json(response, { ok: true }); }
-        if (path === '/api/data/store' && method === 'GET') return json(response, await storage.loadChats());
+        if (path === '/api/data/store' && method === 'GET') return json(response, await storage.readChats());
         if (path === '/api/data/store' && method === 'PUT') { await storage.saveChats(body); return json(response, null, 204); }
-        if (path === '/api/data/preferences' && method === 'GET') return json(response, await storage.loadPreferences());
-        if (path === '/api/data/preferences' && method === 'PUT') { await storage.savePreferences(body); return json(response, await storage.loadPreferences()); }
+        if (path === '/api/data/preferences' && method === 'GET') return json(response, await storage.readPreferences());
+        if (path === '/api/data/preferences' && method === 'PUT') { await storage.savePreferences(body); return json(response, await storage.readPreferences()); }
         if (path.startsWith('/api/data/encryption/') && method === 'POST') {
           const operation = path.split('/').at(-1);
           if (operation === 'enable') { await revoke(); await storage.enableEncryption(String(body.passphrase || ''), body.passphrase_confirm); }
