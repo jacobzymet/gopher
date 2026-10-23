@@ -117,7 +117,7 @@ test('context compaction archives complete tool exchanges without losing protect
   const history=new Map();const system={role:'system',content:'Policy'},user={role:'user',content:'Implement every requirement'};const messages:any[]=[system,user];
   for(let i=0;i<40;i++)messages.push({role:'assistant',tool_calls:[{id:`call_${i}`,function:{name:'read_file',arguments:'{"path":"file.txt"}'}}]},{role:'tool',tool_call_id:`call_${i}`,name:'read_file',content:`START_${i} ${'data'.repeat(2000)} END_${i}`});
   const result=compactMessages(messages,4096,history);assert.equal(result.compacted,true);assert.ok(estimateTokens(result.messages)<=messageBudget(4096));assert.deepEqual(result.messages[0],system);assert.deepEqual(result.messages[1],user);assert.match(history.get('history_1').text,/START_0/);assert.match(history.get('history_1').text,/END_0/);
-  for(let i=0;i<result.messages.length;i++)if(result.messages[i].role==='tool')assert.equal(result.messages[i-1].tool_calls[0].id,result.messages[i].tool_call_id);
+  for(let i=0;i<result.messages.length;i++)if(result.messages[i].role==='tool')assert.equal(result.messages[i-1].tool_calls?.[0]?.id,result.messages[i].tool_call_id);
   assert.equal(messages.length,82,'provider compaction must not mutate the saved transcript');
 });
 
