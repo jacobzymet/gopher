@@ -4,9 +4,26 @@ export const AAD = { chats: 'gopher:v1:chats', preferences: 'gopher:v1:preferenc
 export interface Envelope { gopher_crypto: 1 | 2; nonce: string; ciphertext: string }
 export interface EncryptionMeta { version: number; kdf: string; kdf_memory_kib?: number; kdf_iterations?: number; kdf_parallelism?: number; salt: string; verifier?: Envelope | null }
 export function isEnvelope(value: unknown): value is Envelope { return !!value && typeof value === 'object' && [1, 2].includes((value as Envelope).gopher_crypto); }
+function isBase64Symbol(code: number): boolean {
+  return (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || (code >= 48 && code <= 57) || code === 43 || code === 47;
+}
+/**
+ * Strict standard base64: whole 4-character groups, padding only as `XX==` or
+ * `XXX=` in the final group. A linear scan, because a regular expression over a
+ * multi-megabyte ciphertext can exhaust the stack.
+ */
+export function isStrictBase64(value: string): boolean {
+  const length = value.length;
+  if (length % 4 !== 0) return false;
+  const padding = value.endsWith('==') ? 2 : value.endsWith('=') ? 1 : 0;
+  for (let index = 0; index < length - padding; index++) if (!isBase64Symbol(value.charCodeAt(index))) return false;
+  return true;
+}
 function base64(raw: string, name: string): Buffer {
-  if (typeof raw !== 'string' || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(raw.trim())) throw new Error(`Invalid ${name}.`);
-  return Buffer.from(raw.trim(), 'base64');
+  if (typeof raw !== 'string') throw new Error(`Invalid ${name}.`);
+  const value = raw.trim();
+  if (!isStrictBase64(value)) throw new Error(`Invalid ${name}.`);
+  return Buffer.from(value, 'base64');
 }
 export function validatePassphrase(value: string): void {
   if (typeof value !== 'string' || !value.length) throw new Error('Passphrase must not be empty.');
