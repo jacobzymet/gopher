@@ -7,7 +7,7 @@ import { resolve, dirname } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { releaseElectronExecutable } from '../desktop/runtime.js';
 
-async function desktop() {
+async function desktop(platform: string = process.platform) {
   const entry = resolve('dist/desktop/main.cjs'); const require = createRequire(entry);
   const relaunches: Array<{ execPath?: string; args?: string[] }> = [];
   const app = Object.assign(new EventEmitter(), {
@@ -25,6 +25,8 @@ async function desktop() {
   });
   class Window extends EventEmitter {
     url = ''; minimized = false; restored = false; shown = false; focused = false;
+    autoHideMenuBar = true; menuBarVisible = true;
+    setMenuBarVisibility(visible: boolean) { this.menuBarVisible = visible; }
     webContents = Object.assign(new EventEmitter(), {
       setWindowOpenHandler: () => {},
       session: { setPermissionCheckHandler: () => {}, setPermissionRequestHandler: () => {} },
@@ -41,7 +43,7 @@ async function desktop() {
   runInNewContext(await readFile(entry, 'utf8'), {
     require: (name: string) => name === 'electron' ? electron : name === 'node:child_process' ? { ...require(name), spawn: () => { resolveStarted(); return child; } } : require(name),
     module: { exports: {} }, exports: {}, __dirname: dirname(entry), console,
-    process: { argv: ['electron', '.'], execPath: process.execPath, env: { ...process.env, GOPHER_NODE_EXECUTABLE: process.execPath }, stdout: { write: () => {} }, stderr: { write: () => {} }, platform: process.platform },
+    process: { argv: ['electron', '.'], execPath: process.execPath, env: { ...process.env, GOPHER_NODE_EXECUTABLE: process.execPath }, stdout: { write: () => {} }, stderr: { write: () => {} }, platform },
     setTimeout, clearTimeout, URL, Buffer,
   });
   await started;
@@ -87,4 +89,16 @@ test('desktop updates relaunch the new release Electron runtime with the current
   assert.deepEqual(Array.from(d.relaunches[0].args || []), [checkout, '--update-restart', `--config=${configPath}`, `--bind=${bind}`]);
   assert.deepEqual(JSON.parse(JSON.stringify(d.sent.at(-1))), { type: 'native-response', id: 'restart', value: true });
   assert.equal(d.quits(), 1);
+});
+
+test('the desktop window has no menu bar on Windows and Linux; macOS keeps its system menu', { timeout: 10000 }, async () => {
+  for (const platform of ['win32', 'linux', 'darwin']) {
+    const d = await desktop(platform);
+    d.child.emit('message', { type: 'existing-instance', url: 'http://127.0.0.1:3930', focused: false });
+    const window = d.windows[0];
+    assert.ok(window, platform);
+    const hidden = platform !== 'darwin';
+    assert.equal(window.menuBarVisible, !hidden, platform);
+    if (hidden) assert.equal(window.autoHideMenuBar, false, 'Alt must not bring the bar back on ' + platform);
+  }
 });

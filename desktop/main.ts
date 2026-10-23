@@ -110,6 +110,12 @@ function createWindow(url: string): void {
     ...(process.platform === 'darwin' ? [{ role: 'appMenu' as const }] : []),
     { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' },
   ]));
+  // Windows and Linux draw the menu as a bar inside the window. Hide it (Alt does not bring it
+  // back); its keyboard shortcuts such as zoom and copy and paste keep working.
+  if (process.platform !== 'darwin') {
+    window.autoHideMenuBar = false;
+    window.setMenuBarVisibility(false);
+  }
 }
 
 app.whenReady().then(() => { if (primaryInstance) return boot(); }).catch(error => { dialog.showErrorBox('Could not start Gopher', String(error)); app.quit(); });
