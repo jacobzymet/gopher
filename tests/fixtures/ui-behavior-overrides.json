@@ -5,37 +5,52 @@
     {
       "path": "client/chat/scripts/runtime.ts",
       "originalSha256": "df149a5e1c9a4bd6ee0b8f12731e2d20c254c7bfc59df32cb25a559937090d6f",
-      "sha256": "fac31ff1bce6786e56ab7c0a55554423f1c9a5e38d3afb8264cb8b613a1991e4",
-      "reason": "sendMessage, runAssistantTurn and driveAssistantSse split into named functions of 60 lines or fewer, with awaits kept at the same points so sends and turns start in the same tick as before. A finished failed reply refreshes its Retry action.",
-      "verifiedBy": ["tests/send-races.test.cjs", "tests/tool-activity.test.cjs", "tests/session-lifecycle.test.cjs", "tests/chat-ux.test.cjs"]
+      "sha256": "375b12ab9c875cca9533a4b4512dc5f7abdf0ed6752030acc32a6e42dc5a2f6c",
+      "reason": "sendMessage, runAssistantTurn and driveAssistantSse split into named functions of 60 lines or fewer, with awaits kept at the same points so sends and turns start in the same tick as before. A finished failed reply refreshes its Retry action. A rejected unlock passphrase is selected so typing again replaces it.",
+      "verifiedBy": [
+        "tests/send-races.test.cjs",
+        "tests/tool-activity.test.cjs",
+        "tests/session-lifecycle.test.cjs",
+        "tests/chat-ux.test.cjs"
+      ]
     },
     {
       "path": "client/chat/scripts/render.ts",
       "originalSha256": "4c037c488dec43bdef7e2223dee03fee7b8b90ca1ec0877abbc4e7e4bb00611c",
       "sha256": "c04c34c341f1400c424dc196bcd9f45833fddc32fdb75bc96271683ba858b56c",
       "reason": "A failed last reply gets a visible Retry action that re-sends the user's message through the existing unchanged-edit path.",
-      "verifiedBy": ["tests/chat-ux.test.cjs"]
+      "verifiedBy": [
+        "tests/chat-ux.test.cjs"
+      ]
     },
     {
       "path": "client/chat/scripts/controls.ts",
       "originalSha256": "7275ad7af97dd249ddc19b964b9f59e22f73eb2b8f0b37e5d33340bb319a2f6e",
       "sha256": "837e47205231f8c8f89035361bd9227965a1f47d4e3daa07f012fd28574bddd3",
       "reason": "Stream start and end refresh Retry actions, so Retry hides while a turn runs.",
-      "verifiedBy": ["tests/chat-ux.test.cjs"]
+      "verifiedBy": [
+        "tests/chat-ux.test.cjs"
+      ]
     },
     {
       "path": "client/chat/styles/composer.css",
       "originalSha256": "fb4208f77f984115ebbc41854f5ca0e4ef94a4d69a33ee49ca205c51bf5f3700",
       "sha256": "d7e01cd57688d79a659c3fcd3cd7bb11bb1b096fcc5a5fc054f9086dc0a0c311",
       "reason": "When the chat column is narrow (sidebar and Activity open), the composer uses the existing compact Branch button and keeps its tools on one row instead of stacking them; the empty capabilities label stays on one line.",
-      "verifiedBy": ["tests/chat-ux.test.cjs", "Visual check at 1024px with sidebar and Activity open, idle and streaming"]
+      "verifiedBy": [
+        "tests/chat-ux.test.cjs",
+        "Visual check at 1024px with sidebar and Activity open, idle and streaming"
+      ]
     },
     {
       "path": "client/chat/styles/content.css",
       "originalSha256": "e843fc2c59c2fd6bc55b723561dbb7c45dad8ced7bb88006fc159ef79ed7838f",
       "sha256": "d2a866bb36db285ac02f5f3ef7f330d31ef073c673639f5ecc841e57680267a4",
       "reason": "Style for the always-visible Retry action on a failed reply, matching the other message actions.",
-      "verifiedBy": ["tests/chat-ux.test.cjs", "Visual check of a failed reply"]
+      "verifiedBy": [
+        "tests/chat-ux.test.cjs",
+        "Visual check of a failed reply"
+      ]
     }
   ]
 }

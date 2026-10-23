@@ -116,6 +116,8 @@ function setUnlockModalLoading(loading: boolean) {
     setUnlockModalError((error as Error).message || 'Could not unlock');
     setUnlockModalLoading(false);
     input?.focus();
+    // Select the rejected passphrase so typing again replaces it.
+    input?.select();
   }
 });
 (document.getElementById('unlockModalPassphrase') as HTMLInputElement)?.addEventListener('keydown', (event) => {

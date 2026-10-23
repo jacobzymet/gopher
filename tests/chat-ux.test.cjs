@@ -167,3 +167,27 @@ test('a narrow chat column keeps the composer tools on one row', browserTest, as
     assert.equal(rows[260].toolsRows, 1, 'the send group wraps instead of stacking the tools');
   });
 });
+
+test('a rejected unlock passphrase is selected so typing again replaces it', browserTest, async () => {
+  await withFixtureApp((response) => answer(response, 'ok'), async (page) => {
+    const passphrase = 'fixture-passphrase-1234';
+    await page.evaluate(() => openSettings('data'));
+    await page.fill('#encryptionPassphrase', passphrase);
+    await page.fill('#encryptionPassphraseConfirm', passphrase);
+    await page.click('#btnEnableEncryption');
+    await page.locator('#btnLockEncryption').waitFor({ state: 'visible', timeout: 20000 });
+    await page.click('#btnLockEncryption');
+    const field = page.locator('#unlockModalPassphrase');
+    await field.waitFor({ state: 'visible' });
+    await field.fill('not-the-passphrase');
+    await field.press('Enter');
+    await page.locator('#unlockModalError').filter({ hasText: /passphrase/i }).waitFor({ timeout: 20000 });
+    const selection = await field.evaluate(input => ({
+      focused: document.activeElement === input, start: input.selectionStart, end: input.selectionEnd, length: input.value.length,
+    }));
+    assert.deepEqual(selection, { focused: true, start: 0, end: 'not-the-passphrase'.length, length: 'not-the-passphrase'.length });
+    await page.keyboard.type(passphrase);
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => storageReady && !diskEncryptionLocked(), null, { timeout: 20000 });
+  });
+});
