@@ -70,6 +70,14 @@ function agentStepResultHtml(result: unknown, name: string | undefined) {
   );
 }
 
+function terminalResultStopped(name: string | undefined, result: unknown, note?: string) {
+  if (name !== 'run_terminal' && name !== 'wait_terminal') return false;
+  try {
+    if (JSON.parse(String(result || '')).stopped === true) return true;
+  } catch { /* Older results may contain only a preview. */ }
+  return String(note || '').startsWith('Process intentionally stopped.');
+}
+
 function agentStepHtml({
   name,
   detail,
@@ -77,6 +85,7 @@ function agentStepHtml({
   note,
   ok,
   running,
+  stopped: stoppedFlag,
   live,
   kind,
   startedAt,
@@ -100,11 +109,14 @@ function agentStepHtml({
   const elapsed = elapsedMs > 0 || live ? formatToolElapsed(elapsedMs) : '';
   const waitingApproval = !!live && approval === 'pending';
   const executing = !!executingFlag;
-  const failed = !live && ok === false;
+  const stopped = !live && !running && approval !== 'denied'
+    && (stoppedFlag === true || terminalResultStopped(name, result, note));
+  const failed = !live && !stopped && ok === false;
   const liveStatus = waitingApproval ? 'Needs approval'
     : approval === 'expired' ? 'No longer pending' : skillLiveVerb(name, { kind, approval, executing });
   const status = live
     ? '<span class="agent-step-status">' + escapeHtml(liveStatus) + '</span>'
+    : stopped ? '<span class="agent-step-status">Stopped</span>'
     : failed ? '<span class="agent-step-status">' + (approval === 'denied' ? 'Denied' : 'Failed') + '</span>'
     : running ? '<span class="agent-step-status">Running</span>' : '';
   const meta = (status || elapsed)
@@ -166,10 +178,11 @@ function agentStepHtml({
     '</div>',
     {
       live: !!live,
-      done: !live && !failed && !running,
+      done: !live && !failed && !running && !stopped,
       failed,
+      stopped,
       running: !live && !!running,
-      justSettled: !!justSettled && !failed && !running,
+      justSettled: !!justSettled && !failed && !running && !stopped,
       startedAt: live ? Number(startedAt) || 0 : 0,
       toolName: name || '',
       toolId: id || '',

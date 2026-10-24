@@ -203,7 +203,7 @@
   border: 1px solid color-mix(in oklch, var(--color-rule) 78%, transparent);
   border-radius: var(--radius-pill);
   color: var(--color-muted);
-  background: color-mix(in oklch, var(--color-paper-2) 82%, transparent);
+  background: var(--color-paper-2);
   font-size: 0.67rem;
 }
 .loop-flow-agent.is-active {
@@ -614,7 +614,7 @@
   .loop-agent-top { grid-template-columns: 1fr; }
 }
 .msg.is-bot-chat .mention {
-  background: color-mix(in oklch, var(--color-accent) 28%, transparent);
+  background: color-mix(in oklch, var(--color-accent) 28%, var(--color-paper-2));
   border: 1px solid color-mix(in oklch, var(--color-accent) 40%, var(--color-rule));
   color: var(--color-ink);
   font-weight: 600;

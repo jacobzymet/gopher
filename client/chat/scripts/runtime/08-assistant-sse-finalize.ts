@@ -47,6 +47,7 @@ function ssePersistedParts(stream: ActiveStream) {
         detail: part.detail,
         result: part.result,
         ...(typeof part.ok === 'boolean' ? { ok: part.ok } : {}),
+        ...(part.stopped ? { stopped: true } : {}),
         ...(part.commandSessionId ? { commandSessionId: part.commandSessionId, running: !!part.running } : {}),
         ...(part.approval === 'denied' ? { approval: 'denied' } : {}),
         ...(part.note ? { note: part.note } : {}),

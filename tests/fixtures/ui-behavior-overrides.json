@@ -5,8 +5,8 @@
     {
       "path": "client/chat/scripts/runtime.ts",
       "originalSha256": "df149a5e1c9a4bd6ee0b8f12731e2d20c254c7bfc59df32cb25a559937090d6f",
-      "sha256": "e197af0afe9eae1fcfd26721716ffa578764b2f7db1b466a235bc0ca08e16c66",
-      "reason": "sendMessage, runAssistantTurn and driveAssistantSse split into named functions of 60 lines or fewer, with awaits kept at the same points so sends and turns start in the same tick as before. A finished failed reply refreshes its Retry action. A rejected unlock passphrase is selected so typing again replaces it. Live thinking text skips the Markdown cache. The clock is sent on the newest user message instead of a leading system message, so the cached prompt prefix survives between turns; replies save cached token counts. Uses the safe default when assembling assistant-turn approval settings. Refreshes process discovery when the agent starts a terminal call. Ignore retired research flags in queued or retried turns and omit research mode from new API requests.",
+      "sha256": "aedddc8944b9f09c6e091264c41c1e019ef7d07d8fd0eb9d11e6a3831ec6ffd8",
+      "reason": "sendMessage, runAssistantTurn and driveAssistantSse split into named functions of 60 lines or fewer, with awaits kept at the same points so sends and turns start in the same tick as before. A finished failed reply refreshes its Retry action. A rejected unlock passphrase is selected so typing again replaces it. Live thinking text skips the Markdown cache. The clock is sent on the newest user message instead of a leading system message, so the cached prompt prefix survives between turns; replies save cached token counts. Uses the safe default when assembling assistant-turn approval settings. Refreshes process discovery when the agent starts a terminal call. Ignore retired research flags in queued or retried turns and omit research mode from new API requests. Render intentional terminal stops with a neutral Stopped state, retain it on earlier session cards and persistence, and keep real failures distinct.",
       "verifiedBy": [
         "tests/send-races.test.cjs",
         "tests/tool-activity.test.cjs",
@@ -24,13 +24,14 @@
     {
       "path": "client/chat/scripts/render.ts",
       "originalSha256": "4c037c488dec43bdef7e2223dee03fee7b8b90ca1ec0877abbc4e7e4bb00611c",
-      "sha256": "b9273bf00fa2e54de1b64fd8b99e604a8a3ea519850ee5e383ed7807d2a2717e",
-      "reason": "A failed last reply gets a visible Retry action that re-sends the user's message through the existing unchanged-edit path. Rendered Markdown is cached (bounded, never for streaming text, cleared on lock) so reopening a long chat does not parse every reply again. A code block that is still streaming gets its frame and background (highlighting still waits for the closing fence). Turn usage stats add up cached prompt tokens. Refreshes the process monitor on chat changes and clears it for an empty draft.",
+      "sha256": "510878962b308d80027ae65120789f4a40b768de89d81e9ea549b1a8ce5bce41",
+      "reason": "A failed last reply gets a visible Retry action that re-sends the user's message through the existing unchanged-edit path. Rendered Markdown is cached (bounded, never for streaming text, cleared on lock) so reopening a long chat does not parse every reply again. A code block that is still streaming gets its frame and background (highlighting still waits for the closing fence). Turn usage stats add up cached prompt tokens. Refreshes the process monitor on chat changes and clears it for an empty draft. Render intentional terminal stops with a neutral Stopped state, retain it on earlier session cards and persistence, and keep real failures distinct.",
       "verifiedBy": [
         "tests/chat-ux.test.cjs",
         "tests/markdown-cache.test.cjs",
         "tests/prompt-cache.test.cjs",
-        "tests-ts/processes.test.ts"
+        "tests-ts/processes.test.ts",
+        "tests/tool-activity.test.cjs"
       ]
     },
     {
@@ -50,28 +51,30 @@
     {
       "path": "client/chat/styles/composer.css",
       "originalSha256": "fb4208f77f984115ebbc41854f5ca0e4ef94a4d69a33ee49ca205c51bf5f3700",
-      "sha256": "1f8a4c500ce72e40e795809d8fb1782f4434b6608617baf2425a3ef4beb3c38c",
-      "reason": "When the chat column is narrow (sidebar and Activity open), the composer uses the existing compact Branch button and keeps its tools on one row instead of stacking them; the empty capabilities label stays on one line. On touch screens the capability chip remove button gets a larger invisible tap area that does not cover the label. Prompt reuse is grouped under the context details with an aligned percentage and subtle divider, removing the standalone cache label from the composer toolbar. Replace the small thinking-menu triangle with an 18px SVG chevron.",
+      "sha256": "6c1f990792674d22fc594c28250074b2e29fe7537bb3b5c3b4b1dbcbe278ed34",
+      "reason": "When the chat column is narrow (sidebar and Activity open), the composer uses the existing compact Branch button and keeps its tools on one row instead of stacking them; the empty capabilities label stays on one line. On touch screens the capability chip remove button gets a larger invisible tap area that does not cover the label. Prompt reuse is grouped under the context details with an aligned percentage and subtle divider, removing the standalone cache label from the composer toolbar. Replace the small thinking-menu triangle with an 18px SVG chevron. Use opaque component and interaction fills so wallpaper and underlying content cannot show through UI surfaces. Popups appear without an opacity fade.",
       "verifiedBy": [
         "tests/chat-ux.test.cjs",
         "Visual check at 1024px with sidebar and Activity open, idle and streaming",
         "tests/prompt-cache.test.cjs",
         "tests/composer-menu.test.cjs",
         "tests-ts/processes.test.ts",
-        "Desktop and mobile disclosure-icon visual check"
+        "Desktop and mobile disclosure-icon visual check",
+        "tests/surface-opacity.test.cjs"
       ]
     },
     {
       "path": "client/chat/styles/content.css",
       "originalSha256": "e843fc2c59c2fd6bc55b723561dbb7c45dad8ced7bb88006fc159ef79ed7838f",
-      "sha256": "b2812b337abd8d76681769728eec5aaf227ab14c232df8db4cf31a436b2c7d8d",
-      "reason": "Style for the always-visible Retry action on a failed reply, matching the other message actions. On touch screens the code copy button gets a larger invisible tap area. Enlarge thinking and capability disclosure arrows and use SVG chevrons for capability settings.",
+      "sha256": "e75a1dc7ea479305182d4ff85631ac2994d60344bc67c3cdcf8be163c741fada",
+      "reason": "Style for the always-visible Retry action on a failed reply, matching the other message actions. On touch screens the code copy button gets a larger invisible tap area. Enlarge thinking and capability disclosure arrows and use SVG chevrons for capability settings. Use opaque component and interaction fills so wallpaper and underlying content cannot show through UI surfaces. Popups appear without an opacity fade.",
       "verifiedBy": [
         "tests/chat-ux.test.cjs",
         "Visual check of a failed reply",
         "tests/composer-menu.test.cjs",
         "tests-ts/processes.test.ts",
-        "Desktop and mobile disclosure-icon visual check"
+        "Desktop and mobile disclosure-icon visual check",
+        "tests/surface-opacity.test.cjs"
       ]
     },
     {
@@ -128,12 +131,13 @@
     {
       "path": "client/chat/styles/terminal.css",
       "originalSha256": "66d10d63f3bfcb90599e16779b23a69b4f1dd32a03671fa13b40a97ec8c42fbb",
-      "reason": "Styles the approve-all warning icon and responsive tooltip shown on hover or focus; constrains the approval control to its settings column so choices wrap on narrow screens.",
+      "reason": "Styles the approve-all warning icon and responsive tooltip shown on hover or focus; constrains the approval control to its settings column so choices wrap on narrow screens. Use opaque component and interaction fills so wallpaper and underlying content cannot show through UI surfaces. Popups appear without an opacity fade.",
       "verifiedBy": [
         "tests/chat-retrieval.test.cjs",
-        "tests/notifications.test.cjs"
+        "tests/notifications.test.cjs",
+        "tests/surface-opacity.test.cjs"
       ],
-      "sha256": "d52b4abc257e73e762bef85c81e288bcb483b4889486d321e468a8d6f8e3fc65"
+      "sha256": "0b3f10ffb6a747279f19f91e369ca3104672feb07f82a49b7757ca6a59b40e7c"
     },
     {
       "path": "client/chat/scripts/bots.ts",
@@ -157,35 +161,39 @@
     {
       "path": "client/chat/styles/base.css",
       "originalSha256": "99546387a2cf1fd0905784b5b92864fef871d2a1a801fadbd98405cdf9f27fc6",
-      "reason": "Increase surface-menu and sidebar disclosure arrows for legibility.",
+      "reason": "Increase surface-menu and sidebar disclosure arrows for legibility. Use opaque component and interaction fills so wallpaper and underlying content cannot show through UI surfaces. Popups appear without an opacity fade. Keep hovered scrolling sidebar titles composited consistently with opaque fills to avoid a font-antialiasing change.",
       "verifiedBy": [
         "tests/composer-menu.test.cjs",
         "tests-ts/processes.test.ts",
-        "Desktop and mobile disclosure-icon visual check"
+        "Desktop and mobile disclosure-icon visual check",
+        "tests/surface-opacity.test.cjs",
+        "tests/sidebar-marquee.test.cjs"
       ],
-      "sha256": "77be07f9c4b44c5245067218eb4c1276b8d24200ccf4a6bcc4aa8dfe1eba7912"
+      "sha256": "15056cdd9148ddc528fa30c92f07da19aad2eaef846cefc9960125e0b2aad45d"
     },
     {
       "path": "client/chat/styles/conversation.css",
       "originalSha256": "ccdcc720cd27346054f69ef55853663eadf95324e1e135cc98c25bd11401be1e",
-      "reason": "Enlarge activity, tool-result and model-menu disclosure arrows to 18px.",
+      "reason": "Enlarge activity, tool-result and model-menu disclosure arrows to 18px. Use opaque component and interaction fills so wallpaper and underlying content cannot show through UI surfaces. Popups appear without an opacity fade.",
       "verifiedBy": [
         "tests/composer-menu.test.cjs",
         "tests-ts/processes.test.ts",
-        "Desktop and mobile disclosure-icon visual check"
+        "Desktop and mobile disclosure-icon visual check",
+        "tests/surface-opacity.test.cjs"
       ],
-      "sha256": "bbeddc40f9e91afbfeb07d9f9fee315081432bb5a0c0f8b40a5adf5663bc3a06"
+      "sha256": "a126ca4db93d14ce85ea4596770cf0b73d696f312fd6e3751fd7c9d92baa3fa4"
     },
     {
       "path": "client/chat/styles/profiles.css",
       "originalSha256": "0fcb6420aa74919ee04c2a2573f3367b2950c50f56072a27c2fd4d5ff11d8c70",
-      "reason": "Enlarge account menu disclosure arrows to 18px.",
+      "reason": "Enlarge account menu disclosure arrows to 18px. Use opaque component and interaction fills so wallpaper and underlying content cannot show through UI surfaces. Popups appear without an opacity fade.",
       "verifiedBy": [
         "tests/composer-menu.test.cjs",
         "tests-ts/processes.test.ts",
-        "Desktop and mobile disclosure-icon visual check"
+        "Desktop and mobile disclosure-icon visual check",
+        "tests/surface-opacity.test.cjs"
       ],
-      "sha256": "d8fbe363b0f928d5ddf76b32b5f3f0dc79054ef3b626865acb1fb1259d9db498"
+      "sha256": "0541525341d30477b5d8983d54c3ea44a7479068e1681abb059d33ebd32bece6"
     },
     {
       "path": "client/chat/styles/diagnostics.css",
@@ -195,6 +203,52 @@
         "Desktop and mobile disclosure-icon visual check"
       ],
       "sha256": "4c9ac776da719a3f26365197c7190bef108251a4a0cb0ce6ce1afe5f501fbd19"
+    },
+    {
+      "path": "client/chat/styles/activity.css",
+      "originalSha256": "dcf4b354952cead66635dd903afad93a365dc1b9a2dedf33045785c5021a00c4",
+      "reason": "Render intentional terminal stops with a neutral Stopped state, retain it on earlier session cards and persistence, and keep real failures distinct. Use opaque component and interaction fills so wallpaper and underlying content cannot show through UI surfaces. Popups appear without an opacity fade.",
+      "verifiedBy": [
+        "tests/tool-activity.test.cjs",
+        "tests/surface-opacity.test.cjs"
+      ],
+      "sha256": "e1284fffccbae9855a6f8d294dcec045ebea493d251e1eaa61c04b73c37cced0"
+    },
+    {
+      "path": "client/chat/styles/projects.css",
+      "originalSha256": "3ee4e558280967ceaf0565e9941e5f6e20fa4afd3abff4bcebfa2e6863383422",
+      "reason": "Use opaque component and interaction fills so wallpaper and underlying content cannot show through UI surfaces. Popups appear without an opacity fade.",
+      "verifiedBy": [
+        "tests/surface-opacity.test.cjs"
+      ],
+      "sha256": "9ef2670676836430bfccaa125e250c45eb4dbd89d21d119703cefc43ac2dbea9"
+    },
+    {
+      "path": "client/chat/styles/notifications.css",
+      "originalSha256": "a0570c7210754f6500fb0ca7e8c63d1cc03593e43969589954ec9acb2a82b2a7",
+      "reason": "Use opaque component and interaction fills so wallpaper and underlying content cannot show through UI surfaces. Popups appear without an opacity fade.",
+      "verifiedBy": [
+        "tests/surface-opacity.test.cjs"
+      ],
+      "sha256": "dc2f275501cb353071dab5548b99fb620e452932ad5c25173712282a81aa3305"
+    },
+    {
+      "path": "client/chat/styles/bots.css",
+      "originalSha256": "f8447f76c07cc18137cb649f1cc767124728d325e45df38a40f046b9cae61274",
+      "reason": "Use opaque component and interaction fills so wallpaper and underlying content cannot show through UI surfaces. Popups appear without an opacity fade.",
+      "verifiedBy": [
+        "tests/surface-opacity.test.cjs"
+      ],
+      "sha256": "d281801d88e60d803a03f26c968fb68841f0eb1f4a4d355ef7f6a40a918c7b4b"
+    },
+    {
+      "path": "client/chat/styles/workspace.css",
+      "originalSha256": "df09f5c27c435347c48423f0b17552803547176a1acd13ec5787ff187e7e5e3a",
+      "reason": "Use opaque component and interaction fills so wallpaper and underlying content cannot show through UI surfaces. Popups appear without an opacity fade.",
+      "verifiedBy": [
+        "tests/surface-opacity.test.cjs"
+      ],
+      "sha256": "ac164bb6dd0d0f42cf5e7fad2da5bc3e68e9a4adc6cd3b2270b36d4e9e24d103"
     }
   ]
 }

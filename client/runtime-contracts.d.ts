@@ -8,4 +8,4 @@ interface ComposerSendAttempt {
   diagnosticTraceId: string; diagnosticStartedAt: number;
 }
 interface AgentToolPayload { id?: string; name?: string; arguments?: JsonObject; summary?: string; phase?: string; risk?: string; needs_approval?: boolean }
-interface TimelinePart { commandSessionId?: string }
+interface TimelinePart { commandSessionId?: string; stopped?: boolean }

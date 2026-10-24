@@ -196,7 +196,7 @@
 .project-card-meta > * {
   padding: 0.2rem 0.6rem;
   border-radius: var(--radius-pill);
-  background: color-mix(in oklch, var(--color-ink) 6%, transparent);
+  background: color-mix(in oklch, var(--color-ink) 6%, var(--color-paper-2));
 }
 .projects-empty {
   grid-column: 1 / -1;

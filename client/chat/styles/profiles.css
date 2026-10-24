@@ -10,7 +10,7 @@
   min-height: 3.25rem;
   padding: 0.25rem;
   border-radius: var(--radius-lg);
-  background: color-mix(in oklch, var(--color-paper-2) 64%, transparent);
+  background: var(--color-paper-2);
 }
 
 .sidebar-account-trigger,
@@ -184,7 +184,7 @@
   pointer-events: none;
   transform: translateY(0.35rem) scale(0.985);
   transform-origin: bottom center;
-  transition: opacity var(--dur-short) var(--ease-settle), transform var(--dur-short) var(--ease-settle);
+  transition: opacity 0s, transform var(--dur-short) var(--ease-settle);
 }
 
 .sidebar-profile-menu.is-open {
@@ -250,7 +250,7 @@
   width: 0.2rem;
   height: 0.2rem;
   border-radius: 50%;
-  background: color-mix(in oklch, var(--color-muted) 55%, transparent);
+  background: color-mix(in oklch, var(--color-muted) 55%, var(--color-paper-2));
   flex: 0 0 auto;
 }
 
@@ -525,7 +525,7 @@
   border: 1px solid color-mix(in oklch, var(--color-accent) 24%, var(--color-rule));
   border-radius: var(--radius-lg);
   color: var(--color-ink-2);
-  background: color-mix(in oklch, var(--color-accent) 7%, transparent);
+  background: color-mix(in oklch, var(--color-accent) 7%, var(--color-paper-2));
   font-size: var(--text-xs);
   line-height: 1.5;
 }

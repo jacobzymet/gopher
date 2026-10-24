@@ -226,6 +226,7 @@ function timelineSignature(timeline?: TimelinePart[] | null) {
         part.note || '',
         typeof part.ok === 'boolean' ? String(part.ok) : '',
         part.running ? '1' : '0',
+        part.stopped ? '1' : '0',
         part.commandSessionId || '',
         part.live ? '1' : '0',
         part.approval || '',

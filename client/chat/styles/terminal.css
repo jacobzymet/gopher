@@ -245,7 +245,7 @@
   opacity: 1;
 }
 .term-session-select:hover {
-  background: color-mix(in oklch, var(--color-ink) 6%, transparent);
+  background: color-mix(in oklch, var(--color-ink) 6%, var(--color-paper-2));
   color: var(--color-ink);
 }
 .term-session.is-active .term-session-select:hover {
@@ -273,7 +273,7 @@
 }
 .term-session-close:hover {
   color: var(--color-ink);
-  background: color-mix(in oklch, var(--color-ink) 8%, transparent);
+  background: color-mix(in oklch, var(--color-ink) 8%, var(--color-paper-2));
 }
 .btn-terminal,
 .btn-workspace {

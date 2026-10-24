@@ -29,7 +29,7 @@ function harness(timeline = []) {
   for (const name of [
     'agentStepRailHtml', 'wrapTimelineStep', 'skillLabel', 'toolBodyFromArgs',
     'skillLiveVerb', 'liveToolStatusLabel', 'liveToolStatusText', 'skillToolIcon', 'formatToolElapsed', 'toolDurationMs',
-    'skillDetailLabel', 'agentStepResultHtml', 'agentStepHtml',
+    'skillDetailLabel', 'agentStepResultHtml', 'terminalResultStopped', 'agentStepHtml',
   ]) vm.runInContext(declaration(render, name), context);
   vm.runInContext(declaration(render, 'stampTimelinePart'), context);
   vm.runInContext(declaration(runtime, 'timelineSignature'), context);
@@ -261,6 +261,50 @@ test('a final poll settles only earlier cards belonging to the same session', ()
   assert.equal(parts[1].running, true);
   assert.match(context.agentStepHtml(parts[0]), /is-failed/);
   assert.match(context.agentStepHtml(parts[2]), /is-failed/);
+});
+
+test('intentional terminal stops remain stopped through SSE and persistence, including earlier session cards', () => {
+  const context = harness([
+    { type: 'tool', id: 'start', name: 'run_terminal', commandSessionId: 'cmd_1', running: true, ok: true },
+    { type: 'tool', id: 'other', name: 'run_terminal', commandSessionId: 'cmd_2', running: true, ok: true },
+  ]);
+  context.onAgentEvent({
+    phase: 'tool_result', id: 'stop', name: 'wait_terminal', command_session_id: 'cmd_1',
+    running: false, ok: false, result: JSON.stringify({ session_id: 'cmd_1', stopped: true, exit_code: 1 }),
+    note: 'Process intentionally stopped. Restart only if the user requests it.',
+  });
+  const parts = JSON.parse(JSON.stringify(context.persist()));
+  assert.equal(parts[0].stopped, true);
+  assert.equal(parts[0].ok, false, 'Stopping is not successful command completion');
+  assert.equal(parts[1].running, true);
+  for (const part of [parts[0], parts[2]]) {
+    const html = context.agentStepHtml(part);
+    assert.match(html, /class="agent-step is-stopped"/);
+    assert.match(html, />Stopped<\/span>/);
+    assert.doesNotMatch(html, /is-failed|is-done|is-just-done|>Failed</);
+  }
+  assert.notEqual(context.timelineSignature([parts[0]]), context.timelineSignature([{ ...parts[0], stopped: false }]));
+});
+
+test('previously saved stopped terminal results render correctly without rewriting chat data', () => {
+  const context = harness();
+  for (const result of [JSON.stringify({ stopped: true }), 'truncated preview']) {
+    const html = context.agentStepHtml({
+      type: 'tool', name: 'wait_terminal', ok: false, live: false, result,
+      note: 'Process intentionally stopped. Restart only if the user requests it.',
+    });
+    assert.match(html, />Stopped<\/span>/);
+    assert.doesNotMatch(html, /is-failed|is-done|>Failed</);
+  }
+});
+
+test('ordinary failures and denied calls cannot be reclassified by unrelated output', () => {
+  const context = harness();
+  for (const result of [JSON.stringify({ stopped: false, exit_code: 7 }), 'Stopped', '{malformed']) {
+    assert.match(context.agentStepHtml({ name: 'run_terminal', ok: false, result }), /is-failed/);
+  }
+  assert.match(context.agentStepHtml({ name: 'read_file', ok: false, result: '{"stopped":true}' }), /is-failed/);
+  assert.match(context.agentStepHtml({ name: 'wait_terminal', approval: 'denied', ok: false, result: '{"stopped":true}' }), />Denied<\/span>/);
 });
 
 test('patch approval renders the complete patch and completed previews disclose truncation', () => {

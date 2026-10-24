@@ -90,11 +90,14 @@ function sseToolExecuting(turn: SseTurn, payload: AgentStreamEvent) {
 /** A finished terminal command also settles earlier cards that were still showing it as running. */
 function sseSettleCommandSessions(stream: ActiveStream, payload: AgentStreamEvent, commandSessionId: string) {
   if (!commandSessionId || payload.running) return;
+  const stopped = terminalResultStopped(payload.name, payload.result || payload.preview, payload.note);
   for (const part of stream.timeline) {
     if (part.type === 'tool' && part.commandSessionId === commandSessionId && part.running) {
       part.running = false;
       part.ok = payload.ok !== false;
-      part.note = payload.ok === false ? 'Process failed; see latest session result' : 'Process completed; see latest session result';
+      part.stopped = stopped;
+      part.note = stopped ? 'Process intentionally stopped. See latest session result.'
+        : payload.ok === false ? 'Process failed; see latest session result' : 'Process completed; see latest session result';
     }
   }
 }

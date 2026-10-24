@@ -102,7 +102,7 @@ html[data-theme="light"] .msg-bubble .hljs-params { color: oklch(40% 0.1 210); }
   font-weight: 550;
   letter-spacing: 0.01em;
   color: var(--color-ok);
-  background: color-mix(in oklch, var(--color-ok) 12%, transparent);
+  background: color-mix(in oklch, var(--color-ok) 12%, var(--color-paper-2));
   border: 1px solid color-mix(in oklch, var(--color-ok) 28%, transparent);
 }
 .msg-memory-notice::before {
@@ -411,7 +411,7 @@ html[data-theme="light"] .msg-bubble .hljs-params { color: oklch(40% 0.1 210); }
   padding: 1.25rem; z-index: 60;
   opacity: 0;
   pointer-events: none;
-  transition: opacity var(--dur-theme) var(--ease-settle);
+  transition: opacity 0s;
 }
 .dialog-backdrop.is-open {
   opacity: 1;
@@ -425,7 +425,7 @@ html[data-theme="light"] .msg-bubble .hljs-params { color: oklch(40% 0.1 210); }
   opacity: 0;
   transform: translateY(12px) scale(0.985);
   transition:
-    opacity var(--dur-enter) var(--ease-settle),
+    opacity 0s,
     transform var(--dur-enter) var(--ease-settle);
 }
 .dialog-backdrop.is-open > .dialog,
@@ -943,7 +943,7 @@ html[data-theme="light"] .msg-bubble .hljs-params { color: oklch(40% 0.1 210); }
 }
 .btn-danger-ghost:hover:not(:disabled) {
   border-color: var(--color-danger);
-  background: color-mix(in oklch, var(--color-danger) 8%, transparent);
+  background: color-mix(in oklch, var(--color-danger) 8%, var(--color-paper-2));
 }
 .btn-danger-ghost:disabled {
   opacity: 0.45;
@@ -1347,7 +1347,7 @@ html[data-theme="light"] .msg-bubble .hljs-params { color: oklch(40% 0.1 210); }
   gap: 2px;
   padding: 3px;
   border: 1px solid var(--color-rule);
-  background: color-mix(in oklch, var(--color-graphite) 65%, transparent);
+  background: var(--color-graphite);
   border-radius: var(--radius-pill);
 }
 .segmented button {

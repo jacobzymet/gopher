@@ -42,6 +42,7 @@ function agentStepRailHtml() {
         '<svg class="agent-step-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.75" stroke-linecap="round">' +
           '<path d="m7 7 10 10M17 7 7 17"/>' +
         '</svg>' +
+        '<svg class="agent-step-stop" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>' +
         '<span class="agent-step-spinner"></span>' +
       '</span>' +
     '</div>'
@@ -53,6 +54,7 @@ function wrapTimelineStep(innerHtml: string, {
   live = false,
   done = false,
   failed = false,
+  stopped = false,
   running = false,
   justSettled = false,
   startedAt = 0,
@@ -64,6 +66,7 @@ function wrapTimelineStep(innerHtml: string, {
   if (live) classes.push('is-live');
   if (done) classes.push('is-done');
   if (failed) classes.push('is-failed');
+  if (stopped) classes.push('is-stopped');
   if (running) classes.push('is-running');
   if (justSettled) classes.push('is-just-done');
   const attrs = [];

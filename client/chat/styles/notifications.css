@@ -8,7 +8,7 @@
   overflow: hidden;
   border: 1px solid color-mix(in oklch, var(--color-rule) 82%, transparent);
   border-radius: var(--radius-xl);
-  background: color-mix(in oklch, var(--color-paper-3) 96%, transparent);
+  background: var(--color-paper-3);
   box-shadow: var(--shadow-4);
   opacity: 0;
   visibility: hidden;
@@ -16,7 +16,7 @@
   transform: translateY(-0.5rem) scale(0.985);
   transform-origin: top right;
   transition:
-    opacity var(--dur-short) var(--ease-settle),
+    opacity 0s,
     transform var(--dur-enter) var(--ease-settle),
     visibility 0s linear var(--dur-enter);
 }
@@ -102,7 +102,7 @@
   height: 1.25rem;
   padding: 0 0.32rem;
   border-radius: var(--radius-round);
-  background: color-mix(in oklch, var(--color-ink) 7%, transparent);
+  background: color-mix(in oklch, var(--color-ink) 7%, var(--color-paper-2));
   color: var(--color-ink-2);
   font-family: var(--font-mono);
   font-size: 0.62rem;
@@ -153,11 +153,11 @@
   color: var(--color-accent);
 }
 .notification-card.is-attention .notification-mark {
-  background: color-mix(in oklch, var(--color-warn) 15%, transparent);
+  background: color-mix(in oklch, var(--color-warn) 15%, var(--color-paper-2));
   color: var(--color-warn);
 }
 .notification-card.is-error .notification-mark {
-  background: color-mix(in oklch, var(--color-danger) 14%, transparent);
+  background: color-mix(in oklch, var(--color-danger) 14%, var(--color-paper-2));
   color: var(--color-danger);
 }
 .notification-mark svg { width: 1.05rem; height: 1.05rem; }
@@ -220,7 +220,7 @@
   padding: 0.06em 0.28em;
   border-radius: var(--radius-sm);
   color: var(--color-ink-2);
-  background: color-mix(in oklch, var(--color-ink) 7%, transparent);
+  background: color-mix(in oklch, var(--color-ink) 7%, var(--color-paper-2));
   font-family: var(--font-mono);
   font-size: 0.9em;
 }
