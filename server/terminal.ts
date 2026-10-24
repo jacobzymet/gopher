@@ -16,6 +16,7 @@ export type { CommandResult } from './terminal/commands.js';
 const MAX_TERMINALS = 16;
 const MAX_REPLAY = 1024 * 1024;
 const MAX_MESSAGE_CHARS = 128_000;
+export const MAX_TERMINAL_MESSAGE_BYTES = MAX_MESSAGE_CHARS * 4;
 
 interface LiveTerminal {
   id: string; cwd: string; title: string; pty: IPty; replay: string; sockets: Set<WebSocket>; exited: boolean; closing?: Promise<void>;
@@ -37,6 +38,7 @@ export class TerminalManager {
     const { spawn: spawnPty } = await import('node-pty');
     await ensureDarwinPtyHelpers();
     if (epoch !== this.lifecycleEpoch) throw new Error('Terminal opening was cancelled because the session changed.');
+    if (this.terminals.size >= MAX_TERMINALS) throw new Error('Close an existing terminal before opening another');
     const env = { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor' } as Record<string, string>;
     const pty = spawnPty(spec.file, spec.args, { name: 'xterm-256color', cols: size(cols, 100), rows: size(rows, 28), cwd: ws.root, env, useConpty: true });
     const id = `terminal_${randomUUID()}`;
@@ -45,7 +47,10 @@ export class TerminalManager {
     this.terminals.set(id, terminal);
     pty.onData(data => {
       terminal.replay = (terminal.replay + data).slice(-MAX_REPLAY);
-      for (const socket of terminal.sockets) if (socket.readyState === 1) socket.send(Buffer.from(data));
+      for (const socket of terminal.sockets) if (socket.readyState === 1) {
+        if (socket.bufferedAmount > MAX_REPLAY) socket.close(1013, 'Terminal client is too slow');
+        else socket.send(Buffer.from(data));
+      }
     });
     pty.onExit(() => {
       terminal.exited = true;
@@ -110,6 +115,10 @@ export class TerminalManager {
   }
 
   closeOwner(owner: string): Promise<void> { return this.commands.closeOwner(owner); }
+
+  listCommands(owner: string) { return this.commands.list(owner); }
+  inspectCommand(owner: string, id: string) { return this.commands.inspect(owner, id); }
+  stopCommand(owner: string, id: string) { return this.commands.stop(owner, id); }
 
   /** Close every terminal and command; reports every failure after attempting all of them. */
   async closeAll(): Promise<void> {

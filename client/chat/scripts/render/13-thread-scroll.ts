@@ -157,6 +157,7 @@ function greetingForNow() {
 }
 
 function showEmptyState() {
+  if (typeof clearAgentProcessMemory === 'function') clearAgentProcessMemory();
   emptyState.classList.remove('is-hidden');
   threadWrap.classList.add('is-hidden');
   chatTopbar.classList.remove('has-thread');

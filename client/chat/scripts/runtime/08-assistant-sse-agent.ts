@@ -77,6 +77,7 @@ function sseToolPrepare(turn: SseTurn, payload: AgentStreamEvent) {
 }
 
 function sseToolExecuting(turn: SseTurn, payload: AgentStreamEvent) {
+  if (payload.name === 'run_terminal' && typeof syncAgentProcesses === 'function') syncAgentProcesses();
   const part = upsertLiveToolPart(turn.stream, payload);
   if (part) {
     part.approval = 'allowed';

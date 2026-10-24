@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
+import { lstatSync, type Stats } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { posix, win32 } from 'node:path';
 import { isIP } from 'node:net';
 import { parse, stringify } from 'smol-toml';
 
@@ -28,12 +29,38 @@ export const CODEX_PROVIDER_ID = 'builtin-openai-codex';
 export function defaultConfig(): AppConfig {
   return { ui: { host: '127.0.0.1', port: 3930, theme: 'dark', font_body: 'inter', font_display: 'space-grotesk', font_mono: 'jetbrains-mono', font_scale: 'default' }, data: { storage: 'disk' }, providers: [], active_provider_id: '' };
 }
-export function defaultDataDirectory(): string {
-  if (process.platform === 'win32') return join(process.env.APPDATA || join(homedir(), 'AppData', 'Roaming'), 'gopher');
-  if (process.platform === 'darwin') return join(homedir(), 'Library', 'Application Support', 'gopher');
-  return join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'gopher');
+export interface DefaultProfileOptions {
+  platform?: NodeJS.Platform;
+  env?: NodeJS.ProcessEnv;
+  home?: string;
+  lstat?: (path: string) => Pick<Stats, 'isDirectory'>;
 }
-export function defaultConfigPath(): string { return join(defaultDataDirectory(), 'config.toml'); }
+export function defaultDataDirectory(options: DefaultProfileOptions = {}): string {
+  const platform = options.platform ?? process.platform, env = options.env ?? process.env, home = options.home ?? homedir();
+  if (platform === 'win32') {
+    const root = win32.join(env.APPDATA || win32.join(home, 'AppData', 'Roaming'), 'gopher');
+    const original = win32.join(root, 'config'), inspect = options.lstat ?? lstatSync;
+    const metadata = (path: string) => {
+      try { return inspect(path); }
+      catch (error) { if (['ENOENT', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code || '')) return undefined; throw error; }
+    };
+    const populated = (directory: string) => {
+      const info = metadata(directory);
+      if (!info) return false;
+      if (!info.isDirectory()) throw new Error(`Gopher profile path is not a directory: ${directory}`);
+      return ['config.toml', 'chats.json', 'preferences.json', 'encryption.json', 'encryption-transition.json', 'provider-tokens.json', 'diagnostics.json', 'chat-skills/skills.json', 'chat-skills/index.json'].some(file => Boolean(metadata(win32.join(directory, file))));
+    };
+    // Preserve the established TypeScript profile when both locations exist.
+    // An older Rust profile may contain stale or inconsistent encryption files;
+    // merely finding it must never switch an existing installation's history.
+    if (populated(root)) return root;
+    populated(original); // Validate the fallback path before selecting it.
+    return original;
+  }
+  if (platform === 'darwin') return posix.join(home, 'Library', 'Application Support', 'gopher');
+  return posix.join(env.XDG_CONFIG_HOME || posix.join(home, '.config'), 'gopher');
+}
+export function defaultConfigPath(options: DefaultProfileOptions = {}): string { return (options.platform ?? process.platform) === 'win32' ? win32.join(defaultDataDirectory(options), 'config.toml') : posix.join(defaultDataDirectory(options), 'config.toml'); }
 function namedProviderEntries(value: unknown): Record<string, unknown>[] {
   if (!value || typeof value !== 'object' || ![Object.prototype, null].includes(Object.getPrototypeOf(value))) throw new Error('Providers must be an array or named provider tables.');
   return Object.entries(value).map(([id, entry]) => {

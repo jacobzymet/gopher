@@ -94,4 +94,15 @@ export const chatRoutes: Route[] = [
     await runtime.terminals.close(liveId(objectBody(body).id));
     sendJson(response, { ok: true });
   }),
+  route('GET', '/api/processes', ({ runtime, url, response }) => {
+    sendJson(response, { processes: runtime.terminals.listCommands(liveId(url.searchParams.get('conversation_id'))) });
+  }),
+  route('GET', /^\/api\/processes\/([\w.-]+)$/, ({ runtime, url, response }, match) => {
+    sendJson(response, runtime.terminals.inspectCommand(liveId(url.searchParams.get('conversation_id')), liveId(match![1])));
+  }),
+  route('POST', /^\/api\/processes\/([\w.-]+)\/stop$/, async ({ runtime, url, response, assertActive }, match) => {
+    const result = await runtime.terminals.stopCommand(liveId(url.searchParams.get('conversation_id')), liveId(match![1]));
+    assertActive();
+    sendJson(response, result);
+  }),
 ];

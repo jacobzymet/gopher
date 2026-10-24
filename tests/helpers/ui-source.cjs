@@ -3,7 +3,7 @@ const { resolve } = require('node:path');
 const ts = require('typescript');
 
 const root = resolve(__dirname, '../..');
-const styleOrder = ['base', 'conversation', 'content', 'composer', 'activity', 'projects', 'notifications', 'profiles', 'bots', 'terminal', 'diagnostics', 'workspace'];
+const styleOrder = ['base', 'conversation', 'content', 'composer', 'activity', 'projects', 'notifications', 'profiles', 'bots', 'terminal', 'diagnostics', 'workspace', 'processes'];
 const compiledScripts = new Map();
 
 /** A script, or the parts of a split script (<name>/NN-*.ts) joined in order, as the build does. */

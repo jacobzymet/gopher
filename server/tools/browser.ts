@@ -129,17 +129,32 @@ async function act(page: Page, name: string, workspace: string, args: Args, sign
 
 export class BrowserManager {
   private sessions = new Map<string, Promise<BrowserSession>>();
+  private protectedOrigins = new Set<string>();
+
+  /** Agent pages must never bootstrap an authenticated session to Gopher itself. */
+  protectOrigins(origins: string[]): () => void {
+    const normalized = origins.map(origin => new URL(origin).origin);
+    for (const origin of normalized) this.protectedOrigins.add(origin);
+    return () => { for (const origin of normalized) this.protectedOrigins.delete(origin); };
+  }
 
   private launch(id: string, signal?: AbortSignal): Promise<BrowserSession> {
     if (this.sessions.size >= MAX_SESSIONS) throw new Error('Too many browser sessions; close one before continuing');
     const pending: Promise<BrowserSession> = (async () => {
       const executablePath = await findBrowserExecutable();
       signal?.throwIfAborted();
-      const browser = await chromium.launch({ executablePath, headless: true, timeout: LAUNCH_TIMEOUT_MS });
+      const browser = await chromium.launch({ executablePath, headless: true, chromiumSandbox: true, timeout: LAUNCH_TIMEOUT_MS });
       browser.on('disconnected', () => { if (this.sessions.get(id) === pending) this.sessions.delete(id); });
       try {
         signal?.throwIfAborted();
-        const context = await browser.newContext({ viewport: VIEWPORT });
+        const context = await browser.newContext({ viewport: VIEWPORT, serviceWorkers: 'block' });
+        // Routing covers popups, frames and fetches. Chromium preserves these
+        // overridden headers on redirects too, where Playwright does not reroute.
+        // Gopher refuses the marker before issuing any session cookie.
+        await context.route('**/*', route => this.protectedOrigins.has(new URL(route.request().url()).origin)
+          ? route.abort('accessdenied') : route.continue({
+            headers: { ...route.request().headers(), 'x-gopher-agent-browser': '1' },
+          }));
         signal?.throwIfAborted();
         const page = await context.newPage();
         signal?.throwIfAborted();
@@ -167,6 +182,9 @@ export class BrowserManager {
   async execute(id: string, workspace: string, name: string, args: Args, signal?: AbortSignal): Promise<BrowserResult> {
     signal?.throwIfAborted();
     if (name === 'browser_close') { await this.close(id); return { text: 'Browser closed' }; }
+    if (name === 'browser_navigate' && this.protectedOrigins.has(new URL(httpUrl(args.url)).origin)) {
+      throw new Error('The agent browser cannot access Gopher itself.');
+    }
     const session = await abortable(this.session(id, signal), signal);
     signal?.throwIfAborted();
     const expected = this.sessions.get(id);

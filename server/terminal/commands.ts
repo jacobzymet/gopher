@@ -21,13 +21,21 @@ const COALESCE_MS = 20;
 
 interface CommandSession {
   id: string; owner: string; workspace: string; cwd: string; process: ChildProcessWithoutNullStreams; command: string;
-  output: BoundedOutput; delivered: boolean; code: number | null; ended: boolean; exited: boolean; expired: boolean;
+  output: BoundedOutput; transcript: BoundedOutput; delivered: boolean; code: number | null; ended: boolean; exited: boolean; expired: boolean;
   events: EventEmitter; started: number; touched: number; expiry: NodeJS.Timeout; drain?: NodeJS.Timeout;
   closing?: Promise<void>; groupGone: boolean; signal?: AbortSignal; abort?: () => void;
+  endedAt?: number; stopRequested?: boolean;
 }
 export interface CommandResult {
   session_id: string; command: string; cwd: string; output: string; exit_code: number | null; ok: boolean;
   timed_out: boolean; running: boolean; elapsed_ms: number; truncated: boolean;
+  stopped?: boolean;
+}
+export interface CommandView {
+  session_id: string; conversation_id: string; command: string; cwd: string;
+  status: 'running' | 'stopping' | 'stopped' | 'completed' | 'failed';
+  running: boolean; exit_code: number | null; started_at: number; elapsed_ms: number;
+  output?: string; truncated?: boolean;
 }
 type Args = Record<string, unknown>;
 
@@ -46,12 +54,47 @@ export class CommandSessions {
   /** Number of tracked sessions, running or finished. */
   get size(): number { return this.commands.size; }
 
+  private view(session: CommandSession, output = false): CommandView {
+    return {
+      session_id: session.id, conversation_id: session.owner, command: session.command, cwd: session.cwd,
+      status: session.ended ? session.stopRequested ? 'stopped' : session.code === 0 ? 'completed' : 'failed'
+        : session.closing ? 'stopping' : 'running',
+      running: !session.ended, exit_code: session.code, started_at: session.started,
+      elapsed_ms: Math.max(0, (session.endedAt ?? Date.now()) - session.started),
+      ...(output ? { output: session.transcript.render(), truncated: session.transcript.truncated } : {}),
+    };
+  }
+
+  /** Human inspection never consumes the agent's pending output or refreshes its idle lease. */
+  list(owner: string): CommandView[] {
+    return [...this.commands.values()].filter(session => session.owner === owner && !session.expired)
+      .sort((a, b) => a.started - b.started).map(session => this.view(session));
+  }
+
+  private owned(owner: string, id: string): CommandSession {
+    const session = this.commands.get(id);
+    if (!session || session.expired || session.owner !== owner) throw new Error('Command session was not found in this conversation');
+    return session;
+  }
+
+  inspect(owner: string, id: string): CommandView { return this.view(this.owned(owner, id), true); }
+
+  async stop(owner: string, id: string): Promise<CommandView> {
+    const session = this.owned(owner, id);
+    await this.kill(session);
+    return this.view(session, true);
+  }
+
   /** Make room by dropping the oldest finished, already-read session, then enforce the limits. */
   private async reserve(owner: string): Promise<void> {
     if (this.commands.size >= MAX_SESSIONS) {
       const oldest = [...this.commands.values()].filter(session => session.ended && session.delivered).sort((a, b) => a.touched - b.touched)[0];
       if (oldest) { clearTimeout(oldest.expiry); await this.kill(oldest); this.commands.delete(oldest.id); }
     }
+    this.assertCapacity(owner);
+  }
+
+  private assertCapacity(owner: string): void {
     const running = [...this.commands.values()].filter(session => session.owner === owner && !session.ended).length;
     if (this.commands.size >= MAX_SESSIONS || running >= MAX_RUNNING_PER_OWNER) {
       throw new Error('Too many agent commands. Poll or terminate an existing session first.');
@@ -70,7 +113,9 @@ export class CommandSessions {
 
   private track(session: CommandSession): void {
     const { process: child } = session;
-    const onData = (data: string | Buffer) => { session.output.push(data); session.events.emit('output'); };
+    const onData = (data: string | Buffer) => {
+      session.output.push(data); session.transcript.push(data); session.events.emit('output');
+    };
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
     child.stdout.on('data', onData);
@@ -102,12 +147,14 @@ export class CommandSessions {
     if (!owner) throw new Error('A conversation session is required to start a command');
     await this.reserve(owner);
     signal?.throwIfAborted();
+    this.assertCapacity(owner);
     const child = this.spawnCommand(command, cwd);
     const id = `command_${randomUUID()}`;
     const expiry = setTimeout(() => { const stale = this.commands.get(id); if (stale) void this.expire(stale); }, this.idleLifetimeMs);
     expiry.unref();
     const session: CommandSession = {
-      id, workspace: ws.root, cwd, owner, command, process: child, output: new BoundedOutput(), delivered: false, code: null,
+      id, workspace: ws.root, cwd, owner, command, process: child, output: new BoundedOutput(),
+      transcript: new BoundedOutput(256_000), delivered: false, code: null,
       ended: false, exited: false, expired: false, groupGone: false, events: new EventEmitter(), started: Date.now(),
       touched: Date.now(), expiry, signal,
     };
@@ -142,6 +189,7 @@ export class CommandSessions {
     return {
       session_id: session.id, command: session.command, cwd: session.cwd, output, exit_code: session.code,
       ok: !session.ended || session.code === 0, timed_out: false, running: !session.ended, elapsed_ms: Date.now() - session.started, truncated,
+      ...(session.stopRequested ? { stopped: true } : {}),
     };
   }
 
@@ -167,6 +215,7 @@ export class CommandSessions {
     session.process.stdout.destroy();
     session.process.stderr.destroy();
     session.ended = true;
+    session.endedAt = Date.now();
     session.code = code;
     if (process.platform !== 'win32' && session.process.pid && !groupExists(session.process.pid)) session.groupGone = true;
     if (session.abort) session.signal?.removeEventListener('abort', session.abort);
@@ -187,6 +236,7 @@ export class CommandSessions {
   /** Stop a session and everything it started; concurrent calls share one attempt, and a failure can be retried. */
   private async kill(session: CommandSession): Promise<void> {
     if (session.closing) return session.closing;
+    if (!session.exited) session.stopRequested = true;
     session.closing = (async () => {
       const pid = session.process.pid;
       if (process.platform === 'win32' && pid && !session.exited) await this.killWindowsTree(session, pid);

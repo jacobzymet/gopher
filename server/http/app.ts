@@ -6,7 +6,8 @@ import { WebSocketServer } from 'ws';
 import { AppStorage } from '../storage.js';
 import { Providers } from '../providers.js';
 import { Engine } from '../engine.js';
-import { terminals } from '../terminal.js';
+import { browsers } from '../tools/browser.js';
+import { MAX_TERMINAL_MESSAGE_BYTES, terminals } from '../terminal.js';
 import { resolveBind } from '../config.js';
 import { DiagnosticTrace, diagnosticContext, record } from '../diagnostics.js';
 import { errorReply, HttpError, readJsonBody, requestPath, sendJson } from './protocol.js';
@@ -64,9 +65,10 @@ export async function createApp(options: ServerOptions = {}) {
     providers, getStore: () => storage.readChats(), getPreferences: () => storage.readPreferences(),
     getSkills: () => storage.listSkills(), onEvent: (_event, data) => record('agent.event', data),
   });
-  const sockets = new WebSocketServer({ noServer: true });
+  const sockets = new WebSocketServer({ noServer: true, maxPayload: MAX_TERMINAL_MESSAGE_BYTES });
   runtime = new AppRuntime(storage, providers, engine, terminals, sockets, randomBytes(32).toString('base64url'), bind);
   const publicDir = options.publicDir || (builtRuntime ? resolve(here, '../public') : join(sourceRoot, 'dist/public'));
+  let unprotectBrowserOrigins: (() => void) | undefined;
   const diagnosticTimer = setInterval(() => {
     if (storage.encrypted && !storage.unlocked) return;
     void storage.flushDiagnostics().catch(error => storage.diagnostics.error(error));
@@ -142,6 +144,9 @@ export async function createApp(options: ServerOptions = {}) {
       server.listen(bind.port, bind.host, () => { server.off('error', reject); resolveListen(); });
     });
     runtime.port = (server.address() as { port: number }).port;
+    unprotectBrowserOrigins = browsers.protectOrigins([
+      `http://${runtime.authority}`, `http://gopher.localhost:${runtime.port}`, `http://localhost:${runtime.port}`,
+    ]);
     void runtime.warm();
     // The default loopback address is shown as gopher.localhost, which every browser resolves locally.
     return bind.host === '127.0.0.1' ? `http://gopher.localhost:${runtime.port}` : `http://${runtime.authority}`;
@@ -154,6 +159,7 @@ export async function createApp(options: ServerOptions = {}) {
     sockets.close();
     server.closeAllConnections();
     if (server.listening) await new Promise<void>(resolveClose => server.close(() => resolveClose()));
+    unprotectBrowserOrigins?.();
     await storage.close();
   }
 

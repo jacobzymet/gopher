@@ -36,11 +36,16 @@ export function privateAddress(address: string): boolean {
     if (words.slice(0, 5).every(word => word === 0) && words[5] === 0xffff) {
       return privateAddress(`${words[6]! >> 8}.${words[6]! & 255}.${words[7]! >> 8}.${words[7]! & 255}`);
     }
-    return words.every(word => word === 0)
-      || (words.slice(0, 7).every(word => word === 0) && words[7] === 1)
-      || (words[0]! & 0xfe00) === 0xfc00
-      || (words[0]! & 0xffc0) === 0xfe80
-      || (words[0]! & 0xff00) === 0xff00;
+    // Only ordinary global unicast destinations are eligible. Translation and
+    // tunnelling prefixes can reach private IPv4 hosts even when their IPv6
+    // spelling does not contain a private IPv4 literal (NAT64, 6to4, Teredo).
+    // Also exclude protocol assignments and documentation ranges from IANA's
+    // IPv6 Special-Purpose Address Registry.
+    return (words[0]! & 0xe000) !== 0x2000
+      || (words[0] === 0x2001 && words[1]! < 0x0200)
+      || (words[0] === 0x2001 && words[1] === 0x0db8)
+      || words[0] === 0x2002
+      || (words[0] === 0x3fff && (words[1]! & 0xf000) === 0);
   }
   if (isIP(value) !== 4) return true;
   const [a, b, c] = value.split('.').map(Number) as [number, number, number];

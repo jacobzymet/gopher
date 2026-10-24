@@ -220,7 +220,9 @@ export async function beginCodexLogin(): Promise<CodexLogin> {
   const result = new Promise<string>((resolve, reject) => { resolveResult = resolve; rejectResult = reject; });
   const callback = `http://localhost:${LOGIN_PORT}/auth/callback`;
   const server = createServer(async (req, res) => {
-    const url = new URL(req.url || '/', callback);
+    let url: URL;
+    try { url = new URL(req.url || '/', callback); }
+    catch { res.writeHead(400).end('Invalid callback URL'); return; }
     if (url.pathname !== '/auth/callback') { res.writeHead(404).end(); return; }
     const actual = Buffer.from(url.searchParams.get('state') || ''), expected = Buffer.from(state);
     if (actual.length !== expected.length

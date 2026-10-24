@@ -39,12 +39,13 @@ The default URL is `http://gopher.localhost:3930`. `http://127.0.0.1:3930` also 
 
 The lockfile pins dependencies and explicitly approves native dependency installation scripts. `npm run desktop` installs Electron's binary when needed; when launching the Electron CLI directly, first run `node node_modules/electron/install.js`. `fs-ext` must compile on Unix for exclusive data locks, even though npm classifies it as optional. `node-pty` also compiles when no prebuilt binary matches your platform and Node.js version; Windows then requires Python 3 and Visual Studio C++ Build Tools.
 
-Linux desktop sessions require Chromium's namespace sandbox. On Ubuntu 24.04 or
+Linux desktop and agent browser sessions require Chromium's namespace sandbox. On Ubuntu 24.04 or
 later with restricted unprivileged user namespaces, an administrator must permit
 `userns` for the installed Electron executable through an AppArmor profile. See
 [Ubuntu's executable-specific profile guidance](https://documentation.ubuntu.com/release-notes/24.04/#unprivileged-user-namespace-restrictions).
-The executable is `node_modules/electron/dist/electron` inside the source checkout
-or active release directory; update the profile when its path changes. Production
+The desktop executable is `node_modules/electron/dist/electron` inside the source checkout
+or active release directory; the agent browser uses `GOPHER_BROWSER_PATH` or the detected Chromium executable.
+Update the profiles when these paths change. Production
 launches keep sandboxing enabled.
 
 | Option | Behavior |
@@ -81,9 +82,11 @@ Gopher reads existing configuration and storage formats, including Argon2id/AES-
 
 | OS | Default data directory |
 | --- | --- |
-| Windows | `%APPDATA%\gopher\` |
+| Windows | `%APPDATA%\gopher\config\` |
 | macOS | `~/Library/Application Support/gopher/` |
 | Linux | `~/.config/gopher/` |
+
+An existing Windows profile directly under `%APPDATA%\gopher\` keeps priority when both locations exist. Use `--config PATH` to select a different profile explicitly.
 
 `config.toml` stores appearance, bind, and plaintext provider settings. `chats.json`, `preferences.json`, and `chat-skills/skills.json` store conversations, preferences, and custom skills. When encryption is enabled, these files are protected in place, provider credentials move into `provider-tokens.json`, and `encryption.json` holds the key-derivation metadata. Encryption changes use a recoverable journal.
 
@@ -122,6 +125,8 @@ Drafts restore independently for each chat and project. Ghost sessions stay temp
 Agent file tools stay within the selected workspace. Bounded file reads can resume using byte offsets. Patch validation completes before writing, and unrelated edits are preserved. Read-only calls run in batches of up to eight; mutations and browser actions retain order.
 
 Terminal commands continue through `wait_terminal` without relaunching the process. Sessions are scoped to their conversation and workspace, expire after 30 idle minutes, and retain bounded output with an explicit omission marker. Initial wait is separate from process lifetime.
+
+The **Processes** strip above the composer appears when the agent starts a command. Expand it to inspect live output, status and elapsed time, or stop a process. Viewing logs does not consume the agent's output. Recent results remain available across page reloads until their session expires or the server closes.
 
 The agent reserves context for tool definitions and responses, archives complete older assistant/tool exchanges, and preserves user/system/developer instructions. Context comes from the selected model, `GOPHER_AGENT_CONTEXT_TOKENS`, or an explicit request override. If protected input cannot fit, the request fails clearly instead of silently truncating instructions.
 

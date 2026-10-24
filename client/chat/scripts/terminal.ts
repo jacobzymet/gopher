@@ -589,7 +589,7 @@ async function ensureTerminalSession() {
 }
 
 function onAgentTerminalEvent(_payload: unknown) {
-  // Agent command sessions are separate from the user's PTY. Results appear in Activity.
+  if (typeof syncAgentProcesses === 'function') syncAgentProcesses();
 }
 
 function initTerminalPanel() {

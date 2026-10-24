@@ -179,8 +179,9 @@ async function terminalTool(context: ToolContext, name: string, args: ToolArgume
   const result = name === 'run_terminal'
     ? await terminals.command(workspace, context.id, args, Number(skills.terminal_timeout_secs) || 30, context.signal)
     : await terminals.wait(context.id, args, workspace, context.signal);
-  return { ok: result.running || result.exit_code === 0, text: JSON.stringify(result), running: result.running,
-    command_session_id: result.session_id };
+  return { ok: result.running || (!result.stopped && result.exit_code === 0), text: JSON.stringify(result), running: result.running,
+    command_session_id: result.session_id,
+    ...(result.stopped ? { note: 'Process intentionally stopped. Restart only if the user requests it.' } : {}) };
 }
 
 export async function executeTool(context: ToolContext, call: ToolCall): Promise<ToolOutcome> {

@@ -224,6 +224,7 @@ function refreshUiFromMemoryStore() {
 }
 
 function clearMemoryAfterLock() {
+  if (typeof clearAgentProcessMemory === 'function') clearAgentProcessMemory();
   if (typeof clearComposerDraftMemory === 'function') clearComposerDraftMemory();
   if (typeof clearDiagnosticsMemory === 'function') clearDiagnosticsMemory();
   storageReady = false;

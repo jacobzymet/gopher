@@ -60,6 +60,11 @@ test('HTTP bootstrap establishes a strict cookie and API checks token, Host, Ori
     assert.match(f.cookie, /^gopher_session=[A-Za-z0-9_-]{40,}$/);
     assert.match(f.bootstrap.headers['set-cookie']![0]!, /HttpOnly; SameSite=Strict/);
     assert.equal(f.bootstrap.headers['x-frame-options'], 'DENY');
+    for (const path of ['/', '/api/state']) {
+      const marked = await f.send(path, { headers: { 'x-gopher-agent-browser': '1' } });
+      assert.equal(marked.status, 403);
+      assert.equal(marked.headers['set-cookie'], undefined);
+    }
     assert.equal((await f.send('/api/state', { authenticated: false })).status, 401);
     assert.equal((await f.send('/api/state', { authenticated: false, headers: { 'x-gopher-token': 'wrong' } })).status, 401);
     assert.equal((await f.send('/api/state', { headers: { host: 'attacker.example' } })).status, 421);

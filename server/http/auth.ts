@@ -29,6 +29,9 @@ function sessionToken(request: IncomingMessage): string {
 }
 
 export function authorize(request: IncomingMessage, runtime: AppRuntime): void {
+  if (request.headers['x-gopher-agent-browser'] !== undefined) {
+    throw new HttpError(403, 'The agent browser cannot access Gopher itself.');
+  }
   const address = runtime.bind.host.includes(':') ? `[${runtime.bind.host}]` : runtime.bind.host;
   const authorities = [`${address}:${runtime.port}`, `gopher.localhost:${runtime.port}`, `localhost:${runtime.port}`];
   const host = String(request.headers.host).toLowerCase();

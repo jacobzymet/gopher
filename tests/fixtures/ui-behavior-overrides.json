@@ -5,8 +5,8 @@
     {
       "path": "client/chat/scripts/runtime.ts",
       "originalSha256": "df149a5e1c9a4bd6ee0b8f12731e2d20c254c7bfc59df32cb25a559937090d6f",
-      "sha256": "55597d2fd62b1f975ad29aab6cc8b33427d45034c428c85c02af6b191183dc49",
-      "reason": "sendMessage, runAssistantTurn and driveAssistantSse split into named functions of 60 lines or fewer, with awaits kept at the same points so sends and turns start in the same tick as before. A finished failed reply refreshes its Retry action. A rejected unlock passphrase is selected so typing again replaces it. Live thinking text skips the Markdown cache. The clock is sent on the newest user message instead of a leading system message, so the cached prompt prefix survives between turns; replies save cached token counts. Uses the safe default when assembling assistant-turn approval settings.",
+      "sha256": "981dca1680d068f9e31deedf96be289e441380bde1064de14536ac95ecad634e",
+      "reason": "sendMessage, runAssistantTurn and driveAssistantSse split into named functions of 60 lines or fewer, with awaits kept at the same points so sends and turns start in the same tick as before. A finished failed reply refreshes its Retry action. A rejected unlock passphrase is selected so typing again replaces it. Live thinking text skips the Markdown cache. The clock is sent on the newest user message instead of a leading system message, so the cached prompt prefix survives between turns; replies save cached token counts. Uses the safe default when assembling assistant-turn approval settings. Refreshes process discovery when the agent starts a terminal call.",
       "verifiedBy": [
         "tests/send-races.test.cjs",
         "tests/tool-activity.test.cjs",
@@ -15,18 +15,20 @@
         "tests/markdown-cache.test.cjs",
         "tests/prompt-cache.test.cjs",
         "tests/chat-retrieval.test.cjs",
-        "tests/notifications.test.cjs"
+        "tests/notifications.test.cjs",
+        "tests-ts/processes.test.ts"
       ]
     },
     {
       "path": "client/chat/scripts/render.ts",
       "originalSha256": "4c037c488dec43bdef7e2223dee03fee7b8b90ca1ec0877abbc4e7e4bb00611c",
-      "sha256": "bbacd104afd687f74a0392d3c2793df39f42254bc9fd2748ec3c2a7eb567c5df",
-      "reason": "A failed last reply gets a visible Retry action that re-sends the user's message through the existing unchanged-edit path. Rendered Markdown is cached (bounded, never for streaming text, cleared on lock) so reopening a long chat does not parse every reply again. A code block that is still streaming gets its frame and background (highlighting still waits for the closing fence). Turn usage stats add up cached prompt tokens.",
+      "sha256": "b9273bf00fa2e54de1b64fd8b99e604a8a3ea519850ee5e383ed7807d2a2717e",
+      "reason": "A failed last reply gets a visible Retry action that re-sends the user's message through the existing unchanged-edit path. Rendered Markdown is cached (bounded, never for streaming text, cleared on lock) so reopening a long chat does not parse every reply again. A code block that is still streaming gets its frame and background (highlighting still waits for the closing fence). Turn usage stats add up cached prompt tokens. Refreshes the process monitor on chat changes and clears it for an empty draft.",
       "verifiedBy": [
         "tests/chat-ux.test.cjs",
         "tests/markdown-cache.test.cjs",
-        "tests/prompt-cache.test.cjs"
+        "tests/prompt-cache.test.cjs",
+        "tests-ts/processes.test.ts"
       ]
     },
     {
@@ -64,23 +66,25 @@
     {
       "path": "client/chat/scripts/state.ts",
       "originalSha256": "739a8547444202ec2c6c7afd1a824bd67302ec7bc516c1a9b6a092b1e1cc8ad6",
-      "sha256": "3090a037647cd5901508ca5f551b45bb98001c96e1eb857a22dbadadfcd960bb",
-      "reason": "Locking encrypted data also clears the rendered-Markdown cache, which holds decrypted chat text. Adds explicit auto_all approval mode and defaults new or unset preferences to auto_safe while preserving saved choices.",
+      "sha256": "490c073df99016a95e863dede486ce9cda859f61625fad38f1634a0245ad1698",
+      "reason": "Locking encrypted data also clears the rendered-Markdown cache, which holds decrypted chat text. Adds explicit auto_all approval mode and defaults new or unset preferences to auto_safe while preserving saved choices. Clears process logs, pending requests and stop controls when local data locks.",
       "verifiedBy": [
         "tests/markdown-cache.test.cjs",
         "tests/chat-retrieval.test.cjs",
-        "tests/notifications.test.cjs"
+        "tests/notifications.test.cjs",
+        "tests-ts/processes.test.ts"
       ]
     },
     {
       "path": "client/chat.html",
       "originalSha256": "2c7002d85cab929c8257479006982d769627719b7b91e4229fb30dd90f8438f3",
-      "sha256": "7eb94b59935ea3e7daab32558a5bd34025ff3a8f3738eb02c3f6247994bd641c",
-      "reason": "Groups prompt-cache reuse and token counts inside the context tooltip, removing the standalone toolbar label. Adds explicit approve-all with a warning icon and accessible danger tooltip, selects safe auto-approval by default, and explains approval behavior for enabled tools.",
+      "sha256": "3a76ad9628749d3e18ace0e7595525978631dc0e7b8873c096bf4b308cd68ed0",
+      "reason": "Groups prompt-cache reuse and token counts inside the context tooltip, removing the standalone toolbar label. Adds explicit approve-all with a warning icon and accessible danger tooltip, selects safe auto-approval by default, and explains approval behavior for enabled tools. Adds the expandable per-chat Processes dock with a static terminal icon.",
       "verifiedBy": [
         "tests/prompt-cache.test.cjs",
         "tests/chat-retrieval.test.cjs",
-        "tests/notifications.test.cjs"
+        "tests/notifications.test.cjs",
+        "tests-ts/processes.test.ts"
       ]
     },
     {
@@ -122,6 +126,15 @@
         "tests/notifications.test.cjs"
       ],
       "sha256": "222b8319e620b8735bb649581556b8ab48d6e49abfce9f3bebfd5f07e9617345"
+    },
+    {
+      "path": "client/chat/scripts/terminal.ts",
+      "originalSha256": "a6d9593101137200c5088237d1d351c88749bb89d1d767bb0759ac4d613d5140",
+      "reason": "Refreshes the independent process monitor when terminal tool results arrive.",
+      "verifiedBy": [
+        "tests-ts/processes.test.ts"
+      ],
+      "sha256": "5b800f9395b8a46ef91ee8afe38b6943b1bacf9909dc85edec8e7854442a4baf"
     }
   ]
 }

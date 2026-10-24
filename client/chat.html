@@ -368,6 +368,16 @@
             </div>
           </div>
           </div>
+          <details class="agent-processes is-hidden" id="agentProcesses">
+            <summary class="agent-processes-summary">
+              <svg class="agent-processes-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m4 5 6 6-6 6M13 19h7"/></svg>
+              <span>Processes</span>
+              <span class="agent-processes-count" id="agentProcessesCount" role="status" aria-live="polite"></span>
+              <span class="agent-processes-chevron" aria-hidden="true">⌃</span>
+            </summary>
+            <p class="agent-processes-error is-hidden" id="agentProcessesError" role="status"></p>
+            <div class="agent-processes-list" id="agentProcessesList"></div>
+          </details>
           <div class="chat-composer-dock" id="composerDock"></div>
           <div class="chat-terminal" id="chatTerminal" aria-hidden="true" inert>
             <div class="chat-terminal-clip">

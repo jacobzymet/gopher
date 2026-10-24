@@ -30,7 +30,7 @@
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@types/ws": "^8.18.0",
-    "electron": "44.3.0",
+    "electron": "44.9.3",
     "esbuild": "^0.28.0",
     "tsx": "^4.23.0",
     "typescript": "^5.9.0"
@@ -38,7 +38,7 @@
   "allowScripts": {
     "esbuild@0.28.2": true,
     "node-pty@1.2.0-beta.15": true,
-    "electron@44.3.0": true,
+    "electron@44.9.3": true,
     "fs-ext@2.1.1": true
   },
   "optionalDependencies": {

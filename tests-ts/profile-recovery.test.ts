@@ -1,0 +1,73 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { lstatSync } from 'node:fs';
+import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, win32 } from 'node:path';
+import { defaultDataDirectory } from '../server/config.js';
+import { AppStorage } from '../server/storage.js';
+import { createApp } from '../server/index.js';
+
+test('Windows profile discovery restores encrypted conversations and background without changing another profile', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'gopher-profile-recovery-'));
+  const root = join(directory, 'gopher');
+  const original = join(root, 'config');
+  let storage: AppStorage | undefined;
+  let app: Awaited<ReturnType<typeof createApp>> | undefined;
+  const image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jS1cAAAAASUVORK5CYII=';
+  try {
+    storage = await AppStorage.open(join(original, 'config.toml'));
+    await storage.saveChats({ version: 3, activeProfileId: 'personal', profiles: [{ id: 'personal', conversations: [{ id: 'original-chat', messages: [{ role: 'user', content: 'Original conversation' }] }], projects: [], bots: [] }] });
+    await storage.savePreferences({ chatBackgroundImage: image, chatBackgroundImageName: 'wallpaper.png', chatBackgroundPosition: 'center', chatBackgroundOverlay: 0.4 });
+    await storage.enableEncryption('profile-recovery-passphrase');
+    await storage.close(); storage = undefined;
+    await mkdir(root, { recursive: true });
+    await mkdir(join(root, 'Cache'));
+    const cacheBytes = 'Electron cache is not a saved application profile';
+    await writeFile(join(root, 'Cache', 'entry'), cacheBytes);
+    const encryptedChats = await readFile(join(original, 'chats.json'), 'utf8');
+    const encryptedPreferences = await readFile(join(original, 'preferences.json'), 'utf8');
+    const windowsRoot = win32.join(directory, 'gopher');
+    const mapPath = (path: string) => {
+      const relative = win32.relative(windowsRoot, path);
+      assert.ok(!relative.startsWith('..') && !win32.isAbsolute(relative));
+      return join(root, ...relative.split('\\'));
+    };
+    const selected = defaultDataDirectory({ platform: 'win32', env: { APPDATA: directory }, home: directory, lstat: path => lstatSync(mapPath(path)) });
+    assert.equal(selected, win32.join(windowsRoot, 'config'));
+    const selectedConfig = mapPath(win32.join(selected, 'config.toml'));
+    assert.equal(selectedConfig, join(original, 'config.toml'));
+    app = await createApp({ configPath: selectedConfig, bind: '127.0.0.1:0' });
+    await app.listen();
+    const address = app.server.address();
+    assert.ok(address && typeof address !== 'string');
+    const origin = `http://127.0.0.1:${address.port}`;
+    const bootstrap = await fetch(origin);
+    const cookie = bootstrap.headers.get('set-cookie')?.split(';')[0];
+    assert.ok(cookie);
+    await bootstrap.body?.cancel();
+    const send = (path: string, body?: unknown) => fetch(origin + path, { method: body === undefined ? 'GET' : 'POST', headers: { cookie, 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+    const lockedResponse = await send('/api/data/store');
+    assert.equal(lockedResponse.status, 423);
+    await lockedResponse.body?.cancel();
+    const unlocked = await send('/api/data/encryption/unlock', { passphrase: 'profile-recovery-passphrase' });
+    assert.equal(unlocked.status, 200);
+    const dataInfo = await unlocked.json() as { data_dir: string };
+    assert.equal(dataInfo.data_dir, original);
+    const chats = await (await send('/api/data/store')).json() as { profiles: { conversations: { id: string }[] }[] };
+    const preferences = await (await send('/api/data/preferences')).json() as { chatBackgroundImage: string; chatBackgroundPosition: string };
+    assert.equal(chats.profiles[0].conversations[0].id, 'original-chat');
+    assert.equal(preferences.chatBackgroundImage, image);
+    assert.equal(preferences.chatBackgroundPosition, 'center');
+    await app.close(); app = undefined;
+    assert.equal(await readFile(join(root, 'Cache', 'entry'), 'utf8'), cacheBytes);
+    await assert.rejects(readFile(join(root, 'chats.json')), { code: 'ENOENT' });
+    await assert.rejects(readFile(join(root, 'preferences.json')), { code: 'ENOENT' });
+    assert.equal(await readFile(join(original, 'chats.json'), 'utf8'), encryptedChats);
+    assert.equal(await readFile(join(original, 'preferences.json'), 'utf8'), encryptedPreferences);
+  } finally {
+    await app?.close();
+    await storage?.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

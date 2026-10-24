@@ -21,6 +21,7 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - run: npm audit --audit-level=high
       - run: node node_modules/electron/install.js
       - run: npm run typecheck
       - run: npm run build
@@ -28,14 +29,11 @@ jobs:
         if: runner.os != 'Linux'
       - run: node node_modules/playwright-core/cli.js install --with-deps chromium
         if: runner.os == 'Linux'
-      - run: npm test
-      - run: npm run test:ui
-        env:
-          GOPHER_E2E: '1'
-      - name: Allow the Electron namespace sandbox on restricted Ubuntu hosts
+      - name: Allow Chromium namespace sandboxes on restricted Ubuntu hosts
         if: runner.os == 'Linux'
         run: |
-          id -u
+          browser_path="$(node -p "require('playwright-core').chromium.executablePath()")"
+          echo "GOPHER_BROWSER_PATH=$browser_path" >> "$GITHUB_ENV"
           if [ "$(sysctl -n kernel.apparmor_restrict_unprivileged_userns 2>/dev/null || echo 0)" = 1 ]; then
             cat > "$RUNNER_TEMP/gopher-electron.apparmor" <<EOF
           abi <abi/4.0>,
@@ -43,9 +41,16 @@ jobs:
           profile gopher-ci "$GITHUB_WORKSPACE/node_modules/electron/dist/electron" flags=(unconfined) {
             userns,
           }
+          profile gopher-browser-ci "$browser_path" flags=(unconfined) {
+            userns,
+          }
           EOF
             sudo apparmor_parser -r "$RUNNER_TEMP/gopher-electron.apparmor"
           fi
+      - run: npm test
+      - run: npm run test:ui
+        env:
+          GOPHER_E2E: '1'
       - name: Native desktop smoke (Linux virtual display, Chromium sandbox enabled)
         if: runner.os == 'Linux'
         run: |

@@ -1,4 +1,5 @@
 function renderThread(convo: Conversation, { drainQueue = true } = {}) {
+  if (typeof syncAgentProcesses === 'function') syncAgentProcesses();
   cancelMessageEdit({ resumeQueue: false });
   if (typeof isBotsConvo === 'function' && isBotsConvo(convo) && typeof isSilentNoReply === 'function') {
     const kept = (convo.messages || []).filter((message) => (

@@ -17,11 +17,11 @@ export async function readControllerSource(name: string, root = 'client/chat/scr
 /** Controller order is part of the application's shared browser scope. */
 export const CLIENT_CONTROLLERS = [
   'state', 'diagnostics', 'input', 'controls', 'render', 'providers',
-  'bots', 'workspace', 'runtime', 'terminal',
+  'bots', 'workspace', 'runtime', 'terminal', 'processes',
 ] as const;
 export const CLIENT_STYLES = [
   'base', 'conversation', 'content', 'composer', 'activity', 'projects',
-  'notifications', 'profiles', 'bots', 'terminal', 'diagnostics', 'workspace',
+  'notifications', 'profiles', 'bots', 'terminal', 'diagnostics', 'workspace', 'processes',
 ] as const;
 
 export async function buildClient(outputDirectory = resolve('dist/public')): Promise<void> {
