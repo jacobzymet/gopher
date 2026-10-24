@@ -30,7 +30,9 @@ export interface ServerOptions { configPath?: string; bind?: string; publicDir?:
 const ROUTES = [...dataRoutes, ...providerRoutes, ...recordRoutes, ...chatRoutes, ...accountRoutes];
 /** Endpoints that are not cut off by locking; everything else is answered with 423 when data locks mid-request. */
 const UNPROTECTED = ['/api/state', '/api/data', '/api/focus', '/api/open-url'];
-const DIAGNOSTICS_FLUSH_MS = 2000;
+// Each save encrypts and replaces the entire buffer. Batch disk writes; live viewing
+// reads memory, and storage still flushes pending entries on lock and shutdown.
+const DIAGNOSTICS_FLUSH_MS = 60_000;
 const here = dirname(fileURLToPath(import.meta.url));
 const builtRuntime = !fileURLToPath(import.meta.url).endsWith('.ts');
 const sourceRoot = resolve(here, '../..');
@@ -69,9 +71,13 @@ export async function createApp(options: ServerOptions = {}) {
   runtime = new AppRuntime(storage, providers, engine, terminals, sockets, randomBytes(32).toString('base64url'), bind);
   const publicDir = options.publicDir || (builtRuntime ? resolve(here, '../public') : join(sourceRoot, 'dist/public'));
   let unprotectBrowserOrigins: (() => void) | undefined;
+  let diagnosticFlushBusy = false;
   const diagnosticTimer = setInterval(() => {
+    if (diagnosticFlushBusy) return;
     if (storage.encrypted && !storage.unlocked) return;
-    void storage.flushDiagnostics().catch(error => storage.diagnostics.error(error));
+    diagnosticFlushBusy = true;
+    void storage.flushDiagnostics().catch(error => storage.diagnostics.error(error))
+      .finally(() => { diagnosticFlushBusy = false; });
   }, DIAGNOSTICS_FLUSH_MS);
   diagnosticTimer.unref();
 

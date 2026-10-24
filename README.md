@@ -136,6 +136,6 @@ Encryption uses Argon2id and authenticated AES-256-GCM with purpose-bound data. 
 
 Encryption protects stored application data. It does not protect workspace files, previously copied plaintext, OS backups, or a compromised logged-in account. Forgotten passphrases cannot be recovered.
 
-Diagnostic logging is off by default. Settings → Logs captures redacted browser/server/provider/tool events and timing milestones. Saved diagnostics require encryption; otherwise the bounded log stays in memory. Locking clears the live buffer.
+Diagnostic logging is off by default. Settings → Logs captures redacted browser/server/provider/tool events and timing milestones. The live buffer holds at most 2,000 entries and 1 MiB. Saved diagnostics require encryption; otherwise the bounded log stays in memory. Changed logs are saved once a minute, and pending entries are also saved on lock or shutdown. Locking clears the live buffer.
 
 Licensed under the [MIT License](LICENSE). See [third-party notices](THIRD_PARTY_NOTICES.md).

@@ -14,7 +14,7 @@ export interface DiagnosticEntry {
   id: number; timestamp: number; level: string; source: string; event: string; trace_id: string; conversation_id: string;
   elapsed_ms: number | null; data: string; truncated_bytes: number;
 }
-export const MAX_ENTRIES = 2000, MAX_BYTES = 8 * 1024 * 1024, MAX_ENTRY_BYTES = 128 * 1024;
+export const MAX_ENTRIES = 2000, MAX_BYTES = 1024 * 1024, MAX_ENTRY_BYTES = 128 * 1024;
 const MAX_TIMINGS = 256;
 const MAX_DEPTH = 100;
 

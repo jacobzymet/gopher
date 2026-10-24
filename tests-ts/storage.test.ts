@@ -268,6 +268,38 @@ test('diagnostics redact secrets, discard stale generations, and enforce bounds'
   diagnostics.suspend(); assert.equal(diagnostics.view().entries.length, 0); assert.equal(diagnostics.enabled, false);
 });
 
+test('large diagnostic entries stay within one MiB while retaining timing milestones', () => {
+  const diagnostics = new Diagnostics(); diagnostics.configure(true);
+  diagnostics.push('test', { event: 'provider.first_byte', trace_id: 'request', elapsed_ms: 12 });
+  for (let i = 0; i < 100; i++) diagnostics.push('test', { event: 'provider.raw_chunk', data: '界'.repeat(50_000) });
+  const view = diagnostics.view();
+  assert.ok(view.bytes <= 1024 * 1024);
+  assert.ok(view.dropped > 0);
+  assert.ok(view.entries.length > 0);
+  assert.ok(view.entries.every(entry => entry.truncated_bytes > 0));
+  assert.equal(view.timings[0]?.elapsed_ms, 12);
+});
+
+test('diagnostic checkpoints skip unchanged logs and lock saves pending entries', async () => {
+  const f = await fixture();
+  try {
+    const storage = await f.open();
+    await storage.savePreferences({ diagnosticsEnabled: true });
+    await storage.enableEncryption('password');
+    storage.diagnostics.push('test', { event: 'checkpoint' });
+    await storage.flushDiagnostics();
+    const path = join(f.directory, 'diagnostics.json');
+    const checkpoint = await readFile(path, 'utf8');
+    await storage.flushDiagnostics();
+    // Re-encryption generates a fresh nonce, so identical ciphertext proves no rewrite.
+    assert.equal(await readFile(path, 'utf8'), checkpoint);
+    storage.diagnostics.push('test', { event: 'pending-before-lock' });
+    await storage.lock();
+    await storage.unlock('password');
+    assert.ok(storage.diagnostics.view().entries.some(entry => entry.event === 'pending-before-lock'));
+  } finally { await f.cleanup(); }
+});
+
 test('bind overrides reject network exposure', () => {
   const config = defaultConfig();
   assert.deepEqual(resolveBind(config, '[::1]:4444'), { host: '::1', port: 4444 });
