@@ -73,7 +73,7 @@ function handleBackdropKeydown(event: KeyboardEvent) {
     event.stopImmediatePropagation();
     switch (modal.id) {
       case 'confirmModal': settleConfirmDanger(false); break;
-      case 'unlockModal': if (!unlockModalBusy) hideUnlockSession(); break;
+      case 'unlockModal': focusUnlockPassphrase(); break;
       case 'searchModal': closeSearchModal(); break;
       case 'settingsModal': closeSettings(); break;
       case 'profileModal': closeProfileModal(); break;
@@ -119,6 +119,7 @@ function openBackdrop(el: HTMLElement) {
 
 function closeBackdrop(el: HTMLElement) {
   if (!el) return;
+  if (el.id === 'unlockModal' && document.documentElement.hasAttribute('data-session-locked')) return;
   const index = backdropFocusStack.findIndex((entry) => entry.el === el);
   if (index !== -1) {
     const wasTop = index === backdropFocusStack.length - 1;

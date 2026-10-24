@@ -41,7 +41,7 @@ test('past-chat retrieval defaults on and an explicit off survives normalization
   const context = settingsContext();
   assert.equal(context.normalizeSettings(null).chatRetrieval, true);
   assert.equal(context.normalizeSettings({}).chatRetrieval, true);
-  const disabled = context.normalizeSettings({ chatRetrieval: false });
+  const disabled = context.normalizeSettings({ chatRetrieval: false, agentMode: false });
   const stored = JSON.parse(JSON.stringify(context.preferencesPayload(disabled)));
   assert.equal(context.normalizeSettings(stored).chatRetrieval, false);
   context.settings = context.normalizeSettings({ agentMode: false });
@@ -50,6 +50,17 @@ test('past-chat retrieval defaults on and an explicit off survives normalization
   context.settings = disabled;
   assert.equal(context.resolveTurnSkills(new Set()).skills.chat_retrieval, false);
   assert.equal(context.resolveTurnSkills(new Set()).useAgent, false);
+});
+
+test('Agent mode defaults on while explicit off preferences survive persistence', () => {
+  const context = settingsContext();
+  assert.equal(context.normalizeSettings(null).agentMode, true);
+  assert.equal(context.normalizeSettings({}).agentMode, true);
+  for (const enabled of [true, false]) {
+    const settings = context.normalizeSettings({ agentMode: enabled });
+    const stored = JSON.parse(JSON.stringify(context.preferencesPayload(settings)));
+    assert.equal(context.normalizeSettings(stored).agentMode, enabled);
+  }
 });
 
 test('approval preferences default to safe mode and preserve explicit choices across persistence and turns', () => {

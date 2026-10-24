@@ -59,7 +59,13 @@ export async function serveStatic(response: ServerResponse, path: string, method
     if (options.locked && path !== '/') return redirect(response, '/');
     file = join(options.publicDir, 'chat.html');
   } else throw new HttpError(404, 'Page not found.');
-  const content = await readFile(file);
+  let content = await readFile(file);
+  if (options.locked && APP_PAGE.test(path)) {
+    // Cover and disable the workspace before scripts or decrypted preferences load.
+    content = Buffer.from(content.toString('utf8')
+      .replace('<html lang="en">', '<html lang="en" data-session-locked="true">')
+      .replace('id="chatShell"', 'id="chatShell" inert aria-hidden="true"'));
+  }
   response.writeHead(200, { 'content-type': MIME[extname(file)] || 'application/octet-stream' });
   response.end(method === 'HEAD' ? undefined : content);
 }

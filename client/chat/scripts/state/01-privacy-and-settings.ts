@@ -115,7 +115,7 @@ const DEFAULT_SETTINGS = {
   skillBrowser: false,
   terminalTimeoutSecs: 30,
   terminalHeightVh: 0.25,
-  agentMode: false,
+  agentMode: true,
   deepResearch: 'off', // Retired mode: retained for stored-preference compatibility.
   attachmentsMode: 'auto', // auto | on | off
   attachmentTextFallback: false,

@@ -685,6 +685,46 @@ html[data-theme="light"] .msg-bubble .hljs-params { color: oklch(40% 0.1 210); }
   opacity: 0.45;
   cursor: default;
 }
+/* Unlocking is an application state, covering the workspace from the first paint. */
+html[data-session-locked] .chat-shell { visibility: hidden; }
+html[data-session-locked] #unlockModal { display: flex !important; opacity: 1; pointer-events: auto; }
+#unlockModal {
+  z-index: 1000;
+  display: flex;
+  padding: max(2rem, env(safe-area-inset-top)) max(1.5rem, env(safe-area-inset-right)) max(2rem, env(safe-area-inset-bottom)) max(1.5rem, env(safe-area-inset-left));
+  background: var(--color-paper);
+  backdrop-filter: none;
+  overflow-y: auto;
+  transition: none;
+}
+#unlockModal .dialog.unlock-dialog {
+  flex: 0 0 auto;
+  width: min(27rem, 100%);
+  margin: auto;
+  padding: 0;
+  gap: 1.4rem;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  opacity: 1;
+  transform: none;
+  transition: none;
+}
+#unlockModal .unlock-dialog-head { flex-direction: column; gap: 1.4rem; }
+#unlockModal .unlock-dialog-mark { width: 3.5rem; height: 3.5rem; margin: 0; border-radius: var(--radius-lg); }
+#unlockModal .unlock-dialog-mark svg { width: 1.65rem; height: 1.65rem; }
+#unlockModal .unlock-dialog-title { font-size: clamp(1.8rem, 5vw, 2.2rem); font-weight: 650; }
+#unlockModal .unlock-dialog-lede { margin-top: 0.8rem; font-size: var(--text-md); line-height: 1.6; color: var(--color-ink-2); }
+#unlockModal .field-label { color: var(--color-ink-2); font-size: var(--text-sm); }
+#unlockModal .unlock-passphrase-block { gap: 0.55rem; }
+#unlockModal .unlock-passphrase { min-height: 3rem; }
+#unlockModal .unlock-passphrase-input { font-size: 1rem; }
+#unlockModal .unlock-reveal { width: 2.6rem; height: 2.6rem; }
+#unlockModal .dialog-actions { padding: 0; margin: 0; border: 0; background: var(--color-paper); }
+#unlockModal #btnUnlockModalSubmit { width: 100%; min-height: 3rem; font-size: var(--text-md); }
+.unlock-screen-note { margin: 0; color: var(--color-muted); font-size: var(--text-xs); line-height: 1.5; text-align: center; }
+
 .button-loading-spinner {
   box-sizing: border-box;
   width: 1rem;

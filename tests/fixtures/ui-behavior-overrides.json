@@ -5,8 +5,8 @@
     {
       "path": "client/chat/scripts/runtime.ts",
       "originalSha256": "df149a5e1c9a4bd6ee0b8f12731e2d20c254c7bfc59df32cb25a559937090d6f",
-      "sha256": "aedddc8944b9f09c6e091264c41c1e019ef7d07d8fd0eb9d11e6a3831ec6ffd8",
-      "reason": "sendMessage, runAssistantTurn and driveAssistantSse split into named functions of 60 lines or fewer, with awaits kept at the same points so sends and turns start in the same tick as before. A finished failed reply refreshes its Retry action. A rejected unlock passphrase is selected so typing again replaces it. Live thinking text skips the Markdown cache. The clock is sent on the newest user message instead of a leading system message, so the cached prompt prefix survives between turns; replies save cached token counts. Uses the safe default when assembling assistant-turn approval settings. Refreshes process discovery when the agent starts a terminal call. Ignore retired research flags in queued or retried turns and omit research mode from new API requests. Render intentional terminal stops with a neutral Stopped state, retain it on earlier session cards and persistence, and keep real failures distinct.",
+      "sha256": "ff158df82853fd982e05bea2314bbfc5f957e5ad9518bdf794ef82e9a0de0ffe",
+      "reason": "sendMessage, runAssistantTurn and driveAssistantSse split into named functions of 60 lines or fewer, with awaits kept at the same points so sends and turns start in the same tick as before. A finished failed reply refreshes its Retry action. A rejected unlock passphrase is selected so typing again replaces it. Live thinking text skips the Markdown cache. The clock is sent on the newest user message instead of a leading system message, so the cached prompt prefix survives between turns; replies save cached token counts. Uses the safe default when assembling assistant-turn approval settings. Refreshes process discovery when the agent starts a terminal call. Ignore retired research flags in queued or retried turns and omit research mode from new API requests. Render intentional terminal stops with a neutral Stopped state, retain it on earlier session cards and persistence, and keep real failures distinct. Replace dismissible unlocking with an opaque gate covering the app window; keep the workspace inert until decrypted data loads successfully.",
       "verifiedBy": [
         "tests/send-races.test.cjs",
         "tests/tool-activity.test.cjs",
@@ -18,7 +18,9 @@
         "tests/notifications.test.cjs",
         "tests-ts/processes.test.ts",
         "tests/composer-menu.test.cjs",
-        "Desktop and mobile disclosure-icon visual check"
+        "Desktop and mobile disclosure-icon visual check",
+        "tests/dialog-focus.test.cjs",
+        "tests-ts/lock-screen.test.ts"
       ]
     },
     {
@@ -66,43 +68,49 @@
     {
       "path": "client/chat/styles/content.css",
       "originalSha256": "e843fc2c59c2fd6bc55b723561dbb7c45dad8ced7bb88006fc159ef79ed7838f",
-      "sha256": "e75a1dc7ea479305182d4ff85631ac2994d60344bc67c3cdcf8be163c741fada",
-      "reason": "Style for the always-visible Retry action on a failed reply, matching the other message actions. On touch screens the code copy button gets a larger invisible tap area. Enlarge thinking and capability disclosure arrows and use SVG chevrons for capability settings. Use opaque component and interaction fills so wallpaper and underlying content cannot show through UI surfaces. Popups appear without an opacity fade.",
+      "sha256": "af0f92de0e7a92bb9b3beac3ec37f257fc1fd162574335066e7024761b9bd03a",
+      "reason": "Style for the always-visible Retry action on a failed reply, matching the other message actions. On touch screens the code copy button gets a larger invisible tap area. Enlarge thinking and capability disclosure arrows and use SVG chevrons for capability settings. Use opaque component and interaction fills so wallpaper and underlying content cannot show through UI surfaces. Popups appear without an opacity fade. Replace dismissible unlocking with an opaque gate covering the app window; keep the workspace inert until decrypted data loads successfully.",
       "verifiedBy": [
         "tests/chat-ux.test.cjs",
         "Visual check of a failed reply",
         "tests/composer-menu.test.cjs",
         "tests-ts/processes.test.ts",
         "Desktop and mobile disclosure-icon visual check",
-        "tests/surface-opacity.test.cjs"
+        "tests/surface-opacity.test.cjs",
+        "tests/dialog-focus.test.cjs",
+        "tests-ts/lock-screen.test.ts"
       ]
     },
     {
       "path": "client/chat/scripts/state.ts",
       "originalSha256": "739a8547444202ec2c6c7afd1a824bd67302ec7bc516c1a9b6a092b1e1cc8ad6",
-      "sha256": "7511d0c65ba7332b1b1585a12a9f8ec858657cc8086bcc5922d5d68d2a8d5cf8",
-      "reason": "Locking encrypted data also clears the rendered-Markdown cache, which holds decrypted chat text. Adds explicit auto_all approval mode and defaults new or unset preferences to auto_safe while preserving saved choices. Clears process logs, pending requests and stop controls when local data locks. Disable retired research preferences and queued research modes on normalization; the + button indicates its menu rather than agent skill selection.",
+      "sha256": "570cae540d94dbf3b479c2e4e75f991157c232f7e3f4cfb92ba864be246af3bf",
+      "reason": "Locking encrypted data also clears the rendered-Markdown cache, which holds decrypted chat text. Adds explicit auto_all approval mode and defaults new or unset preferences to auto_safe while preserving saved choices. Clears process logs, pending requests and stop controls when local data locks. Disable retired research preferences and queued research modes on normalization; the + button indicates its menu rather than agent skill selection. Replace dismissible unlocking with an opaque gate covering the app window; keep the workspace inert until decrypted data loads successfully. Enable Agent mode by default for new or unset preferences while retaining an explicit off choice.",
       "verifiedBy": [
         "tests/markdown-cache.test.cjs",
         "tests/chat-retrieval.test.cjs",
         "tests/notifications.test.cjs",
         "tests-ts/processes.test.ts",
         "tests/composer-menu.test.cjs",
-        "Desktop and mobile disclosure-icon visual check"
+        "Desktop and mobile disclosure-icon visual check",
+        "tests/dialog-focus.test.cjs",
+        "tests-ts/lock-screen.test.ts"
       ]
     },
     {
       "path": "client/chat.html",
       "originalSha256": "2c7002d85cab929c8257479006982d769627719b7b91e4229fb30dd90f8438f3",
-      "sha256": "dba198d4d08429f255a82b7b88689b0c601c503c8154246a26913a8313f54229",
-      "reason": "Groups prompt-cache reuse and token counts inside the context tooltip, removing the standalone toolbar label. Adds explicit approve-all with a warning icon and accessible danger tooltip, selects safe auto-approval by default, and explains approval behavior for enabled tools. Adds the expandable per-chat Processes dock with a static terminal icon. Remove research controls, limit the composer + menu to utilities, move the Agent toggle to Settings, and use larger SVG disclosure arrows.",
+      "sha256": "e363c50d02410227945bed813104a257eeedddd60e203325b80a43311c7fcb60",
+      "reason": "Groups prompt-cache reuse and token counts inside the context tooltip, removing the standalone toolbar label. Adds explicit approve-all with a warning icon and accessible danger tooltip, selects safe auto-approval by default, and explains approval behavior for enabled tools. Adds the expandable per-chat Processes dock with a static terminal icon. Remove research controls, limit the composer + menu to utilities, move the Agent toggle to Settings, and use larger SVG disclosure arrows. Replace dismissible unlocking with an opaque gate covering the app window; keep the workspace inert until decrypted data loads successfully.",
       "verifiedBy": [
         "tests/prompt-cache.test.cjs",
         "tests/chat-retrieval.test.cjs",
         "tests/notifications.test.cjs",
         "tests-ts/processes.test.ts",
         "tests/composer-menu.test.cjs",
-        "Desktop and mobile disclosure-icon visual check"
+        "Desktop and mobile disclosure-icon visual check",
+        "tests/dialog-focus.test.cjs",
+        "tests-ts/lock-screen.test.ts"
       ]
     },
     {

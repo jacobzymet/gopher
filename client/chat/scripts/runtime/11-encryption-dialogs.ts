@@ -96,8 +96,6 @@ function setUnlockModalLoading(loading: boolean) {
   shell?.classList.toggle('is-sealed', loading);
   const reveal = (document.getElementById('btnUnlockModalReveal') as HTMLButtonElement);
   if (reveal) reveal.disabled = loading;
-  const dismiss = (document.getElementById('btnUnlockModalDismiss') as HTMLButtonElement);
-  if (dismiss) dismiss.disabled = loading;
   const status = (document.getElementById('unlockModalStatus') as HTMLElement);
   if (status) {
     status.textContent = loading ? 'Decrypting chats and settings.' : '';
@@ -133,10 +131,6 @@ function setUnlockModalLoading(loading: boolean) {
   const revealed = input?.type !== 'text';
   setUnlockPassphraseRevealed(revealed);
   input?.focus();
-});
-(document.getElementById('btnUnlockModalDismiss') as HTMLButtonElement)?.addEventListener('click', () => {
-  if (unlockModalBusy) return;
-  hideUnlockSession();
 });
 (document.getElementById('btnLockEncryption') as HTMLButtonElement)?.addEventListener('click', async () => {
   try {
@@ -274,8 +268,7 @@ document.addEventListener('keydown', (event) => {
     }
     const unlockModal = (document.getElementById('unlockModal') as HTMLElement);
     if (unlockModal && !unlockModal.classList.contains('is-hidden')) {
-      if (unlockModalBusy) return;
-      hideUnlockSession();
+      focusUnlockPassphrase();
       return;
     }
     if (!projectModal.classList.contains('is-hidden')) {

@@ -92,7 +92,7 @@ function normalizeSettings(parsed: Record<string, unknown> | null | undefined): 
       if (!Number.isFinite(n)) return DEFAULT_SETTINGS.terminalHeightVh;
       return Math.min(0.72, Math.max(0.16, n));
     })(),
-    agentMode: parsed.agentMode === true,
+    agentMode: parsed.agentMode !== false,
     deepResearch: 'off',
     attachmentsMode: ATTACHMENTS_MODES.includes(parsed.attachmentsMode)
       ? parsed.attachmentsMode

@@ -167,6 +167,9 @@ let unlockHideGeneration = 0;
 function promptUnlockSession() {
   const modal = (document.getElementById('unlockModal') as HTMLElement);
   if (!modal) return;
+  document.documentElement.setAttribute('data-session-locked', 'true');
+  chatShell.inert = true;
+  chatShell.setAttribute('aria-hidden', 'true');
   if (typeof unlockModalIsBusy === 'function' && unlockModalIsBusy()) return;
   unlockHideGeneration += 1;
   closeSettings();
@@ -179,8 +182,12 @@ function promptUnlockSession() {
 }
 
 function hideUnlockSession() {
+  if (!storageReady || diskEncryptionLocked() || localDataLoadError) return;
   const modal = (document.getElementById('unlockModal') as HTMLElement);
   if (!modal) return;
+  document.documentElement.removeAttribute('data-session-locked');
+  chatShell.inert = false;
+  chatShell.removeAttribute('aria-hidden');
   const generation = ++unlockHideGeneration;
   closeBackdrop(modal);
   const finish = () => {

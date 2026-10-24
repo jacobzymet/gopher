@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 import { existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { serverRuntime, releaseElectronExecutable } from './runtime.js';
+import { sessionLockReader, windowSessionLock } from './session-lock.js';
 
 let window: BrowserWindow | null = null;
 let server: ChildProcess | null = null;
@@ -45,7 +46,7 @@ async function boot(): Promise<void> {
     process.stdout.write(data);
     logs = (logs + String(data)).slice(-16000);
     const match = logs.match(/Gopher listening on (http:\/\/[^\s]+)/);
-    if (match && !opened) { opened = true; createWindow(match[1]); }
+    if (match && !opened) { opened = true; openWindow(match[1]); }
   });
   server.stderr?.on('data', data => { process.stderr.write(data); logs = (logs + String(data)).slice(-16000); });
   server.on('error', error => { dialog.showErrorBox('Could not start Gopher', error.message); app.quit(); });
@@ -57,7 +58,7 @@ async function boot(): Promise<void> {
     const message = raw as { type: string; id: string; action: string; value?: string; url?: string; focused?: boolean };
     if (message.type === 'existing-instance') {
       if (!message.focused && message.url && !opened) {
-        opened = true; usingExistingServer = true; createWindow(message.url);
+        opened = true; usingExistingServer = true; openWindow(message.url);
       }
       return;
     }
@@ -88,9 +89,28 @@ async function boot(): Promise<void> {
   });
 }
 
-function createWindow(url: string): void {
+function openWindow(url: string): void {
+  void createWindow(url).catch(error => { dialog.showErrorBox('Could not open Gopher', String(error)); app.quit(); });
+}
+
+async function createWindow(url: string): Promise<void> {
+  const readLock = sessionLockReader(new URL(url).origin);
+  const initiallyLocked = await readLock().catch(() => true);
+  if (quitting) return;
   const icon = [join(root, 'assets/browser-favicon.png'), join(root, 'public/browser-favicon.png'), resolve(__dirname, '../public/browser-favicon.png')].find(existsSync);
   window = new BrowserWindow({ width: 1280, height: 840, useContentSize: true, minWidth: 720, minHeight: 520, title: 'Gopher', backgroundColor: '#16181e', ...(icon ? { icon: nativeImage.createFromPath(icon) } : {}), webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, spellcheck: true } });
+  const target = window;
+  const lock = windowSessionLock(target);
+  lock.update(initiallyLocked);
+  let lockTimer: NodeJS.Timeout | undefined;
+  let disposed = false;
+  const refreshLock = async () => {
+    try { const locked = await readLock(); if (!disposed) lock.update(locked); }
+    catch { /* A failed request cannot release a locked window. */ }
+    finally { if (!disposed) lockTimer = setTimeout(() => { void refreshLock(); }, 1000); }
+  };
+  lockTimer = setTimeout(() => { void refreshLock(); }, 1000);
+  target.once('closed', () => { disposed = true; clearTimeout(lockTimer); lock.dispose(); });
   const origin = new URL(url).origin;
   window.webContents.setWindowOpenHandler(({ url: target }) => {
     if (/^https?:\/\//.test(target)) void shell.openExternal(target);
