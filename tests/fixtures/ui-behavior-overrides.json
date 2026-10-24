@@ -5,8 +5,8 @@
     {
       "path": "client/chat/scripts/runtime.ts",
       "originalSha256": "df149a5e1c9a4bd6ee0b8f12731e2d20c254c7bfc59df32cb25a559937090d6f",
-      "sha256": "981dca1680d068f9e31deedf96be289e441380bde1064de14536ac95ecad634e",
-      "reason": "sendMessage, runAssistantTurn and driveAssistantSse split into named functions of 60 lines or fewer, with awaits kept at the same points so sends and turns start in the same tick as before. A finished failed reply refreshes its Retry action. A rejected unlock passphrase is selected so typing again replaces it. Live thinking text skips the Markdown cache. The clock is sent on the newest user message instead of a leading system message, so the cached prompt prefix survives between turns; replies save cached token counts. Uses the safe default when assembling assistant-turn approval settings. Refreshes process discovery when the agent starts a terminal call.",
+      "sha256": "e197af0afe9eae1fcfd26721716ffa578764b2f7db1b466a235bc0ca08e16c66",
+      "reason": "sendMessage, runAssistantTurn and driveAssistantSse split into named functions of 60 lines or fewer, with awaits kept at the same points so sends and turns start in the same tick as before. A finished failed reply refreshes its Retry action. A rejected unlock passphrase is selected so typing again replaces it. Live thinking text skips the Markdown cache. The clock is sent on the newest user message instead of a leading system message, so the cached prompt prefix survives between turns; replies save cached token counts. Uses the safe default when assembling assistant-turn approval settings. Refreshes process discovery when the agent starts a terminal call. Ignore retired research flags in queued or retried turns and omit research mode from new API requests.",
       "verifiedBy": [
         "tests/send-races.test.cjs",
         "tests/tool-activity.test.cjs",
@@ -16,7 +16,9 @@
         "tests/prompt-cache.test.cjs",
         "tests/chat-retrieval.test.cjs",
         "tests/notifications.test.cjs",
-        "tests-ts/processes.test.ts"
+        "tests-ts/processes.test.ts",
+        "tests/composer-menu.test.cjs",
+        "Desktop and mobile disclosure-icon visual check"
       ]
     },
     {
@@ -34,68 +36,84 @@
     {
       "path": "client/chat/scripts/controls.ts",
       "originalSha256": "7275ad7af97dd249ddc19b964b9f59e22f73eb2b8f0b37e5d33340bb319a2f6e",
-      "sha256": "5023e1814df43cf559388ec2056cb2e349754a151dc64d0f29a41be4f24adfc8",
-      "reason": "Stream start and end refresh Retry actions, so Retry hides while a turn runs. Displays and saves the safe default while preserving all three approval modes.",
+      "sha256": "a151bbf01ce2c0429d40876456502f2b101f58b3c0fa96b2cdc6a87dbeb8caff",
+      "reason": "Stream start and end refresh Retry actions, so Retry hides while a turn runs. Displays and saves the safe default while preserving all three approval modes. Limit the + menu to attachments, terminal and working directory, retire research controls and expose Agent mode in Settings.",
       "verifiedBy": [
         "tests/chat-ux.test.cjs",
         "tests/chat-retrieval.test.cjs",
-        "tests/notifications.test.cjs"
+        "tests/notifications.test.cjs",
+        "tests/composer-menu.test.cjs",
+        "tests-ts/processes.test.ts",
+        "Desktop and mobile disclosure-icon visual check"
       ]
     },
     {
       "path": "client/chat/styles/composer.css",
       "originalSha256": "fb4208f77f984115ebbc41854f5ca0e4ef94a4d69a33ee49ca205c51bf5f3700",
-      "sha256": "23f38b44dc2f5ca03210fc8a9b28c561d4ee12b2da948b041092d9633d702c7c",
-      "reason": "When the chat column is narrow (sidebar and Activity open), the composer uses the existing compact Branch button and keeps its tools on one row instead of stacking them; the empty capabilities label stays on one line. On touch screens the capability chip remove button gets a larger invisible tap area that does not cover the label. Prompt reuse is grouped under the context details with an aligned percentage and subtle divider, removing the standalone cache label from the composer toolbar.",
+      "sha256": "1f8a4c500ce72e40e795809d8fb1782f4434b6608617baf2425a3ef4beb3c38c",
+      "reason": "When the chat column is narrow (sidebar and Activity open), the composer uses the existing compact Branch button and keeps its tools on one row instead of stacking them; the empty capabilities label stays on one line. On touch screens the capability chip remove button gets a larger invisible tap area that does not cover the label. Prompt reuse is grouped under the context details with an aligned percentage and subtle divider, removing the standalone cache label from the composer toolbar. Replace the small thinking-menu triangle with an 18px SVG chevron.",
       "verifiedBy": [
         "tests/chat-ux.test.cjs",
         "Visual check at 1024px with sidebar and Activity open, idle and streaming",
-        "tests/prompt-cache.test.cjs"
+        "tests/prompt-cache.test.cjs",
+        "tests/composer-menu.test.cjs",
+        "tests-ts/processes.test.ts",
+        "Desktop and mobile disclosure-icon visual check"
       ]
     },
     {
       "path": "client/chat/styles/content.css",
       "originalSha256": "e843fc2c59c2fd6bc55b723561dbb7c45dad8ced7bb88006fc159ef79ed7838f",
-      "sha256": "d0a959cf420b1bd73f91134470ee8d3ca66a5777762b9f61dd05e388f837f6a2",
-      "reason": "Style for the always-visible Retry action on a failed reply, matching the other message actions. On touch screens the code copy button gets a larger invisible tap area.",
+      "sha256": "b2812b337abd8d76681769728eec5aaf227ab14c232df8db4cf31a436b2c7d8d",
+      "reason": "Style for the always-visible Retry action on a failed reply, matching the other message actions. On touch screens the code copy button gets a larger invisible tap area. Enlarge thinking and capability disclosure arrows and use SVG chevrons for capability settings.",
       "verifiedBy": [
         "tests/chat-ux.test.cjs",
-        "Visual check of a failed reply"
+        "Visual check of a failed reply",
+        "tests/composer-menu.test.cjs",
+        "tests-ts/processes.test.ts",
+        "Desktop and mobile disclosure-icon visual check"
       ]
     },
     {
       "path": "client/chat/scripts/state.ts",
       "originalSha256": "739a8547444202ec2c6c7afd1a824bd67302ec7bc516c1a9b6a092b1e1cc8ad6",
-      "sha256": "490c073df99016a95e863dede486ce9cda859f61625fad38f1634a0245ad1698",
-      "reason": "Locking encrypted data also clears the rendered-Markdown cache, which holds decrypted chat text. Adds explicit auto_all approval mode and defaults new or unset preferences to auto_safe while preserving saved choices. Clears process logs, pending requests and stop controls when local data locks.",
+      "sha256": "7511d0c65ba7332b1b1585a12a9f8ec858657cc8086bcc5922d5d68d2a8d5cf8",
+      "reason": "Locking encrypted data also clears the rendered-Markdown cache, which holds decrypted chat text. Adds explicit auto_all approval mode and defaults new or unset preferences to auto_safe while preserving saved choices. Clears process logs, pending requests and stop controls when local data locks. Disable retired research preferences and queued research modes on normalization; the + button indicates its menu rather than agent skill selection.",
       "verifiedBy": [
         "tests/markdown-cache.test.cjs",
         "tests/chat-retrieval.test.cjs",
         "tests/notifications.test.cjs",
-        "tests-ts/processes.test.ts"
+        "tests-ts/processes.test.ts",
+        "tests/composer-menu.test.cjs",
+        "Desktop and mobile disclosure-icon visual check"
       ]
     },
     {
       "path": "client/chat.html",
       "originalSha256": "2c7002d85cab929c8257479006982d769627719b7b91e4229fb30dd90f8438f3",
-      "sha256": "3a76ad9628749d3e18ace0e7595525978631dc0e7b8873c096bf4b308cd68ed0",
-      "reason": "Groups prompt-cache reuse and token counts inside the context tooltip, removing the standalone toolbar label. Adds explicit approve-all with a warning icon and accessible danger tooltip, selects safe auto-approval by default, and explains approval behavior for enabled tools. Adds the expandable per-chat Processes dock with a static terminal icon.",
+      "sha256": "dba198d4d08429f255a82b7b88689b0c601c503c8154246a26913a8313f54229",
+      "reason": "Groups prompt-cache reuse and token counts inside the context tooltip, removing the standalone toolbar label. Adds explicit approve-all with a warning icon and accessible danger tooltip, selects safe auto-approval by default, and explains approval behavior for enabled tools. Adds the expandable per-chat Processes dock with a static terminal icon. Remove research controls, limit the composer + menu to utilities, move the Agent toggle to Settings, and use larger SVG disclosure arrows.",
       "verifiedBy": [
         "tests/prompt-cache.test.cjs",
         "tests/chat-retrieval.test.cjs",
         "tests/notifications.test.cjs",
-        "tests-ts/processes.test.ts"
+        "tests-ts/processes.test.ts",
+        "tests/composer-menu.test.cjs",
+        "Desktop and mobile disclosure-icon visual check"
       ]
     },
     {
       "path": "client/chat/scripts/input.ts",
       "originalSha256": "a4aef8e439addb8d6f72776e4e89ffbea38ebee51e92d64ff59f5cb64e51c37b",
-      "sha256": "05e277c3ec382a3853e3c70f48da4bc8619c43faf247f6a0522ffc4779560448",
-      "reason": "Shows provider-reported prompt reuse for the running turn or latest reply in a dedicated context-tooltip section with token counts; hides the section when cache data is unavailable. Uses the safe default when assembling turn approval settings.",
+      "sha256": "6cb5cc13d2c54c292ffe413a102f812dbab9ffb2f2969b8b66fc076fed94a73a",
+      "reason": "Shows provider-reported prompt reuse for the running turn or latest reply in a dedicated context-tooltip section with token counts; hides the section when cache data is unavailable. Uses the safe default when assembling turn approval settings. Remove the research mention and mode from turn resolution while retaining normal agent tools and explicit tool mentions.",
       "verifiedBy": [
         "tests/prompt-cache.test.cjs",
         "tests/chat-retrieval.test.cjs",
-        "tests/notifications.test.cjs"
+        "tests/notifications.test.cjs",
+        "tests/composer-menu.test.cjs",
+        "tests-ts/processes.test.ts",
+        "Desktop and mobile disclosure-icon visual check"
       ]
     },
     {
@@ -135,6 +153,48 @@
         "tests-ts/processes.test.ts"
       ],
       "sha256": "5b800f9395b8a46ef91ee8afe38b6943b1bacf9909dc85edec8e7854442a4baf"
+    },
+    {
+      "path": "client/chat/styles/base.css",
+      "originalSha256": "99546387a2cf1fd0905784b5b92864fef871d2a1a801fadbd98405cdf9f27fc6",
+      "reason": "Increase surface-menu and sidebar disclosure arrows for legibility.",
+      "verifiedBy": [
+        "tests/composer-menu.test.cjs",
+        "tests-ts/processes.test.ts",
+        "Desktop and mobile disclosure-icon visual check"
+      ],
+      "sha256": "77be07f9c4b44c5245067218eb4c1276b8d24200ccf4a6bcc4aa8dfe1eba7912"
+    },
+    {
+      "path": "client/chat/styles/conversation.css",
+      "originalSha256": "ccdcc720cd27346054f69ef55853663eadf95324e1e135cc98c25bd11401be1e",
+      "reason": "Enlarge activity, tool-result and model-menu disclosure arrows to 18px.",
+      "verifiedBy": [
+        "tests/composer-menu.test.cjs",
+        "tests-ts/processes.test.ts",
+        "Desktop and mobile disclosure-icon visual check"
+      ],
+      "sha256": "bbeddc40f9e91afbfeb07d9f9fee315081432bb5a0c0f8b40a5adf5663bc3a06"
+    },
+    {
+      "path": "client/chat/styles/profiles.css",
+      "originalSha256": "0fcb6420aa74919ee04c2a2573f3367b2950c50f56072a27c2fd4d5ff11d8c70",
+      "reason": "Enlarge account menu disclosure arrows to 18px.",
+      "verifiedBy": [
+        "tests/composer-menu.test.cjs",
+        "tests-ts/processes.test.ts",
+        "Desktop and mobile disclosure-icon visual check"
+      ],
+      "sha256": "d8fbe363b0f928d5ddf76b32b5f3f0dc79054ef3b626865acb1fb1259d9db498"
+    },
+    {
+      "path": "client/chat/styles/diagnostics.css",
+      "originalSha256": "3f2d2243d5f761cf502b0471b4ff9c7b777e6be94ad57043b840ed804f499c76",
+      "reason": "Enlarge diagnostics disclosure arrows for legibility.",
+      "verifiedBy": [
+        "Desktop and mobile disclosure-icon visual check"
+      ],
+      "sha256": "4c9ac776da719a3f26365197c7190bef108251a4a0cb0ce6ce1afe5f501fbd19"
     }
   ]
 }

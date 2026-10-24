@@ -50,11 +50,11 @@ export function defaultDataDirectory(options: DefaultProfileOptions = {}): strin
       if (!info.isDirectory()) throw new Error(`Gopher profile path is not a directory: ${directory}`);
       return ['config.toml', 'chats.json', 'preferences.json', 'encryption.json', 'encryption-transition.json', 'provider-tokens.json', 'diagnostics.json', 'chat-skills/skills.json', 'chat-skills/index.json'].some(file => Boolean(metadata(win32.join(directory, file))));
     };
-    // Preserve the established TypeScript profile when both locations exist.
-    // An older Rust profile may contain stale or inconsistent encryption files;
-    // merely finding it must never switch an existing installation's history.
+    // The original Windows app stores its profile under config. A newer build
+    // may have created an empty root chats.json; that must not hide the archive.
+    // Keep both profiles in place; --config remains an explicit override.
+    if (populated(original)) return original;
     if (populated(root)) return root;
-    populated(original); // Validate the fallback path before selecting it.
     return original;
   }
   if (platform === 'darwin') return posix.join(home, 'Library', 'Application Support', 'gopher');

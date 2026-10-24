@@ -123,8 +123,8 @@
 
 .sidebar-account-caret {
   flex: 0 0 auto;
-  width: 1rem;
-  height: 1rem;
+  width: 1.125rem;
+  height: 1.125rem;
   color: var(--color-muted);
   transition: transform var(--dur-short) var(--ease-settle);
 }
@@ -255,8 +255,8 @@
 }
 
 .topbar-account-cluster .sidebar-account-caret {
-  width: 0.68rem;
-  height: 0.68rem;
+  width: 1.125rem;
+  height: 1.125rem;
   margin-left: -0.04rem;
   color: var(--color-muted);
   opacity: 0.55;

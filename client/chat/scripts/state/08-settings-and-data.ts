@@ -74,7 +74,7 @@ function normalizeSettings(parsed: Record<string, unknown> | null | undefined): 
         ? 0
         : Math.min(200000, Math.max(1000, Math.round(webSearchPageMaxChars))))
       : DEFAULT_SETTINGS.webSearchPageMaxChars,
-    skillDeepResearch: parsed.skillDeepResearch !== false,
+    skillDeepResearch: false,
     approvalMode: APPROVAL_MODES.includes(parsed.approvalMode)
       ? parsed.approvalMode
       : DEFAULT_SETTINGS.approvalMode,
@@ -93,9 +93,7 @@ function normalizeSettings(parsed: Record<string, unknown> | null | undefined): 
       return Math.min(0.72, Math.max(0.16, n));
     })(),
     agentMode: parsed.agentMode === true,
-    deepResearch: DEEP_RESEARCH_MODES.includes(parsed.deepResearch)
-      ? parsed.deepResearch
-      : DEFAULT_SETTINGS.deepResearch,
+    deepResearch: 'off',
     attachmentsMode: ATTACHMENTS_MODES.includes(parsed.attachmentsMode)
       ? parsed.attachmentsMode
       : DEFAULT_SETTINGS.attachmentsMode,

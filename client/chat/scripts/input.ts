@@ -1175,27 +1175,13 @@ function displayTextWithMentions(text: string, mentionIds: Set<string>) {
 
 function resolveTurnSkills(mentionIds: Set<string>) {
   const mentioned = mentionIds instanceof Set ? mentionIds : new Set<string>(mentionIds || []);
-  const deepAllowed = !!settings.skillDeepResearch;
-  const deepFromMention = deepAllowed && mentioned.has('deep_research');
-  const savedDeep = deepAllowed && DEEP_RESEARCH_MODES.includes(settings.deepResearch)
-    ? settings.deepResearch
-    : 'off';
-  const deepOutput = savedDeep !== 'off'
-    ? savedDeep
-    : (deepFromMention ? 'long' : null);
-  const deep = !!deepOutput;
-  const webSearch = deep
-    || (!!settings.agentMode && !!settings.skillWebSearch)
-    || mentioned.has('web_search');
-  const fetchUrl = deep
-    || (!!settings.agentMode && !!settings.skillFetchUrl)
-    || mentioned.has('fetch_url');
+  const webSearch = (!!settings.agentMode && !!settings.skillWebSearch) || mentioned.has('web_search');
+  const fetchUrl = (!!settings.agentMode && !!settings.skillFetchUrl) || mentioned.has('fetch_url');
   const filesystem = !!settings.agentMode && !!settings.skillFilesystem;
   const terminalCap = !!settings.agentMode && !!settings.skillTerminal;
   const browserCap = !!settings.agentMode && !!settings.skillBrowser;
   const chatRetrieval = settings.chatRetrieval !== false;
-  const useAgent = deep
-    || chatRetrieval
+  const useAgent = chatRetrieval
     || webSearch
     || fetchUrl
     || filesystem
@@ -1252,15 +1238,11 @@ function resolveTurnSkills(mentionIds: Set<string>) {
       terminal_timeout_secs: Math.min(30, Math.max(5, Number(settings.terminalTimeoutSecs) || 30)),
       browser: browserCap,
   };
-  if (deep) {
-    skills.web_search_depth = 'deep';
-    skills.web_search_max_results = Math.max(skills.web_search_max_results, 10);
-  }
   return {
     useAgent,
     skills,
-    deepResearch: deep,
-    deepResearchOutput: deepOutput || 'long',
+    deepResearch: false,
+    deepResearchOutput: 'long',
     forceTools: resolveForcedTools(mentioned),
   };
 }
@@ -1368,7 +1350,6 @@ function updateMentionMenu(forInput?: HTMLTextAreaElement) {
     : [];
   const items = extras.concat(MENTION_OPTIONS.filter((item) => {
     if (!item.label.startsWith(ctx.query) || excluded.has(item.id)) return false;
-    if (item.id === 'deep_research' && settings.skillDeepResearch === false) return false;
     return true;
   }));
   if (items.length === 0) {
@@ -1388,15 +1369,15 @@ function updateMentionMenu(forInput?: HTMLTextAreaElement) {
 /** Promote completed @capability tokens in the textarea into chips (strip text). */
 function promoteTypedMentions() {
   const value = composerInput.value;
-  if (!/(^|\s)@(?:web_search|fetch_url|deep_research)\b/i.test(value)) return;
+  if (!/(^|\s)@(?:web_search|fetch_url)\b/i.test(value)) return;
   const cursor = composerInput.selectionStart;
   const before = value.slice(0, cursor);
-  value.replace(/(^|\s)@(web_search|fetch_url|deep_research)\b/gi, (_, _lead: string, name: string) => {
+  value.replace(/(^|\s)@(web_search|fetch_url)\b/gi, (_, _lead: string, name: string) => {
     composerMentionIds.add(name.toLowerCase());
     return _;
   });
-  const next = value.replace(/(^|\s)@(?:web_search|fetch_url|deep_research)\b/gi, '$1').replace(/[ \t]{2,}/g, ' ');
-  const beforeClean = before.replace(/(^|\s)@(?:web_search|fetch_url|deep_research)\b/gi, '$1').replace(/[ \t]{2,}/g, ' ');
+  const next = value.replace(/(^|\s)@(?:web_search|fetch_url)\b/gi, '$1').replace(/[ \t]{2,}/g, ' ');
+  const beforeClean = before.replace(/(^|\s)@(?:web_search|fetch_url)\b/gi, '$1').replace(/[ \t]{2,}/g, ' ');
   composerInput.value = next;
   const nextPos = Math.min(beforeClean.length, next.length);
   composerInput.setSelectionRange(nextPos, nextPos);

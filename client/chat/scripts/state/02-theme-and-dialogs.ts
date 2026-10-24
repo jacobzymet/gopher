@@ -309,11 +309,6 @@ const MENTION_OPTIONS: MentionOption[] = [
     label: 'fetch_url',
     description: 'Open a URL (stays on until you remove it)',
   },
-  {
-    id: 'deep_research',
-    label: 'deep_research',
-    description: 'Investigate across many sources for this message',
-  },
 ];
 const MENTION_IDS = MENTION_OPTIONS.map((item) => item.id);
 const MENTION_TOKEN_RE = /@(?:web_search|fetch_url|deep_research|agent)\b/gi;

@@ -93,24 +93,14 @@ function turnSkillSettings(skills: AssistantTurnOptions['skills'], convo: Conver
   }), chat_retrieval: settings.chatRetrieval !== false && !convo.incognito };
 }
 
-/**
- * Chat retrieval and deep research need agent mode; deep research also turns on deep search.
- * Forced tools apply only to normal agent turns, and enable the tool they force.
- */
-function applyTurnMode(turnSkills: ReturnType<typeof turnSkillSettings>, useAgent: boolean | undefined, deepResearch: boolean,
+/** Chat retrieval needs agent mode. Explicit tool mentions enable the requested tool. */
+function applyTurnMode(turnSkills: ReturnType<typeof turnSkillSettings>, useAgent: boolean | undefined,
   forceTools: AssistantTurnOptions['forceTools']) {
   if (turnSkills.chat_retrieval) useAgent = true;
-  if (deepResearch) {
-    useAgent = true;
-    turnSkills.web_search = true;
-    turnSkills.fetch_url = true;
-    turnSkills.web_search_depth = 'deep';
-    turnSkills.web_search_max_results = Math.max(turnSkills.web_search_max_results || 6, 10);
-  }
   const turnForceTools = Array.isArray(forceTools)
     ? forceTools.filter((name) => name === 'web_search' || name === 'fetch_url')
     : [];
-  if (deepResearch || !useAgent || !settings.agentMode) {
+  if (!useAgent || !settings.agentMode) {
     turnForceTools.length = 0;
   } else {
     if (turnForceTools.includes('web_search')) turnSkills.web_search = true;
@@ -196,10 +186,6 @@ function turnRequestBody(convo: Conversation, remote: NonNullable<ReturnType<typ
     }),
     ...(speakerEffort ? { thinking_effort: speakerEffort } : {}),
   };
-  if (request.deepResearch) {
-    requestBody.deep_research = true;
-    requestBody.deep_research_output = request.deepResearchOutput === 'brief' ? 'brief' : 'long';
-  }
   if (remote) {
     requestBody.remote_base = remote.base;
     if (remote.provider_id) requestBody.provider_id = remote.provider_id;
@@ -309,8 +295,9 @@ function readyTurnModel(speakerModelId: string) {
 }
 
 async function runAssistantTurn(convo: Conversation, options: AssistantTurnOptions) {
+  const deepResearch = false, deepResearchOutput = 'long';
   const {
-    text, skills, deepResearch = false, deepResearchOutput = 'long', forceTools = [], dispatchedMessage = null,
+    text, skills, forceTools = [], dispatchedMessage = null,
     queueItem = null, speakerBotId = null, skipQueue = false, replaceLive = false, botMessageLimit = null,
     loopTurnDirective = '', loopPhase = null,
   } = options;
@@ -336,7 +323,7 @@ async function runAssistantTurn(convo: Conversation, options: AssistantTurnOptio
     if (!remote) return false;
     resetTraceAutoOpenState();
     const turnSkills = turnSkillSettings(skills, convo);
-    const { useAgent, turnForceTools } = applyTurnMode(turnSkills, options.useAgent, deepResearch, forceTools);
+    const { useAgent, turnForceTools } = applyTurnMode(turnSkills, options.useAgent, forceTools);
     const stream = beginLiveStream(convo, {
       useAgent, deepResearch, deepResearchOutput, turnSkills, turnForceTools, turnModel: remote.model,
       speakerBotId: speakerBotId || null, loopPhase, turnStartedAt: workStartedAt, turnId: clientTurnId,

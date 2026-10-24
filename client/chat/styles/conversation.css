@@ -198,8 +198,8 @@
   color: var(--color-muted);
 }
 .trace-sidebar-head .trace-pane-fold svg {
-  width: 1rem;
-  height: 1rem;
+  width: 1.125rem;
+  height: 1.125rem;
 }
 .trace-sidebar-head-actions {
   display: flex;
@@ -404,8 +404,8 @@
   color: var(--color-ink);
 }
 .agent-timeline-fold-toggle .think-chevron {
-  width: 0.9rem;
-  height: 0.9rem;
+  width: 1.125rem;
+  height: 1.125rem;
   color: currentColor;
   opacity: 0.8;
   transition: transform var(--dur-short) var(--ease-settle), color var(--dur-short) var(--ease-out);
@@ -852,8 +852,8 @@ html[data-theme="light"] .agent-process-note {
 }
 .chat-model-select-caret {
   flex: 0 0 auto;
-  width: 0.82rem;
-  height: 0.82rem;
+  width: 1.125rem;
+  height: 1.125rem;
   color: var(--color-muted);
   pointer-events: none;
   transition: transform var(--dur-short) var(--ease-settle);
@@ -1092,8 +1092,8 @@ button.chat-model-section-label:focus-visible {
   min-width: 0;
 }
 .chat-model-fold {
-  width: 0.72rem;
-  height: 0.72rem;
+  width: 1.125rem;
+  height: 1.125rem;
   flex: 0 0 auto;
   transition: transform 160ms var(--ease-out);
 }

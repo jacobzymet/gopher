@@ -7,7 +7,7 @@
 .diagnostics-feed { border-top: 1px solid var(--color-rule); margin-top: .8rem; }
 .diagnostic-entry { padding: .55rem 0; border-bottom: 1px solid var(--color-rule); font-size: var(--text-xs); }
 .diagnostic-entry summary { display: flex; flex-wrap: wrap; gap: .4rem; cursor: pointer; overflow-wrap: anywhere; }
-.diagnostic-entry summary::before { content: '▸'; color: var(--color-muted); }
+.diagnostic-entry summary::before { content: '▸'; font-size: 1rem; line-height: 1.2; color: var(--color-ink-2); }
 .diagnostic-entry[open] summary::before { content: '▾'; }
 .diagnostic-entry time, .diagnostic-entry .diagnostic-meta { color: var(--color-muted); }
 .diagnostic-entry.is-error summary, .diagnostic-entry.is-warn summary { color: var(--color-danger, #d89b6b); }

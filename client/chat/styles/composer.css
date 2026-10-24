@@ -980,7 +980,9 @@ html[data-theme="light"] .plus-menu-icon.is-agent { color: oklch(48% 0.16 305); 
   font-weight: 500;
 }
 .btn-think-caret {
-  font-size: 0.72rem;
+  width: 1.125rem;
+  height: 1.125rem;
+  flex: 0 0 auto;
   line-height: 1;
   opacity: 0.72;
   transform: translateY(0.02em);

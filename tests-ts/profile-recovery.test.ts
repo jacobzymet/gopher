@@ -25,6 +25,8 @@ test('Windows profile discovery restores encrypted conversations and background 
     await mkdir(join(root, 'Cache'));
     const cacheBytes = 'Electron cache is not a saved application profile';
     await writeFile(join(root, 'Cache', 'entry'), cacheBytes);
+    const emptyChats = JSON.stringify({ version: 3, activeProfileId: 'personal', profiles: [{ id: 'personal', conversations: [] }] });
+    await writeFile(join(root, 'chats.json'), emptyChats);
     const encryptedChats = await readFile(join(original, 'chats.json'), 'utf8');
     const encryptedPreferences = await readFile(join(original, 'preferences.json'), 'utf8');
     const windowsRoot = win32.join(directory, 'gopher');
@@ -61,7 +63,7 @@ test('Windows profile discovery restores encrypted conversations and background 
     assert.equal(preferences.chatBackgroundPosition, 'center');
     await app.close(); app = undefined;
     assert.equal(await readFile(join(root, 'Cache', 'entry'), 'utf8'), cacheBytes);
-    await assert.rejects(readFile(join(root, 'chats.json')), { code: 'ENOENT' });
+    assert.equal(await readFile(join(root, 'chats.json'), 'utf8'), emptyChats);
     await assert.rejects(readFile(join(root, 'preferences.json')), { code: 'ENOENT' });
     assert.equal(await readFile(join(original, 'chats.json'), 'utf8'), encryptedChats);
     assert.equal(await readFile(join(original, 'preferences.json'), 'utf8'), encryptedPreferences);

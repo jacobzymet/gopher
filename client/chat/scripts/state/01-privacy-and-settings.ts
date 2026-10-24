@@ -70,7 +70,7 @@ const WEB_SEARCH_PROVIDERS = ['auto', 'parallel', 'tinyfish', 'searxng', 'duckdu
 const WEB_SEARCH_PARALLEL_MODES = ['turbo', 'fast', 'basic', 'advanced'];
 const WEB_SEARCH_SAFESEARCH = ['on', 'moderate', 'off'];
 const WEB_SEARCH_RECENCIES = ['any', 'day', 'week', 'month', 'year'];
-const DEEP_RESEARCH_MODES = ['off', 'long', 'brief'];
+
 const ATTACHMENTS_MODES = ['auto', 'on', 'off'];
 const ATTACHMENT_MIN_CONTEXT = 16384;
 const ATTACHMENT_MAX_FILES = 6;
@@ -107,7 +107,7 @@ const DEFAULT_SETTINGS = {
   skillFetchUrl: true,
   fetchUrlMaxChars: 8000,
   webSearchPageMaxChars: 0,
-  skillDeepResearch: true,
+  skillDeepResearch: false,
   approvalMode: 'auto_safe',
   diagnosticsEnabled: false,
   skillFilesystem: false,
@@ -116,7 +116,7 @@ const DEFAULT_SETTINGS = {
   terminalTimeoutSecs: 30,
   terminalHeightVh: 0.25,
   agentMode: false,
-  deepResearch: 'off', // off | long | brief — composer Research mode
+  deepResearch: 'off', // Retired mode: retained for stored-preference compatibility.
   attachmentsMode: 'auto', // auto | on | off
   attachmentTextFallback: false,
   attachmentOcr: false,

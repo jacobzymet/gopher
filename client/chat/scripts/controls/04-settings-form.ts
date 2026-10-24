@@ -295,7 +295,7 @@ function fillSettingsFormFromState() {
   (document.getElementById('settingWebSearchPageMaxChars') as HTMLInputElement).value = String(
     Number.isFinite(settings.webSearchPageMaxChars) ? settings.webSearchPageMaxChars : 0
   );
-  (document.getElementById('settingSkillDeepResearch') as HTMLInputElement).checked = settings.skillDeepResearch !== false;
+  (document.getElementById('settingAgentMode') as HTMLInputElement).checked = !!settings.agentMode;
   (document.getElementById('settingSkillFilesystem') as HTMLInputElement).checked = !!settings.skillFilesystem;
   (document.getElementById('settingSkillTerminal') as HTMLInputElement).checked = !!settings.skillTerminal;
   (document.getElementById('settingSkillBrowser') as HTMLInputElement).checked = !!settings.skillBrowser;
@@ -350,7 +350,7 @@ function readSettingsForm() {
     skillFetchUrl: (document.getElementById('settingSkillFetchUrl') as HTMLInputElement).checked,
     fetchUrlMaxChars: fetchUrlMaxCharsRaw,
     webSearchPageMaxChars: webSearchPageMaxCharsRaw,
-    skillDeepResearch: (document.getElementById('settingSkillDeepResearch') as HTMLInputElement).checked,
+    skillDeepResearch: false,
     skillFilesystem: (document.getElementById('settingSkillFilesystem') as HTMLInputElement).checked,
     skillTerminal: (document.getElementById('settingSkillTerminal') as HTMLInputElement).checked,
     skillBrowser: (document.getElementById('settingSkillBrowser') as HTMLInputElement).checked,
@@ -359,8 +359,8 @@ function readSettingsForm() {
     approvalMode: (document.querySelector('#approvalModeToggle [data-approval-mode].is-active') as HTMLElement)?.dataset.approvalMode
       || settings.approvalMode
       || DEFAULT_SETTINGS.approvalMode,
-    agentMode: settings.agentMode,
-    deepResearch: settings.deepResearch,
+    agentMode: (document.getElementById('settingAgentMode') as HTMLInputElement).checked,
+    deepResearch: 'off',
     attachmentsMode: (document.getElementById('settingAttachmentsMode') as HTMLSelectElement).value,
     attachmentTextFallback: (document.getElementById('settingAttachmentTextFallback') as HTMLInputElement).checked,
     attachmentOcr: (document.getElementById('settingAttachmentOcr') as HTMLInputElement).checked,

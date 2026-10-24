@@ -58,10 +58,17 @@ function makeAgentProcessRow(process: AgentProcessView): AgentProcessRow {
   root.setAttribute('name', 'agent-process-output');
   const summary = document.createElement('summary');
   summary.className = 'agent-process-summary';
+  const chevron = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  chevron.classList.add('agent-process-chevron');
+  chevron.setAttribute('viewBox', '0 0 24 24');
+  chevron.setAttribute('fill', 'none'); chevron.setAttribute('stroke', 'currentColor');
+  chevron.setAttribute('stroke-width', '2.2'); chevron.setAttribute('stroke-linecap', 'round');
+  chevron.setAttribute('stroke-linejoin', 'round'); chevron.setAttribute('aria-hidden', 'true');
+  chevron.innerHTML = '<path d="m9 6 6 6-6 6"/>';
   const command = document.createElement('code'); command.className = 'agent-process-command';
   const status = document.createElement('span'); status.className = 'agent-process-status';
   const elapsed = document.createElement('span'); elapsed.className = 'agent-process-elapsed';
-  summary.append(command, status, elapsed);
+  summary.append(chevron, command, status, elapsed);
   const body = document.createElement('div'); body.className = 'agent-process-body';
   const toolbar = document.createElement('div'); toolbar.className = 'agent-process-toolbar';
   const cwd = document.createElement('span'); cwd.className = 'agent-process-cwd';

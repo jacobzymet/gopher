@@ -2,15 +2,15 @@
 
 Reviewed the TypeScript server, agent tools, browser client, Electron shell,
 storage/encryption, authentication, updates/installers, dependencies and CI.
-Corrected a profile-selection regression included in the rebuild: an established
-Windows root profile must retain precedence over an older `gopher/config` profile.
-Profile continuity was also checked against private backups before restoring the previous launch path.
+Corrected Windows profile discovery to retain the original `gopher/config`
+profile when a newer build has also created a root profile. Earlier filesystem
+checks used an isolated AppData view and did not verify the user's live data.
 
 ## Findings addressed
 
 | Finding | Change and evidence |
 | --- | --- |
-| Medium: rebuilding could redirect an established Windows profile to a stale nested profile | Preserve the established root profile when both locations exist. Isolated profile regressions pass; both profiles' backed-up data files were verified unchanged by SHA-256. |
+| Medium: an empty root profile could hide the original Windows archive | Prefer the original populated `gopher/config` profile, retaining explicit `--config` overrides and leaving both locations in place. Regression covers an encrypted original archive alongside an empty root chat file. |
 | High: agent browser could bootstrap Gopher's own authenticated session and bypass tool capability/approval boundaries | Block app origins in browser routing; mark agent requests at the transport layer and reject them before cookie issuance, including redirects. Disable service workers to prevent interception bypasses. Real-browser regressions cover direct navigation, fetch, frames, popups and redirects. |
 | High: Electron 44.3.0 has published security advisories | Pin 44.9.3 in the manifest, lockfile and installation-script policy. The resolved dependency audit reports zero advisories. Add a high-severity dependency audit to CI. See the [Electron advisory](https://github.com/electron/electron/security/advisories/GHSA-jr5w-w6x2-84p9). |
 | Medium: agent Chromium launched without its OS sandbox by default | Explicitly enable Chromium sandboxing. A real-browser check inspects the launched command line. Linux CI configures namespace permission before browser tests. |
@@ -40,9 +40,16 @@ Logs are under `output/security-*.log` and `output/security-npm-audit-final.json
 
 The Electron package and binary are updated to 44.9.3. The user closed the running
 app to release its old runtime files before replacement; native desktop verification
-used the updated executable. Gopher was restored to its previous root profile and
-its saved chats and background were verified. The stale nested profile's
-plaintext/encryption mismatch was not repaired by replacing its archive.
+used the updated executable. Those checks ran in an isolated filesystem view;
+they did not establish that the user's live chats or background had been restored.
+Subsequent inspection through the running desktop and Windows Explorer confirmed
+that the live root profile was empty while the original nested archive remained.
+After the user restarted and unlocked the desktop, its live API confirmed the
+original profile path, enabled and unlocked encryption, saved conversations and
+messages, and a saved background image. Windows Explorer also confirmed a sibling
+backup of the original profile. No archive or encryption metadata is replaced by
+this path fix. All ten focused profile and large-archive recovery tests, the build,
+and type checking passed.
 
 Linux/macOS behavior still needs the repository's platform CI; local verification
 was on Windows. This review does not certify the app against every possible attack.

@@ -337,8 +337,8 @@ html[data-theme="light"] .msg-bubble .hljs-params { color: oklch(40% 0.1 210); }
 .think-summary-label { flex: 0 1 auto; min-width: 0; }
 .think-chevron {
   flex: 0 0 auto;
-  width: 0.95rem;
-  height: 0.95rem;
+  width: 1.125rem;
+  height: 1.125rem;
   color: var(--color-muted);
   opacity: 0.9;
   transition: transform var(--dur-short) var(--ease-out), color var(--dur-short) var(--ease-out);
@@ -1112,7 +1112,9 @@ html[data-theme="light"] .msg-bubble .hljs-params { color: oklch(40% 0.1 210); }
 }
 .capability-advanced-caret {
   display: inline-block;
-  font-size: 0.7rem;
+  width: 1.125rem;
+  height: 1.125rem;
+  flex: 0 0 auto;
   line-height: 1;
   transition: transform var(--dur-short) var(--ease-settle);
 }

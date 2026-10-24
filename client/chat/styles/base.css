@@ -274,8 +274,8 @@ button { font-family: inherit; }
   transition: none;
 }
 .wordmark-surface-caret {
-  width: 0.68em;
-  height: 0.68em;
+  width: 1.125rem;
+  height: 1.125rem;
   flex: 0 0 auto;
   opacity: 0.48;
   transform: translateY(0.08em);
@@ -1400,8 +1400,8 @@ button.sidebar-utility-row:hover .sidebar-utility-icon {
   color: var(--color-accent);
 }
 .sidebar-utility-row .sidebar-utility-chevron {
-  width: 0.86rem;
-  height: 0.86rem;
+  width: 1.125rem;
+  height: 1.125rem;
   color: var(--color-muted);
   opacity: 0.52;
   transition:

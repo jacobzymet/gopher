@@ -39,7 +39,7 @@ function normalizeOutboundItem(raw: Partial<OutboundItem> | null | undefined): O
     turn: {
       useAgent: !!turn.useAgent,
       skills: turn.skills && typeof turn.skills === 'object' ? turn.skills : {},
-      deepResearch: !!turn.deepResearch,
+      deepResearch: false,
       deepResearchOutput: turn.deepResearchOutput === 'brief' ? 'brief' : 'long',
       forceTools: Array.isArray(turn.forceTools) ? turn.forceTools : [],
     },

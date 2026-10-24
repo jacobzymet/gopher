@@ -37,7 +37,7 @@ test('fresh Windows defaults retain the original config directory with APPDATA a
   assert.equal(defaultConfigPath({ platform: 'win32', env: {}, home: 'C:\\Users\\Example', lstat: inspect }), 'C:\\Users\\Example\\AppData\\Roaming\\gopher\\config\\config.toml');
 });
 
-test('an established root Windows profile wins when both locations contain histories, without changing either', async () => {
+test('the original Windows profile wins when both locations contain histories, without changing either', async () => {
   const f = await fixture();
   try {
     await f.put('config/config.toml', 'original config bytes that must not be parsed by the resolver');
@@ -48,8 +48,8 @@ test('an established root Windows profile wins when both locations contain histo
     await f.put('chats.json', '{"conversations":[{"id":"root-history"}]}');
     await f.put('preferences.json', '{"background":"root-background"}');
     const before = await f.snapshot();
-    assert.equal(defaultDataDirectory(f.options), f.root);
-    assert.equal(defaultConfigPath(f.options), win32.join(f.root, 'config.toml'));
+    assert.equal(defaultDataDirectory(f.options), win32.join(f.root, 'config'));
+    assert.equal(defaultConfigPath(f.options), win32.join(f.root, 'config', 'config.toml'));
     assert.deepEqual(await f.snapshot(), before);
     const explicit = win32.join(f.root, 'config', 'config.toml');
     const cli = parseCliArgs([`--config=${explicit}`]);
@@ -83,7 +83,7 @@ test('saved original data selects the original profile even without a config fil
     assert.equal(defaultDataDirectory(f.options), win32.join(f.root, 'config'));
     assert.deepEqual(await f.snapshot(), before);
     await f.put('config.toml', 'established root configuration');
-    assert.equal(defaultDataDirectory(f.options), f.root, 'An existing configured root must not be silently redirected.');
+    assert.equal(defaultDataDirectory(f.options), win32.join(f.root, 'config'), 'A newly created root configuration must not hide the original archive.');
   } finally { await f.cleanup(); }
 });
 

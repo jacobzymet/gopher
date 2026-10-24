@@ -314,12 +314,6 @@ function syncAgentButton() {
 
 function syncPlusButton() {
   if (!btnPlus) return;
-  const active = !!settings.agentMode
-    || settings.deepResearch === 'long'
-    || settings.deepResearch === 'brief'
-    || composerMentionIds.has('web_search')
-    || composerMentionIds.has('fetch_url')
-    || composerMentionIds.has('deep_research');
-  btnPlus.classList.toggle('is-active', active);
+  btnPlus.classList.remove('is-active');
 }
 

@@ -1,6 +1,6 @@
 .agent-processes {
   flex: 0 0 auto;
-  width: min(100% - 2rem, var(--composer-max));
+  width: min(100% - 2 * clamp(1rem, 4vw, 2rem), var(--composer-max));
   margin: 0 auto 0.35rem;
   border: 1px solid var(--color-rule);
   border-radius: var(--radius-sm);
@@ -18,15 +18,15 @@
 .agent-processes summary::-webkit-details-marker { display: none; }
 .agent-processes-summary { font-weight: 600; }
 .agent-processes-count { color: var(--color-muted); font-weight: 400; }
-.agent-processes-chevron { margin-left: auto; color: var(--color-muted); transform: rotate(180deg); }
-.agent-processes[open] > summary .agent-processes-chevron { transform: none; }
+.agent-processes-chevron, .agent-process-chevron { width: 1.125rem; height: 1.125rem; flex: 0 0 auto; color: var(--color-ink-2); }
+.agent-processes-chevron { margin-left: auto; }
+.agent-processes[open] > summary .agent-processes-chevron { transform: rotate(180deg); }
 .agent-processes-icon { width: 0.85rem; height: 0.85rem; flex: 0 0 auto; color: var(--color-muted); }
 .agent-processes-list { max-height: min(42vh, 24rem); overflow-y: auto; overscroll-behavior: contain; }
 .agent-process { border-top: 1px solid var(--color-rule); }
 .agent-process-summary { padding-block: 0.55rem; }
 .agent-process-summary:hover { background: var(--surface-hover); }
-.agent-process-summary::before { content: '›'; color: var(--color-muted); }
-.agent-process[open] > .agent-process-summary::before { transform: rotate(90deg); }
+.agent-process[open] > .agent-process-summary .agent-process-chevron { transform: rotate(90deg); }
 .agent-process-command { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: inherit; font-family: var(--font-mono); }
 .agent-process-status { color: var(--color-muted); white-space: nowrap; }
 .agent-process[data-status="running"] .agent-process-status { color: var(--color-accent); }
@@ -50,8 +50,10 @@
   outline: 2px solid var(--color-focus); outline-offset: -2px;
 }
 @media (max-width: 600px) {
-  .agent-processes { width: calc(100% - 1rem); }
   .agent-processes-summary, .agent-process-summary { min-height: 2.75rem; padding-inline: 0.65rem; }
   .agent-process-elapsed { font-size: 0.65rem; }
   .agent-process-stop { min-height: 2.5rem; }
+}
+@media (max-width: 520px) {
+  .agent-processes { width: min(100% - 1.5rem, var(--composer-max)); }
 }

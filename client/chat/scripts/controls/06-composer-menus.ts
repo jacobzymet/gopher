@@ -74,18 +74,9 @@ const PLUS_CHECK_SVG =
 
 function plusMenuIcons() {
   return {
-    attach:
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>',
-    search:
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/><path d="M3 12h18"/><path d="M3.6 8h16.8"/><path d="M3.6 16h16.8"/></svg>',
-    fetch:
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>',
-    research:
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10.5 14.5-6 6"/><path d="m14 6 4 4"/><path d="M15.2 4.8a2.2 2.2 0 0 1 3.1 3.1L10.5 15.7 7.3 12.5Z"/><path d="M4 20h5"/><path d="M6.5 17.5v5"/></svg>',
-    agent:
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg>',
-    terminal:
-      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>',
+    attach: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>',
+    terminal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 5 6 6-6 6M13 19h7"/></svg>',
+    workspace: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h5l2 2h9a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2Z"/></svg>',
   };
 }
 
@@ -123,94 +114,32 @@ function renderPlusMenu() {
   const icons = plusMenuIcons();
   const attachEnabled = attachmentsUiEnabled() && serverReady && !diskEncryptionLocked();
   const attachReason = attachDisabledReason();
-  const researchAllowed = settings.skillDeepResearch !== false;
-  const agentOn = !!settings.agentMode;
-
-  plusMenu.innerHTML = '';
-  plusMenu.appendChild(renderPlusMenuItem({
-    id: 'agent',
-    iconClass: 'is-agent',
-    icon: icons.agent,
-    title: 'Agent mode',
-    desc: agentOn
-      ? 'All agent skills available when needed'
-      : 'Unlocks all agent skills when needed',
-    badge: 'Recommended',
-    on: agentOn,
-    disabled: false,
-  }));
-  plusMenu.appendChild(renderPlusMenuItem({
-    id: 'attach',
-    iconClass: 'is-attach',
-    icon: icons.attach,
-    title: 'Add photos & files',
-    desc: attachEnabled ? 'Upload from computer' : (attachReason || 'Configure in Settings'),
-    on: false,
-    disabled: false,
-    titleAttr: attachEnabled ? 'Attach files' : (attachReason || 'Go to Settings → Attachments'),
-  }));
-  if (settings.skillWebSearch !== false) {
-    plusMenu.appendChild(renderPlusMenuItem({
-      id: 'web_search',
-      iconClass: 'is-search',
-      icon: icons.search,
-      title: agentOn ? 'Require web search' : 'Web search',
-      desc: agentOn
-        ? 'Must search before answering'
-        : 'Keep enabled for this chat',
-      on: composerMentionIds.has('web_search'),
-      disabled: false,
-    }));
-  }
-  if (settings.skillFetchUrl !== false) {
-    plusMenu.appendChild(renderPlusMenuItem({
-      id: 'fetch_url',
-      iconClass: 'is-fetch',
-      icon: icons.fetch,
-      title: agentOn ? 'Require fetch URL' : 'Fetch URL',
-      desc: agentOn
-        ? 'Must open a page before answering'
-        : 'Keep enabled for this chat',
-      on: composerMentionIds.has('fetch_url'),
-      disabled: false,
-    }));
-  }
-  if (researchAllowed) {
-    plusMenu.appendChild(renderPlusMenuItem({
-      id: 'deep_research_long',
-      iconClass: 'is-research',
-      icon: icons.research,
-      title: 'Deep research · comprehensive',
-      desc: 'Detailed report from many sources',
-      on: settings.deepResearch === 'long',
-      disabled: false,
-    }));
-    plusMenu.appendChild(renderPlusMenuItem({
-      id: 'deep_research_brief',
-      iconClass: 'is-research',
-      icon: icons.research,
-      title: 'Deep research · concise',
-      desc: 'Brief answer from many sources',
-      on: settings.deepResearch === 'brief',
-      disabled: false,
-    }));
-  }
-  plusMenu.appendChild(renderPlusMenuItem({
-    id: 'terminal',
-    iconClass: 'is-agent',
-    icon: icons.terminal,
-    title: 'Terminal',
-    desc: 'Open a command panel under the chat box',
-    on: !!terminalOpen,
-    disabled: false,
-  }));
+  const workspace = sessionWorkspaceRoot();
+  plusMenu.replaceChildren(
+    renderPlusMenuItem({
+      id: 'attach', iconClass: 'is-attach', icon: icons.attach,
+      title: 'Add photos & files',
+      desc: attachEnabled ? 'Upload from computer' : (attachReason || 'Configure in Settings'),
+      on: false, disabled: false,
+      titleAttr: attachEnabled ? 'Attach files' : (attachReason || 'Go to Settings → Attachments'),
+    }),
+    renderPlusMenuItem({
+      id: 'terminal', iconClass: 'is-agent', icon: icons.terminal,
+      title: 'Terminal', desc: 'Open a command panel under the chat box',
+      on: !!terminalOpen, disabled: false,
+    }),
+    renderPlusMenuItem({
+      id: 'workspace', iconClass: 'is-agent', icon: icons.workspace,
+      title: 'Working directory', desc: workspace || 'Choose a folder for this chat',
+      titleAttr: workspace || 'Choose working directory', on: false,
+      disabled: diskEncryptionLocked(),
+    }),
+  );
 }
 
 function renderComposerModes() {
   if (!composerModes) return;
   composerModes.innerHTML = '';
-  const researchOn = settings.skillDeepResearch !== false
-    && (settings.deepResearch === 'long' || settings.deepResearch === 'brief');
   if (settings.agentMode) {
     const chip = (document.createElement('span') as HTMLElement);
     chip.className = 'composer-mode-chip is-agent-available';
@@ -236,20 +165,7 @@ function renderComposerModes() {
     chip.appendChild(remove);
     composerModes.appendChild(chip);
   }
-  if (researchOn) {
-    const chip = (document.createElement('span') as HTMLElement);
-    chip.className = 'composer-mode-chip';
-    const style = settings.deepResearch === 'brief' ? 'concise' : 'comprehensive';
-    chip.innerHTML = '<span>Research · ' + escapeHtml(style) + '</span>';
-    const remove = (document.createElement('button') as HTMLButtonElement);
-    remove.type = 'button';
-    remove.setAttribute('aria-label', 'Turn off deep research');
-    remove.textContent = '×';
-    remove.addEventListener('click', () => setDeepResearch('off', true));
-    chip.appendChild(remove);
-    composerModes.appendChild(chip);
-  }
-  if (!settings.agentMode && !researchOn && composerMentionIds.size === 0) {
+  if (!settings.agentMode && composerMentionIds.size === 0) {
     const empty = (document.createElement('span') as HTMLElement);
     empty.className = 'composer-capabilities-empty';
     empty.textContent = 'No agent capabilities enabled';
@@ -303,8 +219,8 @@ function setPlusMenuOpen(open: boolean) {
   }
   plusMenu.classList.remove('is-open');
   btnPlus.setAttribute('aria-expanded', 'false');
-  btnPlus.title = 'Add files and capabilities';
-  btnPlus.setAttribute('aria-label', 'Add files and capabilities');
+  btnPlus.title = 'Add files and tools';
+  btnPlus.setAttribute('aria-label', 'Add files and tools');
   const finish = () => {
     plusMenu.classList.add('is-hidden');
     plusMenu.classList.remove('is-above');
@@ -340,35 +256,9 @@ function handlePlusMenuAction(action: string | undefined) {
     attachFileInput.click();
     return;
   }
-  if (action === 'web_search') {
-    if (settings.skillWebSearch === false) return;
-    toggleComposerMention('web_search');
+  if (action === 'workspace') {
     setPlusMenuOpen(false);
-    return;
-  }
-  if (action === 'fetch_url') {
-    if (settings.skillFetchUrl === false) return;
-    toggleComposerMention('fetch_url');
-    setPlusMenuOpen(false);
-    return;
-  }
-  if (action === 'deep_research_long') {
-    if (settings.skillDeepResearch === false) return;
-    setDeepResearch(settings.deepResearch === 'long' ? 'off' : 'long', true);
-    setPlusMenuOpen(false);
-    return;
-  }
-  if (action === 'deep_research_brief') {
-    if (settings.skillDeepResearch === false) return;
-    setDeepResearch(settings.deepResearch === 'brief' ? 'off' : 'brief', true);
-    setPlusMenuOpen(false);
-    return;
-  }
-  if (action === 'agent') {
-    if (!requireUnlockedData()) return;
-    settings.agentMode = !settings.agentMode;
-    saveSettings({ ...settings });
-    setPlusMenuOpen(false);
+    if (requireUnlockedData()) void pickSessionWorkspace();
     return;
   }
   if (action === 'terminal') {
@@ -378,27 +268,9 @@ function handlePlusMenuAction(action: string | undefined) {
 }
 
 function syncResearchControls() {
-  const allowed = settings.skillDeepResearch !== false;
-  if (!allowed && settings.deepResearch !== 'off') {
-    settings.deepResearch = 'off';
-  }
   renderComposerModes();
   renderPlusMenu();
   syncPlusButton();
-}
-
-function setDeepResearch(mode: string, persist: boolean) {
-  if (settings.skillDeepResearch === false && mode !== 'off') return;
-  const value = DEEP_RESEARCH_MODES.includes(mode) ? mode : 'off';
-  settings.deepResearch = value;
-  syncResearchControls();
-  updateComposerHint();
-  if (persist) {
-    saveSettings({
-      ...settings,
-      deepResearch: value,
-    });
-  }
 }
 
 let thinkingSupported = false;
@@ -516,9 +388,6 @@ async function commitSettings() {
     return;
   }
   const next = readSettingsForm();
-  if (!next.skillDeepResearch) {
-    next.deepResearch = 'off';
-  }
   const previous = settings;
   syncSettingsSaveButton({ saving: true });
   const saved = await saveSettings(next, { immediate: true });

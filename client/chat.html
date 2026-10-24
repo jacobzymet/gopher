@@ -244,7 +244,7 @@
                     <div class="composer-actions">
                       <div class="composer-tools">
                         <div class="composer-plus-wrap" id="composerPlusWrap">
-                          <button type="button" class="btn-plus" id="btnPlus" aria-haspopup="menu" aria-expanded="false" aria-controls="plusMenu" title="Add files and capabilities">
+                          <button type="button" class="btn-plus" id="btnPlus" aria-haspopup="menu" aria-expanded="false" aria-controls="plusMenu" title="Add files and tools">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
                           </button>
                         </div>
@@ -255,7 +255,7 @@
                               <span class="btn-think-verb">Think</span>
                               <span class="btn-think-effort is-hidden" id="btnThinkEffort"></span>
                             </span>
-                            <span class="btn-think-caret" aria-hidden="true">▾</span>
+                            <svg class="btn-think-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
                           </button>
                           <div class="think-menu is-hidden" id="thinkMenu" role="menu" aria-label="Thinking intensity">
                             <div class="think-menu-label">Intensity</div>
@@ -302,7 +302,7 @@
                         </button>
                       </div>
                     </div>
-                    <div class="plus-menu is-hidden" id="plusMenu" role="menu" aria-label="Add files and capabilities"></div>
+                    <div class="plus-menu is-hidden" id="plusMenu" role="menu" aria-label="Add files and tools"></div>
                   </div>
                   <div class="composer-model-tab">
                     <div class="composer-tab-capabilities">
@@ -373,7 +373,7 @@
               <svg class="agent-processes-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m4 5 6 6-6 6M13 19h7"/></svg>
               <span>Processes</span>
               <span class="agent-processes-count" id="agentProcessesCount" role="status" aria-live="polite"></span>
-              <span class="agent-processes-chevron" aria-hidden="true">⌃</span>
+              <svg class="agent-processes-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
             </summary>
             <p class="agent-processes-error is-hidden" id="agentProcessesError" role="status"></p>
             <div class="agent-processes-list" id="agentProcessesList"></div>
@@ -818,7 +818,13 @@
 
           <section class="settings-pane" data-settings-pane="agent-capabilities">
             <h2 class="settings-pane-title">Agent capabilities</h2>
-            <p class="settings-pane-lede">The model can use these tools in Agent mode. Open the composer <strong>+</strong> menu to select a tool, or type <code>@</code> to use a tool one time.</p>
+            <p class="settings-pane-lede">Enable the tools the agent can use when needed. Type <code>@</code> in the composer to request a specific tool.</p>
+            <div class="settings-section">
+              <label class="field-check">
+                <input type="checkbox" id="settingAgentMode">
+                <span>Agent mode — use enabled skills when needed</span>
+              </label>
+            </div>
             <div class="settings-section">
               <h3 class="settings-section-title">Approvals</h3>
               <p class="field-hint" style="margin:0 0 0.75rem">This setting applies to all enabled capabilities below. Safe auto-approval is the default; file edits and terminal commands still ask first.</p>
@@ -847,7 +853,7 @@
               <div class="capability-advanced" data-capability-advanced="web-search">
                 <button type="button" class="capability-advanced-toggle" id="btnWebSearchAdvanced" aria-expanded="false" aria-controls="webSearchOptions">
                   Advanced
-                  <span class="capability-advanced-caret" aria-hidden="true">▾</span>
+                  <svg class="capability-advanced-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
                 </button>
                 <div id="webSearchOptions" class="capability-advanced-panel is-collapsed" hidden>
                   <div class="settings-row">
@@ -908,7 +914,7 @@
                   <div class="capability-advanced" data-capability-advanced="web-search-more">
                     <button type="button" class="capability-advanced-toggle" id="btnWebSearchMore" aria-expanded="false" aria-controls="webSearchMoreOptions">
                       More filters
-                      <span class="capability-advanced-caret" aria-hidden="true">▾</span>
+                      <svg class="capability-advanced-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
                     </button>
                     <div id="webSearchMoreOptions" class="capability-advanced-panel is-collapsed" hidden>
                       <div class="settings-row">
@@ -974,7 +980,7 @@
               <div class="capability-advanced" data-capability-advanced="fetch-url">
                 <button type="button" class="capability-advanced-toggle" id="btnFetchUrlAdvanced" aria-expanded="false" aria-controls="fetchUrlOptions">
                   Advanced
-                  <span class="capability-advanced-caret" aria-hidden="true">▾</span>
+                  <svg class="capability-advanced-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
                 </button>
                 <div id="fetchUrlOptions" class="capability-advanced-panel is-collapsed" hidden>
                   <div class="settings-row">
@@ -986,18 +992,6 @@
                   </div>
                 </div>
               </div>
-            </div>
-            <div class="settings-section">
-              <h3 class="settings-section-title">Deep research</h3>
-              <label class="field-check">
-                <input type="checkbox" id="settingSkillDeepResearch" checked>
-                <span>
-                  <strong style="color:var(--color-ink);font-weight:600">Enable deep research</strong>
-                  <span style="display:block;color:var(--color-muted);font-size:var(--text-xs);margin-top:0.2rem">
-                    Search in multiple rounds, read sources, and compare evidence. The Comprehensive and Concise options use the same research depth. Select the answer length from the composer <strong>+</strong> menu.
-                  </span>
-                </span>
-              </label>
             </div>
             <div class="settings-section">
               <h3 class="settings-section-title">Browser</h3>
@@ -1037,7 +1031,7 @@
               <div class="capability-advanced" data-capability-advanced="terminal">
                 <button type="button" class="capability-advanced-toggle" id="btnTerminalAdvanced" aria-expanded="false" aria-controls="terminalOptions">
                   Advanced
-                  <span class="capability-advanced-caret" aria-hidden="true">▾</span>
+                  <svg class="capability-advanced-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
                 </button>
                 <div id="terminalOptions" class="capability-advanced-panel is-collapsed" hidden>
                   <div class="settings-row">
