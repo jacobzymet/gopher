@@ -30,7 +30,7 @@
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@types/ws": "^8.18.0",
-    "electron": "44.9.3",
+    "electron": "45.0.0",
     "esbuild": "^0.28.0",
     "tsx": "^4.23.0",
     "typescript": "^5.9.0"
