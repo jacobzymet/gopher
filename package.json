@@ -20,7 +20,7 @@
     "prompts:budget": "tsx scripts/prompt-budget.ts"
   },
   "dependencies": {
-    "node-pty": "1.2.0-beta.15",
+    "node-pty": "1.2.0-beta.18",
     "pdf-parse": "^2.4.0",
     "playwright-core": "^1.58.0",
     "smol-toml": "^1.6.0",
