@@ -1008,14 +1008,7 @@ function messageReplyExcerpt(raw) {
 
 function resolveReplySpeaker(convo, row, message) {
   if (message?.speakerId) {
-    const handle = message.speakerHandle
-      || (typeof getBot === 'function' ? getBot(message.speakerId)?.handle : '')
-      || '';
-    return { speakerId: message.speakerId, speakerHandle: handle };
-  }
-  if (message?.speakerHandle && typeof botByHandle === 'function') {
-    const bot = botByHandle(message.speakerHandle);
-    if (bot) return { speakerId: bot.id, speakerHandle: bot.handle };
+    return { speakerId: message.speakerId, speakerHandle: message.speakerHandle || '' };
   }
   const rowId = row?.dataset?.speakerId;
   if (rowId) {
@@ -1023,11 +1016,6 @@ function resolveReplySpeaker(convo, row, message) {
       speakerId: rowId,
       speakerHandle: row.dataset.speakerHandle || '',
     };
-  }
-  const stream = typeof activeStreams !== 'undefined' ? activeStreams.get(activeId) : null;
-  if (stream?.dom?.row === row && typeof streamSpeakerBot === 'function') {
-    const bot = streamSpeakerBot(stream);
-    if (bot) return { speakerId: bot.id, speakerHandle: bot.handle };
   }
   return null;
 }
@@ -1266,14 +1254,11 @@ function updateMentionMenu(forInput) {
     return;
   }
   const excluded = activeMentionExcludeIds();
-  const extras = typeof extraMentionItems === 'function'
-    ? extraMentionItems(ctx.query, excluded)
-    : [];
-  const items = extras.concat(MENTION_OPTIONS.filter((item) => {
+  const items = MENTION_OPTIONS.filter((item) => {
     if (!item.label.startsWith(ctx.query) || excluded.has(item.id)) return false;
     if (item.id === 'deep_research' && settings.skillDeepResearch === false) return false;
     return true;
-  }));
+  });
   if (items.length === 0) {
     closeMentionMenu();
     return;

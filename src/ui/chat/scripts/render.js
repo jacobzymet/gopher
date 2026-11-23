@@ -755,7 +755,6 @@ function paintTraceSidebarContent(message, { live = false } = {}) {
       traceSidebarBody.innerHTML =
         '<p class="trace-sidebar-empty">Select an assistant reply to inspect reasoning and tool steps.</p>';
     }
-    traceSidebar?.classList.add('is-empty');
     delete traceSidebarBody.dataset.sidebarSig;
     afterTraceTimelinePaint({ live: false });
     return;
@@ -792,12 +791,10 @@ function paintTraceSidebarContent(message, { live = false } = {}) {
         traceSidebarBody.innerHTML =
           '<p class="trace-sidebar-empty">This reply has no reasoning or tool activity.</p>';
       }
-      traceSidebar?.classList.add('is-empty');
       delete traceSidebarBody.dataset.sidebarSig;
       afterTraceTimelinePaint({ live: false });
       return;
     }
-    traceSidebar?.classList.remove('is-empty');
 
     const items = timelineItemsFromParts(earlyParts, { forceOpenThinking: true });
     closedThinks.forEach((segment, index) => {
@@ -855,12 +852,10 @@ function paintTraceSidebarContent(message, { live = false } = {}) {
         traceSidebarBody.innerHTML =
           '<p class="trace-sidebar-empty">This reply has no reasoning or tool activity.</p>';
       }
-      traceSidebar?.classList.add('is-empty');
       delete traceSidebarBody.dataset.sidebarSig;
       afterTraceTimelinePaint({ live: false });
       return;
     }
-    traceSidebar?.classList.remove('is-empty');
     const staticSig = 'static\0' + timelineSignature(collected.timelineParts);
     if (traceSidebarBody.dataset.sidebarSig !== staticSig) {
       traceSidebarBody.innerHTML = timelineHtml;
@@ -2690,7 +2685,7 @@ function syncSidebarBusyUi() {
   });
 }
 
-function createConvoItem(convo, { nested = false } = {}) {
+function createConvoItem(convo) {
   const item = document.createElement('div');
   item.className = 'convo-item' + (convo.id === activeId && mainView === 'chat' ? ' is-active' : '');
   if (convo.incognito) item.classList.add('is-incognito');
@@ -2711,7 +2706,6 @@ function createConvoItem(convo, { nested = false } = {}) {
     check.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4L19 6"/></svg>';
     item.appendChild(check);
   }
-  if (nested) item.classList.add('is-nested');
   const busy = isConvoBusy(convo.id);
   if (busy) item.classList.add('is-streaming');
   else convoBusyAnimationStartedAt.delete(convo.id);
@@ -4248,7 +4242,6 @@ function showEmptyState() {
   emptyState.classList.remove('is-hidden');
   threadWrap.classList.add('is-hidden');
   chatTopbar.classList.remove('has-thread');
-  chatShell.classList.remove('has-active-thread');
   convoTitleEl.removeAttribute('role');
   convoTitleEl.removeAttribute('tabindex');
   convoTitleEl.removeAttribute('title');
@@ -4265,7 +4258,6 @@ function showThread(convo) {
   emptyState.classList.add('is-hidden');
   threadWrap.classList.remove('is-hidden');
   chatTopbar.classList.add('has-thread');
-  chatShell.classList.add('has-active-thread');
   convoTitleEl.textContent = convo?.incognito ? '' : (convo.title || 'New chat');
   if (convo?.incognito) {
     convoTitleEl.removeAttribute('role');

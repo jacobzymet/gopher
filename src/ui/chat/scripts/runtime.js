@@ -536,7 +536,6 @@ function renderModelMenuList() {
   });
 
   const empty = !modelMenuMatches.length;
-  chatModelMenu.classList.toggle('is-searching', !!terms.length);
   chatModelEmpty.classList.toggle('is-hidden', !empty);
   chatModelList.classList.toggle('is-hidden', empty);
   if (empty) {
@@ -1441,14 +1440,6 @@ function ensureStreamDom(convo, stream) {
   bubble.appendChild(traceEl);
   bubble.appendChild(answerEl);
   assistantRow.appendChild(bubble);
-  const speakerBot = streamSpeakerBot(stream);
-  if (speakerBot) {
-    syncMessageSpeaker(assistantRow, {
-      role: 'assistant',
-      speakerId: speakerBot.id,
-      speakerHandle: speakerBot.handle,
-    });
-  }
   attachMessageActions(assistantRow);
   const followUp = chatThread.querySelector(':scope > .msg-queued:not(.msg-steering)');
   if (followUp) chatThread.insertBefore(assistantRow, followUp);
@@ -1671,12 +1662,6 @@ function paintStreamIntoView(convo, stream, replyText, streaming) {
   stream.partial = replyText;
   const extracted = applyMemoryUpdateProtocol(replyText, { streaming });
   const { cleaned } = extracted;
-  if (typeof isSilentNoReply === 'function' && isSilentNoReply(cleaned)) {
-    if (activeId === convo.id && stream.dom?.answerEl) {
-      if (stream.dom.answerEl.innerHTML) stream.dom.answerEl.innerHTML = '';
-    }
-    return;
-  }
   if (activeId !== convo.id) {
     // Background stream — keep state only; sidebar shows the live marker.
     return;
@@ -1862,15 +1847,10 @@ async function runAssistantTurn(convo, {
   deepResearch = false,
   deepResearchOutput = 'long',
   forceTools = [],
-  dispatchedMessage = null,
   queueItem = null,
-  previousTitle = '',
-  speakerBotId = null,
+  loopTurnDirective = '',
   skipQueue = false,
   replaceLive = false,
-  botMessageLimit = null,
-  loopTurnDirective = '',
-  loopPhase = null,
 }) {
   if (outboundStarting.has(convo.id) && !replaceLive) return false;
   if (activeStreams.has(convo.id)) {
@@ -1912,8 +1892,7 @@ async function runAssistantTurn(convo, {
     && !outboundStartIsCurrent(convo.id, startEpoch)) {
     return false;
   }
-  const speakerBot = speakerBotId && typeof getBot === 'function' ? getBot(speakerBotId, convo) : null;
-  const speakerModelId = speakerBot && speakerBot.model ? speakerBot.model : conversationModelId(convo);
+  const speakerModelId = conversationModelId(convo);
   const remote = selectedRemoteModel(latestState, speakerModelId);
   if (!remote?.ready) {
     if (typeof showComposerHint === 'function') {
@@ -1998,8 +1977,6 @@ async function runAssistantTurn(convo, {
     turnSkills,
     turnForceTools,
     turnModel: remote.model,
-    speakerBotId: speakerBotId || null,
-    loopPhase,
     turnStartedAt: workStartedAt,
     turnId: clientTurnId,
   });
@@ -2008,35 +1985,25 @@ async function runAssistantTurn(convo, {
   stream.diagnosticTraceId = diagnosticTraceId;
   stream.diagnosticStartedAt = diagnosticStartedAt;
   clearOutboundStarting(convo.id, startEpoch);
-  stream.speakerBotId = speakerBotId || null;
   stream.skipQueue = !!skipQueue;
-  syncStreamSpeakerChrome(convo, stream);
 
   stream.speakerModelId = remote.id || speakerModelId;
-  let apiMessages;
-  if (speakerBot && typeof botApiMessages === 'function') {
-    apiMessages = botApiMessages(convo, speakerBot, dispatchedMessage ? text : null, {
-      messageLimit: botMessageLimit,
-    });
-  } else {
-    apiMessages = convo.messages.map((message) => {
-      if (message.role !== 'user') {
-        return { role: message.role, content: message.content };
-      }
-      return {
-        role: 'user',
-        content: userMessageApiContent(message),
-      };
-    });
-    if (apiMessages.length > 0) {
-      const last = apiMessages[apiMessages.length - 1];
-      if (last.role === 'user') last.content = text;
+  let apiMessages = convo.messages.map((message) => {
+    if (message.role !== 'user') {
+      return { role: message.role, content: message.content };
     }
+    return {
+      role: 'user',
+      content: userMessageApiContent(message),
+    };
+  });
+  if (apiMessages.length > 0) {
+    const last = apiMessages[apiMessages.length - 1];
+    if (last.role === 'user') last.content = text;
   }
   const systemPrompt = buildSystemPrompt(convo.projectId, {
     excludeConvoId: convo.id,
     convo,
-    speakerBot,
     includeTime: false,
   });
   const systemParts = [systemPrompt, String(loopTurnDirective || '').trim()].filter(Boolean);
@@ -2381,8 +2348,6 @@ function beginLiveStream(convo, {
   catchingUp = false,
   turnId = null,
   turnModel = '',
-  speakerBotId = null,
-  loopPhase = null,
   turnStartedAt = null,
 } = {}) {
   if (activeStreams.has(convo.id)) return activeStreams.get(convo.id);
@@ -2411,8 +2376,6 @@ function beginLiveStream(convo, {
     startedAt: streamStartedAt,
     statusLabel: 'Processing…',
     domMountCount: 0,
-    speakerBotId: speakerBotId || null,
-    loopPhase: loopPhase && typeof loopPhase === 'object' ? { ...loopPhase } : null,
     convoId: convo.id,
     cancelled: false,
     hardStopped: false,
@@ -2440,18 +2403,8 @@ function beginLiveStream(convo, {
   return stream;
 }
 
-function streamSpeakerBot(stream) {
-  if (!stream?.speakerBotId || typeof getBot !== 'function') return null;
-  const convo = stream.convoId
-    ? conversations.find((item) => item.id === stream.convoId)
-    : null;
-  return getBot(stream.speakerBotId, convo);
-}
-
 function streamStatusLabel(stream, base) {
-  const label = String(base || 'Processing…').trim() || 'Processing…';
-  const bot = streamSpeakerBot(stream);
-  return bot ? ('@' + bot.handle + ' · ' + label) : label;
+  return String(base || 'Processing…').trim() || 'Processing…';
 }
 
 function setStreamThinkingLabel(stream, base) {
@@ -2479,22 +2432,6 @@ function promptProgressLabel(progress) {
   return `Processing prompt · ${percent}% · ${details.join(' · ')}`;
 }
 
-function syncStreamSpeakerChrome(convo, stream) {
-  if (!stream?.dom?.row) return;
-  const bot = streamSpeakerBot(stream);
-  if (bot) {
-    syncMessageSpeaker(stream.dom.row, {
-      role: 'assistant',
-      speakerId: bot.id,
-      speakerHandle: bot.handle,
-      loopPhaseLabel: stream.loopPhase?.label || '',
-      loopPhaseIndex: stream.loopPhase?.index || null,
-      loopPhaseTotal: stream.loopPhase?.total || null,
-    });
-    setStreamThinkingLabel(stream, stream.dom.thinkingLabel?.dataset?.base || 'Processing…');
-  }
-}
-
 function discardLiveStreamRow(stream) {
   const row = stream?.dom?.row;
   if (!row) return;
@@ -2514,11 +2451,7 @@ function settleStoppedLiveStream(convo, stream, rawText) {
   const cancelledVisible = (typeof streamingAnswerText === 'function'
     ? streamingAnswerText(cancelledText)
     : cancelledText).trim();
-  const silentNoReply = typeof isSilentNoReply === 'function'
-    && (isSilentNoReply(cancelledVisible) || isSilentNoReply(cancelledText));
-  const speakerBotId = stream.speakerBotId || null;
-  const speakerBot = speakerBotId && typeof getBot === 'function' ? getBot(speakerBotId, convo) : null;
-  if (cancelledVisible && cancelledVisible !== 'No response.' && !silentNoReply) {
+  if (cancelledVisible && cancelledVisible !== 'No response.') {
     const message = {
       role: 'assistant',
       content: cancelledText,
@@ -2528,17 +2461,6 @@ function settleStoppedLiveStream(convo, stream, rawText) {
     };
     const totalWorkMs = workDurationMs(stream.startedAt, Date.now());
     if (totalWorkMs != null) message.workDurationMs = totalWorkMs;
-    if (speakerBot) {
-      message.speakerId = speakerBot.id;
-      message.speakerHandle = speakerBot.handle;
-    }
-    if (stream.loopPhase) {
-      message.loopRunId = stream.loopPhase.runId || '';
-      message.loopPhaseId = stream.loopPhase.id || '';
-      message.loopPhaseLabel = stream.loopPhase.label || '';
-      message.loopPhaseIndex = stream.loopPhase.index || null;
-      message.loopPhaseTotal = stream.loopPhase.total || null;
-    }
     const committedMessage = commitLiveAssistant(convo, message, stream.turnId);
     const msgIndex = convo.messages.indexOf(committedMessage);
     const viewing = activeId === convo.id;
@@ -2946,10 +2868,8 @@ async function driveAssistantSse(convo, stream, response) {
       remote?.model || stream.turnModel || fallbackTurnModel || ''
     ).trim() || null;
   }
-  const speakerBotId = stream.speakerBotId || null;
-  const speakerBot = speakerBotId && typeof getBot === 'function' ? getBot(speakerBotId, convo) : null;
   const extracted = collectTurnMemoryExtraction(stream, typer.target);
-  const memoryChanges = applyExtractedMemories(convo, extracted, speakerBotId);
+  const memoryChanges = applyExtractedMemories(convo, extracted);
   const memoryNotices = memoryNoticeLabels(memoryChanges);
   // Memory chips live on the message; do not also push tone:ok notices into the
   // timeline (those were deferred to the bottom and duplicated the chips).
@@ -2958,12 +2878,6 @@ async function driveAssistantSse(convo, stream, response) {
     assistantText = memoryOnlyAssistantFallback(extracted);
   }
   const visibleAnswer = streamingAnswerText(assistantText).trim();
-  const silentNoReply = typeof isSilentNoReply === 'function'
-    && (isSilentNoReply(visibleAnswer) || isSilentNoReply(assistantText));
-  if (silentNoReply) {
-    discardLiveStreamRow(stream);
-    return;
-  }
   // Think-only finals used to persist a blank desktop bubble while Activity looked fine.
   if (!visibleAnswer && !stream.errorMessage && stream.timeline.length) {
     stream.errorMessage = 'No user-visible answer after tools. Try again.';
@@ -3082,17 +2996,6 @@ async function driveAssistantSse(convo, stream, response) {
     };
     const totalWorkMs = workDurationMs(stream.startedAt, Date.now());
     if (totalWorkMs != null) message.workDurationMs = totalWorkMs;
-    if (speakerBot) {
-      message.speakerId = speakerBot.id;
-      message.speakerHandle = speakerBot.handle;
-    }
-    if (stream.loopPhase) {
-      message.loopRunId = stream.loopPhase.runId || '';
-      message.loopPhaseId = stream.loopPhase.id || '';
-      message.loopPhaseLabel = stream.loopPhase.label || '';
-      message.loopPhaseIndex = stream.loopPhase.index || null;
-      message.loopPhaseTotal = stream.loopPhase.total || null;
-    }
     if (persistedParts) message.parts = persistedParts;
     if (stream.images && Object.keys(stream.images).length) {
       message.images = { ...stream.images };
@@ -3111,9 +3014,6 @@ async function driveAssistantSse(convo, stream, response) {
     if (finalStats?.contextWindowTokens != null) message.contextWindowTokens = finalStats.contextWindowTokens;
     if (finalStats?.contextModel) message.contextModel = finalStats.contextModel;
     const committedMessage = commitLiveAssistant(convo, message, stream.turnId);
-    if (typeof applyBotActions === 'function' && speakerBot) {
-      applyBotActions(convo, speakerBot, extracted.botActions);
-    }
     const msgIndex = convo.messages.indexOf(committedMessage);
     if (dom && dom.row.isConnected) {
       dom.row.dataset.msgIndex = String(msgIndex);
@@ -3160,9 +3060,6 @@ async function driveAssistantSse(convo, stream, response) {
     const finished = activeStreams.get(convo.id) === stream && finishLiveStream(convo.id, stream);
     if (finished && queueAfter) {
       maybeSendNextQueued(convo.id);
-    }
-    if (!stream.skipQueue && typeof flushBotNavigation === 'function') {
-      flushBotNavigation();
     }
   }
 }

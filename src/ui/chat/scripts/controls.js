@@ -874,7 +874,6 @@ function saveQueuedMessageEdit(row, rawText) {
 }
 
 function dispatchOutboundTurn(convo, item) {
-  const previousTitle = convo.title;
   const userMessage = {
     role: 'user',
     content: item.displayText || (item.attachments?.length ? '(attachment)' : ''),
@@ -916,9 +915,7 @@ function dispatchOutboundTurn(convo, item) {
     deepResearch: item.turn.deepResearch,
     deepResearchOutput: item.turn.deepResearchOutput,
     forceTools: item.turn.forceTools,
-    dispatchedMessage: userMessage,
     queueItem: item,
-    previousTitle,
   });
 }
 
@@ -1185,7 +1182,7 @@ function renderProfilesSettingsList() {
     }
     const edit = document.createElement('button');
     edit.type = 'button';
-    edit.className = 'btn btn-ghost btn-profile-edit';
+    edit.className = 'btn btn-ghost';
     edit.textContent = 'Rename';
     edit.addEventListener('click', () => openProfileModal(profile));
     actions.appendChild(edit);

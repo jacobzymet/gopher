@@ -2597,7 +2597,6 @@ function buildSystemPrompt(projectIdOverride, opts = {}) {
   const convo = opts.convo || null;
   const temporary = convo ? !!convo.incognito
     : typeof isIncognitoContext === 'function' && isIncognitoContext();
-  const speakerBot = opts.speakerBot || opts.speakerBot || null;
   const P = window.GOPHER_PROMPTS || {};
   const fill = window.fillPrompt || ((t) => t);
   const parts = [];
@@ -2818,8 +2817,8 @@ function persistProjectMemory(projectId, memoryText) {
   return true;
 }
 
-function applyExtractedMemories(convo, extracted, speakerBotId = null) {
-  const result = { globalUpdated: false, projectUpdated: false, botUpdated: false, groupUpdated: false };
+function applyExtractedMemories(convo, extracted) {
+  const result = { globalUpdated: false, projectUpdated: false };
   if (!extracted || convo?.incognito) return result;
   if (extracted.memory != null && convo.projectId) {
     result.projectUpdated = persistProjectMemory(convo.projectId, extracted.memory);
@@ -2860,8 +2859,6 @@ function memoryNoticeLabels(changes) {
   const labels = [];
   if (changes?.globalUpdated) labels.push('Updated long-term memory');
   if (changes?.projectUpdated) labels.push('Updated project memory');
-  if (changes?.botUpdated) labels.push('Updated bot memory');
-  if (changes?.groupUpdated) labels.push('Updated group notes');
   return labels;
 }
 
