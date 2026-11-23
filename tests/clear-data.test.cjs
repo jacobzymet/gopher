@@ -1,11 +1,14 @@
-const { readUiScript } = require('./helpers/ui-source.cjs');
 // Run without compiling the app: node --test tests/clear-data.test.cjs
 const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { test } = require('node:test');
 const vm = require('node:vm');
 
-const source = readUiScript("controls").replace(/\r\n/g, '\n');
+const source = readFileSync(
+  join(__dirname, '../src/ui/chat/scripts/controls.js'),
+  'utf8'
+).replace(/\r\n/g, '\n');
 
 function declaration(name) {
   const match = source.match(new RegExp('^function ' + name + '\\([\\s\\S]*?^\\}$', 'm'));
@@ -27,8 +30,6 @@ function harness(conversations, projects = []) {
     stickByConvo: new Map(conversations.map((convo) => [convo.id, true])),
     requireUnlockedData: () => true,
     confirm: () => true,
-    isBotsConvo: (convo) => convo.surface === 'bots',
-    isBotsSurface: () => false,
     abortStream: (id) => aborted.push(id),
     saveStore() {},
     startDraft() {},
@@ -38,30 +39,28 @@ function harness(conversations, projects = []) {
     updateGreeting() {},
     closeMentionMenu() {},
   });
-  for (const name of ['clearAllLoops', 'clearAllChatsAndProjects']) {
+  for (const name of ['clearAllChats', 'clearAllChatsAndProjects']) {
     vm.runInContext(declaration(name), state);
   }
   return { state, aborted };
 }
 
-test('clearing loops preserves regular chats', () => {
+test('clearing chats removes every conversation', () => {
   const { state, aborted } = harness([
-    { id: 'chat', surface: 'chat' },
-    { id: 'loop-1', surface: 'bots' },
-    { id: 'loop-2', surface: 'bots' },
+    { id: 'chat-1', surface: 'chat' },
+    { id: 'chat-2', surface: 'chat' },
   ]);
-  state.clearAllLoops();
-  assert.equal(state.conversations.map((convo) => convo.id).join(','), 'chat');
-  assert.equal(aborted.sort().join(','), 'loop-1,loop-2');
+  state.clearAllChats();
+  assert.equal(state.conversations.length, 0);
+  assert.equal(aborted.sort().join(','), 'chat-1,chat-2');
 });
 
-test('clear everything includes chats and loops', () => {
+test('clear everything includes chats and projects', () => {
   const { state, aborted } = harness([
     { id: 'chat', surface: 'chat' },
-    { id: 'loop', surface: 'bots' },
   ], [{ id: 'project' }]);
   state.clearAllChatsAndProjects();
   assert.equal(state.conversations.length, 0);
   assert.equal(state.projects.length, 0);
-  assert.equal(aborted.sort().join(','), 'chat,loop');
+  assert.equal(aborted.join(','), 'chat');
 });

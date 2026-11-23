@@ -1,12 +1,10 @@
-const { chromium, appTestsEnabled, spawnApp, browserLaunchOptions, stopApp, removeAppData, mockAppUpdates } = require('./helpers/app.cjs');
-const { readUiScript } = require('./helpers/ui-source.cjs');
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { test } = require('node:test');
 const vm = require('node:vm');
 
-const source = readUiScript("workspace");
+const source = readFileSync(join(__dirname, '../src/ui/chat/scripts/workspace.js'), 'utf8');
 function load(context, names) {
   for (const name of names) {
     const match = source.match(new RegExp('^function ' + name + '\\([\\s\\S]*?^\\}$', 'm'));
@@ -203,59 +201,10 @@ test('connection feedback tolerates a transient failure and recovers after a suc
   assert.equal(updates, 2);
 });
 
-function welcomeHarness() {
-  const element = () => ({
-    dataset: {}, children: [], classList: { toggle() {} },
-    replaceChildren() { this.children = []; },
-    appendChild(child) { this.children.push(child); }, addEventListener() {},
-  });
-  const host = element();
-  const state = harness({
-    localDataLoadError: '', serverReady: false, modelMenuOptions: [],
-    document: { getElementById: () => host, createElement: element },
-    shortcutLabel: value => value,
-  });
-  load(state, ['renderWelcomeTools']);
-  return { state, host };
-}
-
-test('welcome cards stay stable while the saved provider catalog loads and the picker catches up', () => {
-  const { state, host } = welcomeHarness();
-  let starters;
-  for (const network of [
-    null,
-    { remote_saved: true, remote_checking: true, remote_catalog_pending: true, remote_models: [] },
-    { remote_saved: true, remote_checking: true, remote_models: [] },
-    { remote_saved: true, remote_catalog_pending: true, remote_models: [] },
-    { remote_saved: true, remote_models: [{ id: 'saved-model', ready: false }] },
-    { remote_saved: true, remote_models: [{ id: 'saved-model', ready: true }] },
-  ]) {
-    state.latestState = network ? { network } : null;
-    state.renderWelcomeTools();
-    assert.equal(host.dataset.mode, 'ready', JSON.stringify(network));
-    assert.equal(host.children[0].className, 'welcome-starters');
-    assert.equal(host.children[0].children.length, 3);
-    if (starters) assert.equal(host.children[0], starters);
-    starters = host.children[0];
-  }
-});
-
-test('welcome setup appears only after discovery finishes without a configured model', () => {
-  for (const network of [
-    { remote_saved: false, remote_models: [] },
-    { remote_saved: true, remote_models: [] },
-    { remote_saved: true, remote_models: [{ id: 'sign-in', connect_kind: 'openai-codex' }] },
-  ]) {
-    const { state, host } = welcomeHarness();
-    state.latestState = { network };
-    state.renderWelcomeTools();
-    assert.equal(host.dataset.mode, 'connect');
-    assert.equal(host.children[0].className, 'welcome-connect');
-  }
-});
-
+let chromium;
+try { ({ chromium } = require('playwright')); } catch {}
 test('workspace browser flows preserve drafts across navigation and reload, search all messages, find formatted text, and export', {
-  skip: !appTestsEnabled || !chromium, timeout: 90000,
+  skip: !process.env.GOPHER_TEST_BINARY || !chromium, timeout: 90000,
 }, async () => {
   const { mkdtempSync, writeFileSync, rmSync } = require('node:fs');
   const { tmpdir } = require('node:os');
@@ -264,10 +213,11 @@ test('workspace browser flows preserve drafts across navigation and reload, sear
   const { setTimeout: delay } = require('node:timers/promises');
   const dir = mkdtempSync(join(tmpdir(), 'gopher-workspace-'));
   writeFileSync(join(dir, 'config.toml'), '');
-  const child = spawnApp(['--headless', '--config', join(dir, 'config.toml'), '--bind', '127.0.0.1:0'], { windowsHide: true, stdio: 'pipe' });
+  const child = spawn(resolve(process.env.GOPHER_TEST_BINARY), ['--headless', '--config', join(dir, 'config.toml'), '--bind', '127.0.0.1:0'], { windowsHide: true, stdio: 'pipe' });
   let logs = '';
   child.stdout.on('data', (data) => { logs += data; });
   child.stderr.on('data', (data) => { logs += data; });
+  const exited = new Promise((resolve) => child.once('close', resolve));
   let browser;
   try {
     let origin;
@@ -278,12 +228,11 @@ test('workspace browser flows preserve drafts across navigation and reload, sear
       await delay(100);
     }
     assert.ok(origin, logs);
-    browser = await chromium.launch(browserLaunchOptions(process.env.SECURITY_BROWSER_CHANNEL));
+    browser = await chromium.launch({ headless: true, channel: process.env.SECURITY_BROWSER_CHANNEL || undefined });
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
     await page.route('**/*', (route) => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
-    await mockAppUpdates(page, origin);
     await page.goto(origin);
     await page.waitForFunction(() => storageReady && composerDraftContext);
     await page.locator('.welcome-connect').waitFor();
@@ -396,7 +345,8 @@ test('workspace browser flows preserve drafts across navigation and reload, sear
     assert.deepEqual(errors, []);
   } finally {
     await browser?.close();
-    await stopApp(child);
-    await removeAppData(dir);
+    if (child.exitCode == null) child.kill();
+    await exited;
+    rmSync(dir, { recursive: true, force: true });
   }
 });

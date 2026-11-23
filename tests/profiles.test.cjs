@@ -1,11 +1,14 @@
-const { readUiScript } = require('./helpers/ui-source.cjs');
 // Run without compiling the app: node --test tests/profiles.test.cjs
 const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { test } = require('node:test');
 const vm = require('node:vm');
 
-const source = readUiScript("state").replace(/\r\n/g, '\n');
+const source = readFileSync(
+  join(__dirname, '../src/ui/chat/scripts/state.js'),
+  'utf8'
+).replace(/\r\n/g, '\n');
 
 function declaration(name) {
   const match = source.match(new RegExp('^function ' + name + '\\([\\s\\S]*?^\\}$', 'm'));
@@ -195,12 +198,11 @@ test('profile switching waits until active work is finished', () => {
     activeStreams: new Map([['chat-1', {}]]),
     outboundStarting: new Set(),
     conversations: [{ id: 'chat-1' }],
-    isBotsOutboundActive: () => false,
   });
   vm.runInContext(declaration('profileSwitchHasActiveWork'), state);
   assert.equal(state.profileSwitchHasActiveWork(), true);
   state.activeStreams.clear();
   assert.equal(state.profileSwitchHasActiveWork(), false);
-  state.isBotsOutboundActive = (id) => id === 'chat-1';
+  state.outboundStarting.add('chat-1');
   assert.equal(state.profileSwitchHasActiveWork(), true);
 });

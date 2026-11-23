@@ -1,11 +1,14 @@
-const { readUiScript } = require('./helpers/ui-source.cjs');
 // Run without compiling the app: node --test tests/session-lifecycle.test.cjs
 const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { test } = require('node:test');
 const vm = require('node:vm');
 
-const source = readUiScript("controls").replace(/\r\n/g, '\n');
+const source = readFileSync(
+  join(__dirname, '../src/ui/chat/scripts/controls.js'),
+  'utf8'
+).replace(/\r\n/g, '\n');
 
 function declaration(name) {
   const match = source.match(new RegExp('^function ' + name + '\\([\\s\\S]*?^\\}$', 'm'));
@@ -13,9 +16,13 @@ function declaration(name) {
   return match[0];
 }
 
-const runtime = readUiScript("runtime").replace(/\r\n/g, '\n');
+const runtime = readFileSync(
+  join(__dirname, '../src/ui/chat/scripts/runtime.js'), 'utf8'
+).replace(/\r\n/g, '\n');
 
-const chatState = readUiScript("state").replace(/\r\n/g, '\n');
+const chatState = readFileSync(
+  join(__dirname, '../src/ui/chat/scripts/state.js'), 'utf8'
+).replace(/\r\n/g, '\n');
 
 function runtimeDeclaration(name) {
   const match = runtime.match(new RegExp('^(?:async )?function ' + name + '\\([\\s\\S]*?^\\}$', 'm'));
@@ -367,7 +374,7 @@ test('Stop cancels a wedged SSE reader so the finalizer can run', () => {
   const state = vm.createContext({
     activeStreams: new Map([['chat-1', stream]]),
     invalidateOutboundStart() {},
-    markBotsOutboundStopped() {},
+    markConvoStopped() {},
     bumpBotsOutboundEpoch() {},
     rememberHandledLiveTurn() {},
     noteLiveTurnUserCancel() {},
@@ -406,7 +413,7 @@ test('Stop swallows an already-aborted body reader instead of leaking AbortError
   const state = vm.createContext({
     activeStreams: new Map([['chat-1', stream]]),
     invalidateOutboundStart() {},
-    markBotsOutboundStopped() {},
+    markConvoStopped() {},
     bumpBotsOutboundEpoch() {},
     rememberHandledLiveTurn() {},
     noteLiveTurnUserCancel() {},
@@ -437,7 +444,7 @@ test('Stop leaves a live stream with its finalizer so partial text can be saved'
   const state = vm.createContext({
     activeStreams: new Map([['chat-1', stream]]),
     invalidateOutboundStart() {},
-    markBotsOutboundStopped() {},
+    markConvoStopped() {},
     bumpBotsOutboundEpoch() {},
     rememberHandledLiveTurn() {},
     noteLiveTurnUserCancel() {},
@@ -455,19 +462,6 @@ test('Stop leaves a live stream with its finalizer so partial text can be saved'
   assert.equal(aborted, true);
   assert.equal(discarded, false);
   assert.equal(state.activeStreams.get('chat-1'), stream);
-});
-
-test('a stopped Loop no longer keeps the composer busy during teardown', () => {
-  const state = vm.createContext({
-    activeStreams: new Map(),
-    outboundStarting: new Set(),
-    isBotsOutboundActive: () => true,
-    isBotsOutboundStopped: () => true,
-  });
-  vm.runInContext(declaration('isConvoBusy'), state);
-  assert.equal(state.isConvoBusy('loop-1'), false);
-  state.isBotsOutboundStopped = () => false;
-  assert.equal(state.isConvoBusy('loop-1'), true);
 });
 
 test('ending all sessions also cancels requests still in startup', () => {

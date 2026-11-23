@@ -1,4 +1,3 @@
-const { chromium, appTestsEnabled, spawnApp, browserLaunchOptions, stopApp, removeAppData, mockAppUpdates } = require('./helpers/app.cjs');
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const { mkdtempSync, writeFileSync, rmSync } = require('node:fs');
@@ -7,9 +6,11 @@ const { tmpdir } = require('node:os');
 const { createServer } = require('node:http');
 const { spawn } = require('node:child_process');
 const { setTimeout: delay } = require('node:timers/promises');
+let chromium;
+try { ({ chromium } = require('playwright')); } catch {}
 
 test('chat and title requests use the selected provider even when another provider is active', {
-  skip: !appTestsEnabled || !chromium, timeout: 60000,
+  skip: !process.env.GOPHER_TEST_BINARY || !chromium, timeout: 60000,
 }, async () => {
   const seen = [[], []];
   const providers = seen.map(requests => createServer(async (request, response) => {
@@ -30,10 +31,11 @@ test('chat and title requests use the selected provider even when another provid
       `name = "${i ? 'Chosen' : 'Inactive NVIDIA fixture'}"`, `base = "http://127.0.0.1:${server.address().port}/v1"`,
       'api_style = "openai"', 'token = ""']),
   ].join('\n'));
-  const child = spawnApp(['--headless', '--config', join(dir, 'config.toml'), '--bind', '127.0.0.1:0'], { windowsHide: true, stdio: 'pipe' });
+  const child = spawn(resolve(process.env.GOPHER_TEST_BINARY), ['--headless', '--config', join(dir, 'config.toml'), '--bind', '127.0.0.1:0'], { windowsHide: true, stdio: 'pipe' });
   let logs = ''; let spawnError;
   child.on('error', error => { spawnError = error; });
   child.stdout.on('data', data => { logs += data; }); child.stderr.on('data', data => { logs += data; });
+  const exited = new Promise(resolve => child.once('close', resolve));
   let browser;
   try {
     let origin;
@@ -44,11 +46,10 @@ test('chat and title requests use the selected provider even when another provid
       await delay(100);
     }
     assert.ok(origin, logs);
-    browser = await chromium.launch(browserLaunchOptions(process.env.SECURITY_BROWSER_CHANNEL));
+    browser = await chromium.launch({ headless: true, channel: process.env.SECURITY_BROWSER_CHANNEL || undefined });
     const page = await browser.newPage(); const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
-    await mockAppUpdates(page, origin);
     await page.goto(origin);
     await page.waitForFunction(() => storageReady && latestState?.network && !latestState.network.remote_catalog_pending && latestState.network.remote_models.some(model => model.provider_id === 'chosen' && model.ready));
     await page.evaluate(async () => {
@@ -78,8 +79,9 @@ test('chat and title requests use the selected provider even when another provid
     assert.deepEqual(errors, []);
   } finally {
     if (browser) await browser.close();
-    await stopApp(child);
+    if (child.exitCode === null && !spawnError) child.kill();
+    await exited;
     await Promise.all(providers.map(server => { server.closeAllConnections(); return new Promise(resolve => server.close(resolve)); }));
-    await removeAppData(dir);
+    rmSync(dir, { recursive: true, force: true });
   }
 });

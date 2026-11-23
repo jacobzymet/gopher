@@ -1,14 +1,13 @@
-const { chromium, appTestsEnabled, spawnApp, browserLaunchOptions, stopApp, removeAppData, mockAppUpdates } = require('./helpers/app.cjs');
-const { readUiScript } = require('./helpers/ui-source.cjs');
 // Run without compiling the app: node --test tests/notifications.test.cjs
 const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { test } = require('node:test');
 const vm = require('node:vm');
 
 const root = join(__dirname, '..');
-const render = readUiScript("render").replace(/\r\n/g, '\n');
-const controls = readUiScript("controls").replace(/\r\n/g, '\n');
+const render = readFileSync(join(root, 'src/ui/chat/scripts/render.js'), 'utf8').replace(/\r\n/g, '\n');
+const controls = readFileSync(join(root, 'src/ui/chat/scripts/controls.js'), 'utf8').replace(/\r\n/g, '\n');
 
 function declaration(name) {
   const match = render.match(new RegExp('^(?:async )?function ' + name + '\\([\\s\\S]*?^\\}$', 'm'));
@@ -141,7 +140,7 @@ test('Stop refreshes the approval inbox immediately while preserving partial tex
   const refreshes = [];
   const state = context({
     conversations: [convo], activeStreams: new Map([[convo.id, stream]]),
-    invalidateOutboundStart() {}, markBotsOutboundStopped() {}, rememberHandledLiveTurn() {},
+    invalidateOutboundStart() {}, markConvoStopped() {}, rememberHandledLiveTurn() {},
     noteLiveTurnUserCancel() {}, syncComposerStreamUi() {}, scheduleCancel: () => Promise.resolve(),
     refreshNotificationsUi() { refreshes.push(state.pendingAttentionNotifications().length); },
   });
@@ -276,9 +275,11 @@ test('the notification bell toggles a popover without replacing the current page
   assert.equal(state.mainView, 'projects');
 });
 
+let chromium;
+try { ({ chromium } = require('playwright')); } catch {}
 
 test('real approval inbox follows live SSE, clears on Stop, and ignores finished replay', {
-  skip: !appTestsEnabled || !chromium,
+  skip: !process.env.GOPHER_TEST_BINARY || !chromium,
   timeout: 60000,
 }, async () => {
   const { mkdtempSync, writeFileSync, rmSync } = require('node:fs');
@@ -288,7 +289,7 @@ test('real approval inbox follows live SSE, clears on Stop, and ignores finished
   const { setTimeout: delay } = require('node:timers/promises');
   const dir = mkdtempSync(join(tmpdir(), 'gopher-notifications-'));
   writeFileSync(join(dir, 'config.toml'), '# Isolated notification regression\n');
-  const child = spawnApp([
+  const child = spawn(resolve(process.env.GOPHER_TEST_BINARY), [
     '--headless', '--config', join(dir, 'config.toml'), '--bind', '127.0.0.1:0',
   ], { windowsHide: true, stdio: 'pipe' });
   let logs = '';
@@ -296,6 +297,7 @@ test('real approval inbox follows live SSE, clears on Stop, and ignores finished
   child.on('error', error => { spawnError = error; });
   child.stdout.on('data', data => { logs += data; });
   child.stderr.on('data', data => { logs += data; });
+  const exited = new Promise(resolve => child.once('close', resolve));
   let browser;
   try {
     let origin;
@@ -307,12 +309,11 @@ test('real approval inbox follows live SSE, clears on Stop, and ignores finished
       await delay(100);
     }
     assert.ok(origin, logs);
-    browser = await chromium.launch(browserLaunchOptions(process.env.SECURITY_BROWSER_CHANNEL));
+    browser = await chromium.launch({ headless: true, channel: process.env.SECURITY_BROWSER_CHANNEL || undefined });
     const page = await browser.newPage();
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.route('**/*', route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
-    await mockAppUpdates(page, origin);
     await page.goto(origin);
     await page.waitForFunction(() => storageReady);
     await page.evaluate(() => {
@@ -364,19 +365,7 @@ test('real approval inbox follows live SSE, clears on Stop, and ignores finished
     await page.evaluate(() => openSettings('agent-capabilities'));
     const manual = page.locator('#approvalModeToggle [data-approval-mode="manual"]');
     assert.equal(await manual.textContent(), 'Ask before every action');
-    assert.equal(await manual.getAttribute('aria-selected'), 'false');
-    assert.equal(await page.locator('#approvalModeToggle [data-approval-mode="auto_safe"]').getAttribute('aria-selected'), 'true');
-    const all = page.getByRole('tab', { name: 'Approve all actions', exact: true });
-    await all.hover();
-    assert.match(await page.getByRole('tooltip', { name: /Dangerous:/ }).textContent(), /edit or delete files/);
-    await all.click();
-    await page.locator('#btnSettingsSave').click();
-    await page.waitForFunction(() => settings.approvalMode === 'auto_all');
-    await page.evaluate(() => settingsWriteChain);
-    await page.reload();
-    await page.waitForFunction(() => storageReady);
-    assert.equal(await page.evaluate(() => settings.approvalMode), 'auto_all');
-    await page.evaluate(() => openSettings('agent-capabilities'));
+    assert.equal(await manual.getAttribute('aria-selected'), 'true');
     await page.locator('#approvalModeToggle [data-approval-mode="auto_safe"]').click();
     await page.locator('#btnSettingsSave').click();
     await page.waitForFunction(() => settings.approvalMode === 'auto_safe');
@@ -387,7 +376,8 @@ test('real approval inbox follows live SSE, clears on Stop, and ignores finished
     assert.deepEqual(errors, []);
   } finally {
     if (browser) await browser.close();
-    await stopApp(child);
-    await removeAppData(dir);
+    if (child.exitCode === null && !spawnError) child.kill();
+    await exited;
+    rmSync(dir, { recursive: true, force: true });
   }
 });

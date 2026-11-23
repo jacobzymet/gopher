@@ -1,21 +1,20 @@
-const { appTestsEnabled, spawnApp, stopApp, removeAppData } = require('./helpers/app.cjs');
-// Set GOPHER_E2E=1 to test the TypeScript CLI. Every test uses isolated data.
+// Set GOPHER_TEST_BINARY to a built executable. Every test uses isolated data.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { mkdtempSync, readFileSync, writeFileSync, rmSync, realpathSync } = require('node:fs');
+const { mkdtempSync, readFileSync, writeFileSync, rmSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join, resolve } = require('node:path');
 const { spawn } = require('node:child_process');
 const { setTimeout: delay } = require('node:timers/promises');
 
 test('ephemeral bind reports its actual port and relative config keeps data beside it', {
-  skip: !appTestsEnabled,
+  skip: !process.env.GOPHER_TEST_BINARY,
   timeout: 30000,
 }, async () => {
   const dir = mkdtempSync(join(tmpdir(), 'gopher-config-path-'));
   writeFileSync(join(dir, 'config.toml'), '');
   let origin;
-  const child = spawnApp([
+  const child = spawn(resolve(process.env.GOPHER_TEST_BINARY), [
     '--headless', '--config', 'config.toml', '--bind', '127.0.0.1:0',
   ], { cwd: dir, windowsHide: true, stdio: 'pipe' });
   let logs = '';
@@ -23,6 +22,7 @@ test('ephemeral bind reports its actual port and relative config keeps data besi
   child.on('error', error => { spawnError = error; });
   child.stdout.on('data', data => { logs += data; });
   child.stderr.on('data', data => { logs += data; });
+  const exited = new Promise(resolve => child.once('close', resolve));
   try {
     let bootstrap;
     for (let i = 0; i < 100; i++) {
@@ -50,8 +50,8 @@ test('ephemeral bind reports its actual port and relative config keeps data besi
     };
     const info = await call('/api/data');
     assert.equal(info.status, 200);
-    assert.equal(realpathSync(info.body.data_dir), realpathSync(dir));
-    assert.equal(realpathSync(info.body.config_path), realpathSync(join(dir, 'config.toml')));
+    assert.equal(resolve(info.body.data_dir), dir);
+    assert.equal(resolve(info.body.config_path), join(dir, 'config.toml'));
     assert.equal((await call('/api/data/store', 'PUT', { conversations: [{ id: 'example', messages: [] }] })).status, 204);
     assert.equal((await call('/api/data/preferences', 'PUT', { name: 'Example' })).status, 200);
     assert.equal((await call('/api/skills', 'POST', { name: 'Example', content: 'Test instructions.' })).status, 200);
@@ -61,9 +61,10 @@ test('ephemeral bind reports its actual port and relative config keeps data besi
     writeFileSync(join(dir, 'chats.json'), '');
     const corrupt = await call('/api/data/store');
     assert.ok(corrupt.status >= 400);
-    assert.match(corrupt.body.error, /empty JSON file/i);
+    assert.match(corrupt.body.error, /empty JSON file/);
   } finally {
-    await stopApp(child);
-    await removeAppData(dir);
+    if (child.exitCode === null && !spawnError) child.kill();
+    await exited;
+    rmSync(dir, { recursive: true, force: true });
   }
 });

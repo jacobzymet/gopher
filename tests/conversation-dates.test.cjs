@@ -1,10 +1,13 @@
-const { readUiScript } = require('./helpers/ui-source.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const vm = require('node:vm');
 
-const source = readUiScript("render").replace(/\r\n/g, '\n');
+const source = readFileSync(
+  join(__dirname, '../src/ui/chat/scripts/render.js'),
+  'utf8'
+).replace(/\r\n/g, '\n');
 
 function declaration(name) {
   const match = source.match(new RegExp('function ' + name + '\\([^]*?\\n\\}'));

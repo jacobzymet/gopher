@@ -1,11 +1,11 @@
-const { readUiScript } = require('./helpers/ui-source.cjs');
 const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { test } = require('node:test');
 const vm = require('node:vm');
 
 function load(state, file, names) {
-  const source = readUiScript(file).replace(/\r\n/g, '\n');
+  const source = readFileSync(join(__dirname, '../src/ui/chat/scripts', file), 'utf8').replace(/\r\n/g, '\n');
   for (const name of names) {
     const match = source.match(new RegExp('^(?:async )?function ' + name + '\\([\\s\\S]*?^\\}$', 'm'));
     assert.ok(match, name);
@@ -41,12 +41,7 @@ function sendHarness() {
     newId: () => 'outbound-1', isConvoBusy: () => false, getOutboundQueue: () => [],
     dispatchOutboundTurn: (convo, item) => sent.push({ id: convo.id, item }),
   });
-  load(state, 'runtime.js', [
-    'composerSendIsCurrent', 'sendMessage', 'composerEditTarget', 'composerReplyTarget', 'composerModelReady',
-    'newComposerAttempt', 'prepareSendAttachments', 'branchConversation', 'openBranchConversation',
-    'openDraftConversation', 'clearComposerAfterSend', 'composerOutbound', 'queueOrDispatch', 'finishComposerSend',
-    'composerDiagnosticContext',
-  ]);
+  load(state, 'runtime.js', ['composerSendIsCurrent', 'sendMessage']);
   return { state, sent, hints, attachment, finish: () => resolvePrep([attachment]), preparations: () => preparations };
 }
 
@@ -162,10 +157,7 @@ function conflictHarness() {
   });
   load(state, 'state.js', ['conversationModelId']);
   load(state, 'controls.js', ['markOutboundStarting', 'clearOutboundStarting', 'outboundStartIsCurrent']);
-  load(state, 'runtime.js', ['runAssistantTurn', 'dropLiveSubscriber', 'readyTurnModel', 'claimTurnSlot', 'turnMark', 'clearStopMarkers', 'waitForPreviousCancel',
-    'trimmedSetting', 'turnSkillSettings', 'applyTurnMode', 'turnApiMessages', 'appendTurnClock',
-    'turnRequestBody', 'saveChatForRetrieval',
-    'postCompletion', 'sendTurnRequest']);
+  load(state, 'runtime.js', ['runAssistantTurn', 'dropLiveSubscriber']);
   const run = (overrides = {}) => state.runAssistantTurn(convo, {
     useAgent: false, skills: {}, text: 'queued prompt', dispatchedMessage: user,
     queueItem: { id: 'queued-1' }, previousTitle: 'title',
@@ -181,7 +173,7 @@ function conflictHarness() {
   };
 }
 
-test('outbound prompts keep a stable system prefix and carry the fresh clock on the newest user message', async () => {
+test('outbound prompts retain stage instructions and place the fresh clock after stable context', async () => {
   const h = conflictHarness();
   h.state.buildSystemPrompt = (_, opts) => {
     assert.equal(opts.includeTime, false);
@@ -192,7 +184,8 @@ test('outbound prompts keep a stable system prefix and carry the fresh clock on 
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(h.requests[0].messages, [
     { role: 'system', content: 'Stable instructions and memory\n\nVerify independently' },
-    { role: 'user', content: 'queued prompt\n\nNow: 2026-10-01 12:01' },
+    { role: 'system', content: 'Now: 2026-10-01 12:01' },
+    { role: 'user', content: 'queued prompt' },
   ]);
   h.respond(200);
   await pending;

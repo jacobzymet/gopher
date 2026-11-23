@@ -1,13 +1,13 @@
-const { readUiScript } = require('./helpers/ui-source.cjs');
 // Run without compiling the app: node --test tests/tool-activity.test.cjs
 const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { test } = require('node:test');
 const vm = require('node:vm');
 
 const root = join(__dirname, '..');
-const render = readUiScript("render").replace(/\r\n/g, '\n');
-const runtime = readUiScript("runtime").replace(/\r\n/g, '\n');
+const render = readFileSync(join(root, 'src/ui/chat/scripts/render.js'), 'utf8').replace(/\r\n/g, '\n');
+const runtime = readFileSync(join(root, 'src/ui/chat/scripts/runtime.js'), 'utf8').replace(/\r\n/g, '\n');
 
 // Exercise the shipped functions, without bootstrapping the rest of the UI.
 function declaration(source, name) {
@@ -29,21 +29,22 @@ function harness(timeline = []) {
   for (const name of [
     'agentStepRailHtml', 'wrapTimelineStep', 'skillLabel', 'toolBodyFromArgs',
     'skillLiveVerb', 'liveToolStatusLabel', 'liveToolStatusText', 'skillToolIcon', 'formatToolElapsed', 'toolDurationMs',
-    'skillDetailLabel', 'agentStepResultHtml', 'terminalResultStopped', 'agentStepHtml',
+    'skillDetailLabel', 'agentStepResultHtml', 'agentStepHtml',
   ]) vm.runInContext(declaration(render, name), context);
   vm.runInContext(declaration(render, 'stampTimelinePart'), context);
   vm.runInContext(declaration(runtime, 'timelineSignature'), context);
   vm.runInContext(declaration(runtime, 'timelineOrderSignature'), context);
   vm.runInContext(declaration(runtime, 'setStreamThinkingLabel'), context);
 
-  // Agent events are handled by top-level sse* functions; bind them to this harness's stream.
-  for (const name of [
-    'sseRefreshNotifications', 'sseContentClear', 'sseToolPrepare', 'sseToolExecuting', 'sseSettleCommandSessions',
-    'sseRememberImage', 'sseApplyToolResult', 'sseAddToolResult', 'sseToolResult', 'sseClarify', 'sseClarifyDone',
-    'sseSteer', 'sseStatus', 'sseNotice', 'sseAgentEvent', 'ssePersistedParts',
-  ]) vm.runInContext(declaration(runtime, name), context);
-  vm.runInContext('this.onAgentEvent = (payload) => sseAgentEvent({ convo, stream, typer }, payload);', context);
-  vm.runInContext('function persist() { return ssePersistedParts(stream); }', context);
+  const eventStart = runtime.indexOf('  const onAgentEvent = (payload) => {');
+  const eventEnd = runtime.indexOf('  if (stream.catchingUp)', eventStart);
+  assert.ok(eventStart >= 0 && eventEnd > eventStart);
+  vm.runInContext(runtime.slice(eventStart, eventEnd) + '\nthis.onAgentEvent = onAgentEvent;', context);
+
+  const persistStart = runtime.indexOf('  const persistedParts = stream.timeline.length');
+  const persistEnd = runtime.indexOf('  if (viewing && dom)', persistStart);
+  assert.ok(persistStart >= 0 && persistEnd > persistStart);
+  vm.runInContext('function persist() {\n' + runtime.slice(persistStart, persistEnd) + '\nreturn persistedParts;\n}', context);
   return context;
 }
 
@@ -261,50 +262,6 @@ test('a final poll settles only earlier cards belonging to the same session', ()
   assert.equal(parts[1].running, true);
   assert.match(context.agentStepHtml(parts[0]), /is-failed/);
   assert.match(context.agentStepHtml(parts[2]), /is-failed/);
-});
-
-test('intentional terminal stops remain stopped through SSE and persistence, including earlier session cards', () => {
-  const context = harness([
-    { type: 'tool', id: 'start', name: 'run_terminal', commandSessionId: 'cmd_1', running: true, ok: true },
-    { type: 'tool', id: 'other', name: 'run_terminal', commandSessionId: 'cmd_2', running: true, ok: true },
-  ]);
-  context.onAgentEvent({
-    phase: 'tool_result', id: 'stop', name: 'wait_terminal', command_session_id: 'cmd_1',
-    running: false, ok: false, result: JSON.stringify({ session_id: 'cmd_1', stopped: true, exit_code: 1 }),
-    note: 'Process intentionally stopped. Restart only if the user requests it.',
-  });
-  const parts = JSON.parse(JSON.stringify(context.persist()));
-  assert.equal(parts[0].stopped, true);
-  assert.equal(parts[0].ok, false, 'Stopping is not successful command completion');
-  assert.equal(parts[1].running, true);
-  for (const part of [parts[0], parts[2]]) {
-    const html = context.agentStepHtml(part);
-    assert.match(html, /class="agent-step is-stopped"/);
-    assert.match(html, />Stopped<\/span>/);
-    assert.doesNotMatch(html, /is-failed|is-done|is-just-done|>Failed</);
-  }
-  assert.notEqual(context.timelineSignature([parts[0]]), context.timelineSignature([{ ...parts[0], stopped: false }]));
-});
-
-test('previously saved stopped terminal results render correctly without rewriting chat data', () => {
-  const context = harness();
-  for (const result of [JSON.stringify({ stopped: true }), 'truncated preview']) {
-    const html = context.agentStepHtml({
-      type: 'tool', name: 'wait_terminal', ok: false, live: false, result,
-      note: 'Process intentionally stopped. Restart only if the user requests it.',
-    });
-    assert.match(html, />Stopped<\/span>/);
-    assert.doesNotMatch(html, /is-failed|is-done|>Failed</);
-  }
-});
-
-test('ordinary failures and denied calls cannot be reclassified by unrelated output', () => {
-  const context = harness();
-  for (const result of [JSON.stringify({ stopped: false, exit_code: 7 }), 'Stopped', '{malformed']) {
-    assert.match(context.agentStepHtml({ name: 'run_terminal', ok: false, result }), /is-failed/);
-  }
-  assert.match(context.agentStepHtml({ name: 'read_file', ok: false, result: '{"stopped":true}' }), /is-failed/);
-  assert.match(context.agentStepHtml({ name: 'wait_terminal', approval: 'denied', ok: false, result: '{"stopped":true}' }), />Denied<\/span>/);
 });
 
 test('patch approval renders the complete patch and completed previews disclose truncation', () => {

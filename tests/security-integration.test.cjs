@@ -1,4 +1,3 @@
-const { chromium, appTestsEnabled, spawnApp, browserLaunchOptions, stopApp, removeAppData, mockAppUpdates } = require('./helpers/app.cjs');
 // Requires a built app and Playwright. Uses an isolated temporary data directory.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -10,9 +9,10 @@ const net = require('node:net');
 const { setTimeout: delay } = require('node:timers/promises');
 
 test('built app supports offline OCR and revokes terminal sockets on encryption lock', {
-  skip: !appTestsEnabled,
+  skip: !process.env.SECURITY_APP_BINARY,
   timeout: 120000,
 }, async () => {
+  const { chromium } = require('playwright');
   const dir = mkdtempSync(join(tmpdir(), 'gopher-security-'));
   const config = join(dir, 'config.toml');
   writeFileSync(config, '');
@@ -21,7 +21,7 @@ test('built app supports offline OCR and revokes terminal sockets on encryption 
   const port = reservation.address().port;
   await new Promise(r => reservation.close(r));
   const origin = `http://127.0.0.1:${port}`;
-  const child = spawnApp(['--headless', '--config', config, '--bind', `127.0.0.1:${port}`], { windowsHide: true, stdio: 'pipe' });
+  const child = spawn(resolve(process.env.SECURITY_APP_BINARY), ['--headless', '--config', config, '--bind', `127.0.0.1:${port}`], { windowsHide: true, stdio: 'pipe' });
   let logs = '';
   child.stdout.on('data', b => { logs += b; });
   child.stderr.on('data', b => { logs += b; });
@@ -35,7 +35,7 @@ test('built app supports offline OCR and revokes terminal sockets on encryption 
       await delay(100);
     }
     assert.ok(ready, logs);
-    browser = await chromium.launch(browserLaunchOptions(process.env.SECURITY_BROWSER_CHANNEL));
+    browser = await chromium.launch({ headless: true, channel: process.env.SECURITY_BROWSER_CHANNEL || undefined });
     const page = await browser.newPage();
     const externalCode = [];
     await page.route('**/*', route => {
@@ -45,7 +45,6 @@ test('built app supports offline OCR and revokes terminal sockets on encryption 
       }
       return route.continue();
     });
-    await mockAppUpdates(page, origin);
     await page.goto(origin);
     await page.waitForFunction(() => typeof ocrAttachmentImage === 'function');
     const text = await page.evaluate(async () => {
@@ -85,8 +84,9 @@ test('built app supports offline OCR and revokes terminal sockets on encryption 
     assert.equal(status, 'rejected');
   } finally {
     if (browser) await browser.close();
-    await stopApp(child);
+    child.kill();
+    if (child.exitCode === null) await new Promise(r => child.once('exit', r));
     // Only the exact test-created directory is removed.
-    await removeAppData(dir);
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
 });

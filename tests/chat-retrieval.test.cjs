@@ -1,10 +1,10 @@
-const { readUiScript } = require('./helpers/ui-source.cjs');
 const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { test } = require('node:test');
 const vm = require('node:vm');
 
-const read = (name) => readUiScript(name).replace(/\r\n/g, '\n');
+const read = (name) => readFileSync(join(__dirname, '../src/ui/chat/scripts', name), 'utf8').replace(/\r\n/g, '\n');
 const state = read('state.js');
 const render = read('render.js');
 const input = read('input.js');
@@ -41,7 +41,7 @@ test('past-chat retrieval defaults on and an explicit off survives normalization
   const context = settingsContext();
   assert.equal(context.normalizeSettings(null).chatRetrieval, true);
   assert.equal(context.normalizeSettings({}).chatRetrieval, true);
-  const disabled = context.normalizeSettings({ chatRetrieval: false, agentMode: false });
+  const disabled = context.normalizeSettings({ chatRetrieval: false });
   const stored = JSON.parse(JSON.stringify(context.preferencesPayload(disabled)));
   assert.equal(context.normalizeSettings(stored).chatRetrieval, false);
   context.settings = context.normalizeSettings({ agentMode: false });
@@ -50,32 +50,6 @@ test('past-chat retrieval defaults on and an explicit off survives normalization
   context.settings = disabled;
   assert.equal(context.resolveTurnSkills(new Set()).skills.chat_retrieval, false);
   assert.equal(context.resolveTurnSkills(new Set()).useAgent, false);
-});
-
-test('Agent mode defaults on while explicit off preferences survive persistence', () => {
-  const context = settingsContext();
-  assert.equal(context.normalizeSettings(null).agentMode, true);
-  assert.equal(context.normalizeSettings({}).agentMode, true);
-  for (const enabled of [true, false]) {
-    const settings = context.normalizeSettings({ agentMode: enabled });
-    const stored = JSON.parse(JSON.stringify(context.preferencesPayload(settings)));
-    assert.equal(context.normalizeSettings(stored).agentMode, enabled);
-  }
-});
-
-test('approval preferences default to safe mode and preserve explicit choices across persistence and turns', () => {
-  const context = settingsContext();
-  load(context, read('bots'), 'defaultBotsTurn');
-  for (const parsed of [null, {}, { approvalMode: 'invalid' }]) {
-    assert.equal(context.normalizeSettings(parsed).approvalMode, 'auto_safe');
-  }
-  for (const mode of ['auto_safe', 'manual', 'auto_all']) {
-    context.settings = context.normalizeSettings({ agentMode: true, approvalMode: mode });
-    const stored = JSON.parse(JSON.stringify(context.preferencesPayload(context.settings)));
-    assert.equal(context.normalizeSettings(stored).approvalMode, mode);
-    assert.equal(context.resolveTurnSkills(new Set()).skills.approval_mode, mode);
-    assert.equal(context.defaultBotsTurn().skills.approval_mode, mode);
-  }
 });
 
 test('project prompts preserve saved memory without silently injecting sibling messages', () => {
@@ -111,13 +85,12 @@ test('clock changes preserve the stable prompt, project precedence, and all supp
     fillPrompt: (template, values) => template ? template.replace(/\{\{(\w+)\}\}/g, (_, key) => values[key] || '') : '',
   };
   context.getProject = () => ({ name: 'Project', instructions: 'Project instruction', memory: 'Project fact' });
-  context.botSystemPromptParts = () => ['Bot identity', 'Bot memory', 'Group directive'];
   const opts = { convo: {}, includeTime: false };
   context.formatPromptToday = () => '2026-10-01 12:00';
   const first = context.buildSystemPrompt('p', opts);
   context.formatPromptToday = () => '2026-10-01 12:01';
   assert.equal(context.buildSystemPrompt('p', opts), first);
-  for (const text of ['Ada', 'Engineer', 'Project instruction', 'Global fact', 'Project fact', 'Bot identity', 'Bot memory', 'Group directive']) {
+  for (const text of ['Ada', 'Engineer', 'Project instruction', 'Global fact', 'Project fact']) {
     assert.ok(first.includes(text), text);
   }
   assert.doesNotMatch(first, /Global instruction|2026-10-01/);

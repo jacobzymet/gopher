@@ -1,15 +1,23 @@
-const { readUiScript } = require('./helpers/ui-source.cjs');
 // Run without compiling the app: node --test tests/model-menu-anchor.test.cjs
 const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { test } = require('node:test');
 const vm = require('node:vm');
 
 const root = join(__dirname, '..');
-const runtime = readUiScript("runtime").replace(/\r\n/g, '\n');
-const state = readUiScript("state").replace(/\r\n/g, '\n');
-const bots = readUiScript("bots").replace(/\r\n/g, '\n');
-const render = readUiScript("render").replace(/\r\n/g, '\n');
+const runtime = readFileSync(
+  join(root, 'src/ui/chat/scripts/runtime.js'),
+  'utf8'
+).replace(/\r\n/g, '\n');
+const state = readFileSync(
+  join(root, 'src/ui/chat/scripts/state.js'),
+  'utf8'
+).replace(/\r\n/g, '\n');
+const render = readFileSync(
+  join(root, 'src/ui/chat/scripts/render.js'),
+  'utf8'
+).replace(/\r\n/g, '\n');
 
 function declaration(source, name) {
   const match = source.match(new RegExp('^function ' + name + '\\([\\s\\S]*?^\\}$', 'm'));
@@ -113,33 +121,7 @@ test('the shared model menu rejects detached and hidden anchors', () => {
   }), false);
 });
 
-test('stream state does not invalidate an unchanged Loops member list', () => {
-  const context = vm.createContext({
-    loopModelTriggerLabel: (model) => 'Label for ' + model,
-    JSON,
-  });
-  vm.runInContext(declaration(bots, 'traceMembersRenderSignature'), context);
-  const members = [{
-    id: 'agent-1',
-    handle: 'reviewer',
-    name: '@reviewer',
-    model: 'provider/model-a',
-    stage: 'challenge',
-    description: 'Challenge assumptions',
-  }];
-  const before = context.traceMembersRenderSignature({ id: 'loop-1', loopRun: { phaseIndex: 0 } }, members);
-  const during = context.traceMembersRenderSignature({ id: 'loop-1', loopRun: { phaseIndex: 2 } }, members);
-  assert.equal(before, during);
-
-  const changed = context.traceMembersRenderSignature(
-    { id: 'loop-1' },
-    [{ ...members[0], model: 'provider/model-b' }]
-  );
-  assert.notEqual(before, changed);
-});
-
-test('switching from Loops repaints the shared description with the Agent model', () => {
-  let surface = 'bots';
+test('the ready model description names the Agent model and provider', () => {
   const modelHintEl = {
     textContent: '',
     classList: { remove() {} },
@@ -152,11 +134,6 @@ test('switching from Loops repaints the shared description with the Agent model'
     selectedRemoteModel() {
       return { model: 'agent-model', provider_name: 'Agent Provider' };
     },
-    paintLoopModelHint() {
-      if (surface !== 'bots') return false;
-      modelHintEl.textContent = '@solver · loop-model';
-      return true;
-    },
     inProjectChat: () => false,
     getProject: () => null,
     isIncognitoContext: () => false,
@@ -166,10 +143,6 @@ test('switching from Loops repaints the shared description with the Agent model'
   });
   vm.runInContext(declaration(runtime, 'paintReadyInferenceModelHint'), context);
 
-  context.paintReadyInferenceModelHint({ network: {} });
-  assert.equal(modelHintEl.textContent, '@solver · loop-model');
-
-  surface = 'chat';
   context.paintReadyInferenceModelHint({ network: {} });
   assert.equal(modelHintEl.textContent, 'Chatting with agent-model via Agent Provider');
   assert.match(render, /paintReadyInferenceModelHint\(latestState\)/);

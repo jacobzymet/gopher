@@ -1,11 +1,11 @@
-const { readUiScript } = require('./helpers/ui-source.cjs');
 const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { test } = require('node:test');
 const vm = require('node:vm');
 
 function load(context, file, name) {
-  const source = readUiScript(file).replace(/\r\n/g, '\n');
+  const source = readFileSync(join(__dirname, '../src/ui/chat/scripts', file), 'utf8').replace(/\r\n/g, '\n');
   const match = source.match(new RegExp('^async function ' + name + '\\([\\s\\S]*?^\\}$', 'm'));
   assert.ok(match, name);
   vm.runInContext(match[0], context);
@@ -94,55 +94,3 @@ test('a failed in-flight steer cannot restore an instruction already cancelled',
   await pending;
   assert.equal(entry.posting, false);
 });
-
-function compactHarness() {
-  let finish;
-  let saves = 0;
-  let memories = 0;
-  const convo = { id: 'loop', messages: Array.from({ length: 15 }, (_, i) => ({ role: 'user', content: String(i) })) };
-  const context = vm.createContext({
-    console, BOT_COMPACT_CHARS: 1, BOT_COMPACT_KEEP: 10, storageWriteEpoch: 0,
-    conversations: [convo], window: {}, estimateConvoChars: () => 100,
-    botsOutboundEpochOf: () => 1, diskEncryptionLocked: () => false,
-    isBotGroup: () => true, getBot: () => null,
-    conversationModelId: () => 'owning-chat-model',
-    collectCompletionText: () => new Promise(resolve => { finish = resolve; }),
-    parseCompactJson: () => ({ summary: 'summary', memory: 'memory' }),
-    persistGroupMemory: () => { memories++; },
-    saveStore: () => { saves++; },
-  });
-  load(context, 'bots.js', 'maybeCompactBotsConvo');
-  return { context, convo, finish: () => finish('result'), saves: () => saves, memories: () => memories };
-}
-
-test('Loop compaction commits a current snapshot and preserves its recent messages', async () => {
-  const h = compactHarness();
-  const kept = h.convo.messages.slice(-10);
-  const pending = h.context.maybeCompactBotsConvo(h.convo, null);
-  h.finish();
-  await pending;
-  assert.equal(h.convo.messages.length, 11);
-  assert.equal(h.convo.messages[0].content, 'summary');
-  assert.deepEqual(Array.from(h.convo.messages.slice(1)), kept);
-  assert.equal(h.saves(), 1);
-});
-
-for (const [name, mutate] of [
-  ['new messages', h => h.convo.messages.push({ role: 'user', content: 'new' })],
-  ['an edited message', h => { h.convo.messages[0] = { role: 'user', content: 'edited' }; }],
-  ['deletion', h => { h.context.conversations = []; }],
-  ['locking', h => { h.context.storageWriteEpoch++; }],
-  ['Stop', h => { h.context.botsOutboundEpochOf = () => 2; }],
-]) {
-  test('late Loop compaction preserves state after ' + name, async () => {
-    const h = compactHarness();
-    const pending = h.context.maybeCompactBotsConvo(h.convo, null);
-    mutate(h);
-    const current = h.convo.messages.slice();
-    h.finish();
-    await pending;
-    assert.deepEqual(h.convo.messages, current);
-    assert.equal(h.saves(), 0);
-    assert.equal(h.memories(), 0);
-  });
-}

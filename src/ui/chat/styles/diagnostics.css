@@ -1,0 +1,15 @@
+.diagnostics-hint { display: block; color: var(--color-muted); font-size: var(--text-xs); margin-top: .25rem; }
+.diagnostics-toolbar { display: flex; flex-wrap: wrap; gap: .45rem; margin: 1rem 0; }
+.diagnostics-toolbar input { flex: 1 1 180px; min-width: 0; }
+.diagnostics-toolbar select { max-width: 200px; }
+.diagnostics-toolbar input, .diagnostics-toolbar select { min-height: 2.2rem; padding: .35rem .6rem; border: 1px solid var(--color-rule); border-radius: .4rem; background: var(--color-paper-2); color: var(--color-ink); font: inherit; font-size: var(--text-xs); }
+.diagnostics-timings { color: var(--color-ink); font-size: var(--text-xs); line-height: 1.65; white-space: pre-wrap; }
+.diagnostics-feed { border-top: 1px solid var(--color-rule); margin-top: .8rem; }
+.diagnostic-entry { padding: .55rem 0; border-bottom: 1px solid var(--color-rule); font-size: var(--text-xs); }
+.diagnostic-entry summary { display: flex; flex-wrap: wrap; gap: .4rem; cursor: pointer; overflow-wrap: anywhere; }
+.diagnostic-entry summary::before { content: '▸'; color: var(--color-muted); }
+.diagnostic-entry[open] summary::before { content: '▾'; }
+.diagnostic-entry time, .diagnostic-entry .diagnostic-meta { color: var(--color-muted); }
+.diagnostic-entry.is-error summary, .diagnostic-entry.is-warn summary { color: var(--color-danger, #d89b6b); }
+.diagnostic-entry pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 420px; overflow: auto; padding: .65rem; background: var(--color-paper); font-family: var(--font-mono); }
+.diagnostics-empty { color: var(--color-muted); padding: 1rem 0; font-size: var(--text-xs); }

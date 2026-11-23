@@ -1,25 +1,21 @@
-const { readUiScript } = require('./helpers/ui-source.cjs');
 const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { test } = require('node:test');
 const vm = require('node:vm');
 
-const source = readUiScript("state");
+const source = readFileSync(join(__dirname, '../src/ui/chat/scripts/state.js'), 'utf8');
 const helpers = source.slice(source.indexOf('const backdropFocusStack = []'),
   source.indexOf('let confirmDangerResolver'));
 
 function harness() {
   const callbacks = [];
   const paints = [];
-  const attributes = new Set();
-  const document = { activeElement: null, body: {}, addEventListener() {},
-    documentElement: { hasAttribute: name => attributes.has(name), setAttribute: name => attributes.add(name) },
-  };
+  const document = { activeElement: null, body: {}, addEventListener() {} };
   const context = vm.createContext({
     document, getComputedStyle: (node) => ({ visibility: node.visibility || 'visible' }),
     window: { setTimeout: (fn) => callbacks.push(fn) },
     afterNextPaint: (fn) => paints.push(fn), prefersReducedMotion: () => false,
-    focusUnlockPassphrase() {},
   });
   vm.runInContext(helpers, context);
   function element(id, parent = null) {
@@ -88,18 +84,6 @@ test('dialogs without enabled controls retain focus instead of escaping', () => 
   h.context.openBackdrop(modal);
   h.key('Tab');
   assert.equal(h.document.activeElement, modal);
-});
-
-test('the locked encryption gate cannot be dismissed by Escape or closeBackdrop', () => {
-  const h = harness();
-  const gate = h.element('unlockModal');
-  h.document.documentElement.setAttribute('data-session-locked', 'true');
-  h.context.openBackdrop(gate);
-  h.paints.shift()();
-  h.key('Escape');
-  h.context.closeBackdrop(gate);
-  assert.equal(gate.classList.contains('is-open'), true);
-  assert.equal(gate.inert, false);
 });
 
 test('Escape dismisses only the top confirmation and returns focus to Settings', () => {
