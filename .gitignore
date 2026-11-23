@@ -1,16 +1,47 @@
+# Build output
 /target/
 **/target/
-/.venv/
-vendor/glib/Cargo.lock
-**/*.rs.bk
-.agents/
-skills-lock.json
-__pycache__/
-*.py[cod]
+/dist/
+/dist-electron/
+/output/
+*.tsbuildinfo
+
+# Package managers / dependency trees
+/node_modules/
+**/node_modules/
+/.npm-cache/
+*.tgz
+
+# Local-only working material
+/.migration/
 /tensorchat/
 /.playwright-cli/
-/.migration/
-/.npm-cache/
-/dist/
-/node_modules/
-/output/
+.agents/
+skills-lock.json
+/.venv/
+__pycache__/
+*.py[cod]
+
+# Rust scratch
+**/*.rs.bk
+
+# Vendored crate lockfile (pinned by the workspace lockfile)
+vendor/glib/Cargo.lock
+
+# Local environment / credentials
+.env
+.env.*
+!.env.example
+
+# Logs and temp files
+*.log
+*.tmp
+
+# Editor / OS metadata
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
