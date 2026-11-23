@@ -2,7 +2,6 @@
   color-scheme: dark;
   /* Surface ladder: graphite (sunken) < paper (canvas) < paper-2 (raised) < paper-3 (floating) */
   --color-graphite: oklch(13.5% 0.012 264);
-  --color-graphite-2: oklch(18.5% 0.013 264);
   --color-paper: oklch(17.5% 0.012 264);
   --color-paper-2: oklch(21.5% 0.013 264);
   --color-paper-3: oklch(25.5% 0.014 264);
@@ -53,13 +52,11 @@
   --font-body: "Inter", system-ui, sans-serif;
   --font-mono: var(--font-body);
 
-  --space-3xs: 0.2rem;
   --space-2xs: 0.4rem;
   --space-xs: 0.65rem;
   --space-sm: 0.85rem;
   --space-md: 1.15rem;
   --space-lg: 1.5rem;
-  --space-xl: 2.15rem;
 
   --text-xs: 0.72rem;
   --text-sm: 0.84rem;
@@ -89,8 +86,6 @@
   --radius-xl: 16px;
   --radius-2xl: 20px;
   --radius-3xl: 24px;
-  --radius-input: var(--radius-pill);
-  --radius-panel: var(--radius-2xl);
   --radius-dialog: var(--radius-2xl);
   --radius-menu: var(--radius-xl);
   --radius-composer: var(--radius-3xl);
@@ -113,7 +108,6 @@ html[data-theme="light"] {
      Every surface carries hue 258 even at zero chroma — color-mix() in
      oklch interpolates hue, and a hue-0 white drags accent blends to pink. */
   --color-graphite: oklch(95.5% 0.005 258);
-  --color-graphite-2: oklch(97.5% 0.003 258);
   --color-paper: oklch(98.6% 0.003 258);
   --color-paper-2: oklch(100% 0 258);
   --color-paper-3: oklch(97% 0.004 258);
@@ -307,75 +301,8 @@ button { font-family: inherit; }
   border-radius: var(--radius-round);
 }
 
-.status-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-family: var(--font-mono);
-  font-size: 0.66rem;
-  font-weight: 500;
-  letter-spacing: 0.045em;
-        padding: 0.24rem 0.6rem;
-  border: 1px solid var(--color-rule);
-  border-radius: var(--radius-pill);
-  background: color-mix(in oklch, var(--color-graphite) 55%, transparent);
-  color: var(--color-muted);
-  white-space: nowrap;
-  transition:
-    color var(--dur-short) var(--ease-settle),
-    border-color var(--dur-short) var(--ease-settle),
-    background var(--dur-short) var(--ease-settle);
-}
 /* Status dot — reads at a glance before the label is even parsed. */
-.status-chip::before {
-  content: "";
-  width: 0.38rem;
-  height: 0.38rem;
-  border-radius: var(--radius-pill);
-  background: currentColor;
-  flex: 0 0 auto;
-}
-.status-ready {
-  color: var(--color-ok);
-  border-color: color-mix(in oklch, var(--color-ok) 34%, var(--color-rule));
-  background: color-mix(in oklch, var(--color-ok) 10%, transparent);
-}
-.status-ready::before {
-  content: "✓";
-  width: auto;
-  height: auto;
-  border-radius: 0;
-  background: transparent;
-  font-size: 0.76rem;
-  font-weight: 700;
-  line-height: 1;
-}
-.status-failed, .status-stopping {
-  color: var(--color-danger);
-  border-color: color-mix(in oklch, var(--color-danger) 34%, var(--color-rule));
-  background: color-mix(in oklch, var(--color-danger) 10%, transparent);
-}
-.status-downloading, .status-starting, .status-checking {
-  color: var(--color-accent);
-  border-color: var(--accent-edge);
-  background: color-mix(in oklch, var(--color-accent) 10%, transparent);
-}
-.status-downloading::before,
-.status-starting::before,
-.status-checking::before {
-  box-sizing: border-box;
-  background: transparent;
-  border: 1.5px solid color-mix(in oklch, currentColor 28%, transparent);
-  border-top-color: currentColor;
-  animation: status-spin 0.7s linear infinite;
-}
 @keyframes status-spin { to { transform: rotate(360deg); } }
-.status-stopped { color: var(--color-muted); }
-.status-warn {
-  color: var(--color-warn);
-  border-color: color-mix(in oklch, var(--color-warn) 34%, var(--color-rule));
-  background: color-mix(in oklch, var(--color-warn) 10%, transparent);
-}
 
 .chat-shell {
   --chat-topbar-h: 2.75rem;
@@ -905,9 +832,6 @@ html:not(.ui-ready) .chat-sidebar {
     box-shadow: inset 0 0 0 3px color-mix(in oklch, var(--color-accent) 70%, transparent);
   }
 }
-.convo-item.is-dragging {
-  opacity: 0.45;
-}
 .convo-select-check {
   display: inline-grid;
   place-items: center;
@@ -931,19 +855,6 @@ html:not(.ui-ready) .chat-sidebar {
   background: var(--accent-wash);
   box-shadow: inset 0 0 0 1px var(--accent-edge);
 }
-.convo-item.is-drag-before::before,
-.convo-item.is-drag-after::after {
-  content: "";
-  position: absolute;
-  left: 0.35rem;
-  right: 0.35rem;
-  height: 2px;
-  border-radius: var(--radius-round);
-  background: var(--color-accent);
-  pointer-events: none;
-}
-.convo-item.is-drag-before::before { top: -1px; }
-.convo-item.is-drag-after::after { bottom: -1px; }
 .convo-title {
   flex: 1 1 0;
   min-width: 0;
@@ -1132,19 +1043,6 @@ html:not(.ui-ready) .chat-sidebar {
   font-family: var(--font-mono);
 }
 
-.sidebar-footer {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  margin: 0 var(--space-3xs);
-  padding: 0.5rem 0 0;
-  border-top: 1px solid var(--color-rule);
-  font-size: var(--text-sm);
-}
-.sidebar-utility-panel {
-  display: grid;
-  gap: 0.15rem;
-}
 .sidebar-utility-row {
   display: grid;
   grid-template-columns: 1rem minmax(0, 1fr) auto;
@@ -1250,10 +1148,7 @@ button.sidebar-utility-row:hover .sidebar-utility-chevron {
    synthetic—not a filter over the real glyphs—and therefore carries no shape
    information from the protected title or provider name. */
 .privacy-mask {
-  --privacy-pixel-1: color-mix(in oklch, var(--color-muted) 42%, transparent);
   --privacy-pixel-2: color-mix(in oklch, var(--color-ink-2) 52%, transparent);
-  --privacy-pixel-3: color-mix(in oklch, var(--color-accent) 30%, var(--color-muted));
-  --privacy-pixel-4: color-mix(in oklch, var(--color-ink) 30%, transparent);
   position: relative;
   transition: color 180ms var(--ease-settle);
 }
@@ -1281,24 +1176,19 @@ button.sidebar-utility-row:hover .sidebar-utility-chevron {
 .privacy-mode .sidebar-project-chip-name,
 .privacy-mode .model-hint-provider,
 .privacy-mode .chat-model-origin-pill.privacy-mask,
-.privacy-mode .chat-model-origin-pill.privacy-mask *,
-.privacy-mode .chat-model-group-name.privacy-mask,
-.privacy-mode .chat-model-group-name.privacy-mask * {
+.privacy-mode .chat-model-origin-pill.privacy-mask * {
   color: transparent;
 }
-.privacy-mode .chat-model-origin-pill .chat-model-mark,
-.privacy-mode .chat-model-group-name .chat-model-mark {
+.privacy-mode .chat-model-origin-pill .chat-model-mark {
   background: transparent;
 }
-.privacy-mode .chat-model-origin-pill.privacy-mask,
-.privacy-mode .chat-model-group-name.privacy-mask {
+.privacy-mode .chat-model-origin-pill.privacy-mask {
   overflow: hidden;
 }
 .privacy-mode .convo-item:not(.is-active) .privacy-mask::after,
 .privacy-mode .sidebar-project-chip-name.privacy-mask::after,
 .privacy-mode .model-hint-provider.privacy-mask::after,
-.privacy-mode .chat-model-origin-pill.privacy-mask::after,
-.privacy-mode .chat-model-group-name.privacy-mask::after {
+.privacy-mode .chat-model-origin-pill.privacy-mask::after {
   content: "";
   opacity: 1;
   filter: blur(0);

@@ -158,7 +158,6 @@ function syncContextUsage(convo = null, liveStats = null, liveRemote = null) {
 
   if (!hasLimit) {
     contextUsage.classList.add('is-unavailable');
-    contextUsage.style.setProperty('--context-usage-pct', '0');
     if (ring) ring.style.strokeDashoffset = '100';
     contextUsageTitle.textContent = 'Context';
     contextUsageSummary.textContent = 'Window size unavailable';
@@ -170,7 +169,6 @@ function syncContextUsage(convo = null, liveStats = null, liveRemote = null) {
   }
 
   if (!activeConvo) {
-    contextUsage.style.setProperty('--context-usage-pct', '0');
     if (ring) ring.style.strokeDashoffset = '100';
     contextUsageTitle.textContent = 'Context · 0%';
     contextUsageSummary.textContent = '0 / ' + formatContextTokenCount(limit) + ' tokens';
@@ -181,7 +179,6 @@ function syncContextUsage(convo = null, liveStats = null, liveRemote = null) {
 
   if (!snapshot) {
     contextUsage.classList.add('is-unavailable');
-    contextUsage.style.setProperty('--context-usage-pct', '0');
     if (ring) ring.style.strokeDashoffset = '100';
     contextUsageTitle.textContent = 'Context';
     contextUsageSummary.textContent = 'Waiting for usage';
@@ -197,7 +194,6 @@ function syncContextUsage(convo = null, liveStats = null, liveRemote = null) {
   const remaining = Math.max(0, limit - used);
   const pctLabel = pct > 0 && pct < 1 ? '<1%' : (pct < 10 ? pct.toFixed(1) + '%' : Math.round(pct) + '%');
 
-  contextUsage.style.setProperty('--context-usage-pct', ringPct.toFixed(2));
   if (ring) ring.style.strokeDashoffset = String(100 - ringPct);
   if (pct >= 90) contextUsage.classList.add('is-danger');
   else if (pct >= 75) contextUsage.classList.add('is-warn');
@@ -1429,10 +1425,6 @@ function setPendingReply(text, target = null) {
   renderComposerReply();
   updateSendEnabled();
   focusComposer();
-}
-
-function setPendingReplyQuote(text) {
-  setPendingReply(text, null);
 }
 
 function hideSelectionReplyBar() {

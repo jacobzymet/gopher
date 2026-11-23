@@ -60,7 +60,6 @@
 .privacy-mode .search-dialog-item:hover .privacy-mask::after { opacity: 0; }
 
 .welcome-tools { width: 100%; order: 2; margin-top: 0.8rem; }
-.welcome-tools-label { margin: 0 0 0.65rem; color: var(--color-muted); font-size: var(--text-xs); text-align: center; }
 .welcome-starters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.6rem; }
 .welcome-starter {
   display: flex; flex-direction: column; align-items: flex-start; gap: 0.35rem;

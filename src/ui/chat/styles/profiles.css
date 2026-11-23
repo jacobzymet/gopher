@@ -1,18 +1,3 @@
-.sidebar-footer {
-  position: relative;
-}
-
-.sidebar-account-bar {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 2.25rem 2.25rem;
-  align-items: center;
-  gap: 0.18rem;
-  min-height: 3.25rem;
-  padding: 0.25rem;
-  border-radius: var(--radius-lg);
-  background: color-mix(in oklch, var(--color-paper-2) 64%, transparent);
-}
-
 .sidebar-account-trigger,
 .sidebar-account-icon,
 .sidebar-profile-option,

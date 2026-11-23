@@ -206,7 +206,6 @@ body > .composer-shell {
   flex-wrap: wrap;
 }
 .composer-buttons {
-  --composer-control-h: 2.1rem;
   display: flex;
   gap: 0.35rem;
   flex: 0 0 auto;
@@ -1018,7 +1017,6 @@ html[data-theme="light"] .plus-menu-icon.is-agent { color: oklch(48% 0.16 305); 
 
 /* Live active-context meter beside the composer actions. */
 .context-usage {
-  --context-usage-pct: 0;
   position: relative;
   width: 2.1rem;
   height: 2.1rem;

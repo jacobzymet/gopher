@@ -1242,10 +1242,6 @@ function findTimelineToolStep(root, part) {
   return null;
 }
 
-function findLiveToolStep(root, part) {
-  return findTimelineToolStep(root, part);
-}
-
 /** Update draft text in place so the rail spinner is not rebuilt every token. */
 function patchLiveToolBodies(root, parts) {
   if (!root) return;
@@ -2546,15 +2542,6 @@ function nextTopSortOrder(projectId) {
   ))) - 1;
 }
 
-function applyConversationOrder(orderedIds) {
-  orderedIds.forEach((id, index) => {
-    const convo = conversations.find((item) => item.id === id);
-    if (convo) convo.sortOrder = index;
-  });
-  saveStore();
-  renderSidebar();
-}
-
 function closeConvoMenu() {
   if (!openConvoMenu) return;
   const menu = openConvoMenu;
@@ -2575,8 +2562,6 @@ function closeConvoMenu() {
   menu._closeTimer = window.setTimeout(removeMenu, 200);
 }
 
-let draggingConvoId = null;
-let convoDragMoved = false;
 let conversationSelectionMode = false;
 const selectedConversationIds = new Set();
 
@@ -2666,79 +2651,6 @@ async function bulkDeleteSelectedConversations() {
     renderSidebar();
     syncComposerStreamUi();
   }
-}
-
-function clearConvoDragMarkers(root) {
-  if (!root) return;
-  root.querySelectorAll('.convo-item.is-drag-before, .convo-item.is-drag-after, .convo-item.is-dragging')
-    .forEach((el) => {
-      el.classList.remove('is-drag-before', 'is-drag-after', 'is-dragging');
-    });
-}
-
-function bindConvoListReorder(listEl) {
-  if (conversationSelectionMode) return;
-  const items = [...listEl.querySelectorAll('.convo-item[data-convo-id]')];
-  if (items.length < 2) return;
-
-  items.forEach((item) => {
-    item.draggable = true;
-    item.addEventListener('dragstart', (event) => {
-      if (event.target.closest('button')) {
-        event.preventDefault();
-        return;
-      }
-      draggingConvoId = item.dataset.convoId || null;
-      convoDragMoved = false;
-      item.classList.add('is-dragging');
-      event.dataTransfer.effectAllowed = 'move';
-      event.dataTransfer.setData('text/plain', draggingConvoId || '');
-      try {
-        event.dataTransfer.setDragImage(item, 12, 12);
-      } catch {
-        // some browsers reject custom drag images
-      }
-    });
-    item.addEventListener('dragend', () => {
-      clearConvoDragMarkers(listEl);
-      draggingConvoId = null;
-    });
-    item.addEventListener('dragover', (event) => {
-      if (!draggingConvoId) return;
-      event.preventDefault();
-      event.dataTransfer.dropEffect = 'move';
-      const overId = item.dataset.convoId;
-      if (!overId || overId === draggingConvoId) return;
-      const rect = item.getBoundingClientRect();
-      const before = event.clientY < rect.top + rect.height / 2;
-      items.forEach((el) => el.classList.remove('is-drag-before', 'is-drag-after'));
-      item.classList.add(before ? 'is-drag-before' : 'is-drag-after');
-    });
-    item.addEventListener('dragleave', (event) => {
-      if (!item.contains(event.relatedTarget)) {
-        item.classList.remove('is-drag-before', 'is-drag-after');
-      }
-    });
-    item.addEventListener('drop', (event) => {
-      event.preventDefault();
-      const sourceId = draggingConvoId || event.dataTransfer.getData('text/plain');
-      const targetId = item.dataset.convoId;
-      items.forEach((el) => el.classList.remove('is-drag-before', 'is-drag-after'));
-      if (!sourceId || !targetId || sourceId === targetId) return;
-      const rect = item.getBoundingClientRect();
-      const placeBefore = event.clientY < rect.top + rect.height / 2;
-      const order = items.map((el) => el.dataset.convoId).filter(Boolean);
-      const from = order.indexOf(sourceId);
-      let to = order.indexOf(targetId);
-      if (from < 0 || to < 0) return;
-      order.splice(from, 1);
-      to = order.indexOf(targetId);
-      if (to < 0) return;
-      order.splice(placeBefore ? to : to + 1, 0, sourceId);
-      convoDragMoved = true;
-      applyConversationOrder(order);
-    });
-  });
 }
 
 const CONVO_BUSY_CYCLE_MS = 1150;
@@ -2868,10 +2780,6 @@ function createConvoItem(convo, { nested = false } = {}) {
   }
   if (!conversationSelectionMode) item.appendChild(more);
   item.addEventListener('click', () => {
-    if (convoDragMoved) {
-      convoDragMoved = false;
-      return;
-    }
     if (conversationSelectionMode) toggleConversationSelection(convo.id);
     else selectConversation(convo.id);
   });

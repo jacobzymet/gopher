@@ -80,10 +80,6 @@ function endTerminalResize(event) {
   persistTerminalHeight(vh);
 }
 
-function isTerminalOpen() {
-  return terminalOpen;
-}
-
 function paintWorkspaceField(value, { force = false } = {}) {
   const el = document.getElementById('chatTerminalCwd');
   if (el && (force || document.activeElement !== el)) {

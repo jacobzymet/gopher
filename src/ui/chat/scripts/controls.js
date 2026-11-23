@@ -226,11 +226,6 @@ function abortStream(convoId, {
   return cancelDone;
 }
 
-/** Abort the live request without cancelling queued follow-ups. */
-function softAbortStream(convoId) {
-  abortStream(convoId, { cancelServer: true, soft: true });
-}
-
 function abortAllStreams({ cancelServer = true } = {}) {
   const ids = new Set([...activeStreams.keys(), ...outboundStarting]);
   for (const id of ids) abortStream(id, { cancelServer });
@@ -262,17 +257,6 @@ function getOutboundQueue(convoId) {
     outboundQueues.set(convoId, queue);
   }
   return queue;
-}
-
-function clearOutboundQueue(convoId) {
-  if (!convoId) return;
-  if (editingQueueId && getOutboundQueue(convoId).some((item) => item.id === editingQueueId)) {
-    editingQueueId = null;
-  }
-  outboundQueues.delete(convoId);
-  stoppedOutboundQueues.delete(convoId);
-  if (activeId === convoId) renderOutboundQueue(conversations.find((c) => c.id === convoId));
-  persistOutboundQueues();
 }
 
 function pauseOutboundQueueAfterStop(convoId) {
