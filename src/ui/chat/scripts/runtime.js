@@ -1022,6 +1022,11 @@ function paintReadyInferenceModelHint(data) {
   return true;
 }
 
+/** True while the landing (no conversation) view owns the canvas. */
+function emptyStateIsVisible() {
+  return !!emptyState && !emptyState.classList.contains('is-hidden');
+}
+
 function updateInferenceState(data) {
   latestState = data;
   applyAppearance(data);
@@ -1061,12 +1066,21 @@ function updateInferenceState(data) {
       : 'Loading models…';
     modelHintEl.textContent = pendingText;
     modelHintEl.classList.remove('is-hidden');
-    showComposerHint(pendingText);
+    // The landing view already prints the same line under the greeting.
+    if (emptyStateIsVisible()) {
+      if (composerHint && composerHint.textContent === pendingText) hideComposerHint();
+    } else {
+      showComposerHint(pendingText);
+    }
   } else if (selectionUnavailable) {
     const unavailableText = modelIdLabel(selectedChatModel) + ' is unavailable. Choose another model.';
     modelHintEl.textContent = unavailableText;
     modelHintEl.classList.remove('is-hidden');
-    showComposerHint(unavailableText, { warn: true });
+    if (emptyStateIsVisible()) {
+      if (composerHint && composerHint.textContent === unavailableText) hideComposerHint();
+    } else {
+      showComposerHint(unavailableText, { warn: true });
+    }
   } else if (!serverReady) {
     modelHintEl.textContent = '';
     modelHintEl.classList.add('is-hidden');
