@@ -1,7 +1,7 @@
 // Set GOPHER_TEST_BINARY to a built executable. Every test uses isolated data.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { mkdtempSync, readFileSync, writeFileSync, rmSync } = require('node:fs');
+const { mkdtempSync, readFileSync, realpathSync, writeFileSync, rmSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join, resolve } = require('node:path');
 const { spawn } = require('node:child_process');
@@ -50,8 +50,10 @@ test('ephemeral bind reports its actual port and relative config keeps data besi
     };
     const info = await call('/api/data');
     assert.equal(info.status, 200);
-    assert.equal(resolve(info.body.data_dir), dir);
-    assert.equal(resolve(info.body.config_path), join(dir, 'config.toml'));
+    // The app reports canonical paths; /var is a symlink to /private/var on macOS.
+    const realDir = realpathSync(dir);
+    assert.equal(realpathSync(resolve(info.body.data_dir)), realDir);
+    assert.equal(realpathSync(resolve(info.body.config_path)), join(realDir, 'config.toml'));
     assert.equal((await call('/api/data/store', 'PUT', { conversations: [{ id: 'example', messages: [] }] })).status, 204);
     assert.equal((await call('/api/data/preferences', 'PUT', { name: 'Example' })).status, 200);
     assert.equal((await call('/api/skills', 'POST', { name: 'Example', content: 'Test instructions.' })).status, 200);
