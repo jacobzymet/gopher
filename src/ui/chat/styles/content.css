@@ -730,7 +730,6 @@ html[data-session-locked] #unlockModal { display: flex !important; opacity: 1; p
 #unlockModal .unlock-reveal { width: 2.6rem; height: 2.6rem; }
 #unlockModal .dialog-actions { padding: 0; margin: 0; border: 0; background: var(--color-paper); }
 #unlockModal #btnUnlockModalSubmit { width: 100%; min-height: 3rem; font-size: var(--text-md); }
-.unlock-screen-note { margin: 0; color: var(--color-muted); font-size: var(--text-xs); line-height: 1.5; text-align: center; }
 .button-loading-spinner {
   box-sizing: border-box;
   width: 1rem;
