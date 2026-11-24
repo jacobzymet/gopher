@@ -739,6 +739,15 @@ function reconcileTimelineSteps(root, items, { liveThinkHtml = '' } = {}) {
   return { inserted, patched };
 }
 
+function showTraceSidebarNoActivity() {
+  if (!traceSidebarBody.querySelector('.trace-sidebar-empty')) {
+    traceSidebarBody.innerHTML =
+      '<p class="trace-sidebar-empty">This reply has no reasoning or tool activity.</p>';
+  }
+  delete traceSidebarBody.dataset.sidebarSig;
+  afterTraceTimelinePaint({ live: false });
+}
+
 function paintTraceSidebarContent(message, { live = false } = {}) {
   if (!traceSidebarBody) return;
   const wasNearBottom = isTraceSidebarNearBottom();
@@ -781,12 +790,7 @@ function paintTraceSidebarContent(message, { live = false } = {}) {
       if (title.textContent !== nextTitle) title.textContent = nextTitle;
     }
     if (!stepCount && !openThink) {
-      if (!traceSidebarBody.querySelector('.trace-sidebar-empty')) {
-        traceSidebarBody.innerHTML =
-          '<p class="trace-sidebar-empty">This reply has no reasoning or tool activity.</p>';
-      }
-      delete traceSidebarBody.dataset.sidebarSig;
-      afterTraceTimelinePaint({ live: false });
+      showTraceSidebarNoActivity();
       return;
     }
 
@@ -842,12 +846,7 @@ function paintTraceSidebarContent(message, { live = false } = {}) {
       if (title.textContent !== nextTitle) title.textContent = nextTitle;
     }
     if (!timelineHtml.trim()) {
-      if (!traceSidebarBody.querySelector('.trace-sidebar-empty')) {
-        traceSidebarBody.innerHTML =
-          '<p class="trace-sidebar-empty">This reply has no reasoning or tool activity.</p>';
-      }
-      delete traceSidebarBody.dataset.sidebarSig;
-      afterTraceTimelinePaint({ live: false });
+      showTraceSidebarNoActivity();
       return;
     }
     const staticSig = 'static\0' + timelineSignature(collected.timelineParts);
@@ -3850,12 +3849,36 @@ function restoreMarkdownMath(html, slots) {
   });
 }
 
+// Rendered HTML depends only on the source (image refs are already inlined),
+// so finished messages are not re-parsed every time the thread is redrawn.
+const MARKDOWN_CACHE_ENTRIES = 300;
+const MARKDOWN_CACHE_MAX_SOURCE = 256 * 1024;
+const markdownCache = new Map();
+
 function renderMarkdown(text) {
   if (!text) return '';
   const source = applyMarkdownImageRefs(String(text));
   if (!window.marked || !window.DOMPurify) {
     return '<p>' + escapeHtml(source).replace(/\n/g, '<br>') + '</p>';
   }
+  const cached = markdownCache.get(source);
+  if (cached !== undefined) {
+    // Refresh recency so the cache evicts the least recently used entry.
+    markdownCache.delete(source);
+    markdownCache.set(source, cached);
+    return cached;
+  }
+  const html = renderMarkdownUncached(source);
+  if (source.length <= MARKDOWN_CACHE_MAX_SOURCE) {
+    markdownCache.set(source, html);
+    if (markdownCache.size > MARKDOWN_CACHE_ENTRIES) {
+      markdownCache.delete(markdownCache.keys().next().value);
+    }
+  }
+  return html;
+}
+
+function renderMarkdownUncached(source) {
   const shielded = shieldMarkdownMath(source);
   const raw = window.marked.parse(shielded.text, { async: false });
   const clean = window.DOMPurify.sanitize(raw, {

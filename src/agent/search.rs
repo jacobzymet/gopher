@@ -1238,17 +1238,7 @@ async fn send_html(
     ddg_captcha: bool,
     wait: Duration,
 ) -> Result<String, String> {
-    let response = timeout(wait, request.send())
-        .await
-        .map_err(|_| "Search request timed out".to_string())?
-        .map_err(|error| format!("Search request failed: {error}"))?;
-    let status = response.status().as_u16();
-    if status != 200 && status != 202 {
-        return Err(format!("Search HTTP {status}"));
-    }
-    let bytes = http::response_bytes_limited(response, MAX_SEARCH_RESPONSE_BYTES)
-        .await
-        .map_err(|error| format!("Search response was too large or unreadable: {error}"))?;
+    let bytes = send_search(request, wait, &[200, 202]).await?;
     let html = String::from_utf8_lossy(&bytes).into_owned();
     if ddg_captcha && is_ddg_challenge(&html) {
         return Err("DuckDuckGo challenged the search (captcha)".into());
@@ -1266,18 +1256,27 @@ fn is_ddg_challenge(html: &str) -> bool {
 }
 
 async fn send_json(request: reqwest::RequestBuilder, wait: Duration) -> Result<Value, String> {
+    let bytes = send_search(request, wait, &[200]).await?;
+    serde_json::from_slice(&bytes).map_err(|error| format!("Invalid JSON: {error}"))
+}
+
+/// Send a search request and read its bounded body, accepting only `ok_statuses`.
+async fn send_search(
+    request: reqwest::RequestBuilder,
+    wait: Duration,
+    ok_statuses: &[u16],
+) -> Result<Vec<u8>, String> {
     let response = timeout(wait, request.send())
         .await
         .map_err(|_| "Search request timed out".to_string())?
         .map_err(|error| format!("Search request failed: {error}"))?;
     let status = response.status().as_u16();
-    if status != 200 {
+    if !ok_statuses.contains(&status) {
         return Err(format!("Search HTTP {status}"));
     }
-    let bytes = http::response_bytes_limited(response, MAX_SEARCH_RESPONSE_BYTES)
+    http::response_bytes_limited(response, MAX_SEARCH_RESPONSE_BYTES)
         .await
-        .map_err(|error| format!("Search response was too large or unreadable: {error}"))?;
-    serde_json::from_slice(&bytes).map_err(|error| format!("Invalid JSON: {error}"))
+        .map_err(|error| format!("Search response was too large or unreadable: {error}"))
 }
 
 fn parse_ddg_html(html: &str) -> Vec<SearchHit> {
@@ -2065,6 +2064,7 @@ mod tests {
         let server = tokio::spawn(async move {
             axum::serve(listener, router).await.unwrap();
         });
+        crate::http::ensure_tls_provider();
         let client = reqwest::Client::builder().no_proxy().build().unwrap();
         (
             ParallelMcpSession::new(client, endpoint),

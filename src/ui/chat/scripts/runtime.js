@@ -1686,7 +1686,16 @@ function paintStreamIntoView(convo, stream, replyText, streaming) {
     stream.processNotesCollapsed !== false
   );
   stream.processNotesCollapsed = notesCollapsed;
-  const sealedAnswerHtml = renderSealedAnswerHtml(stream.timeline, { notesCollapsed });
+  // Paint runs every animation frame while text streams; re-render the sealed
+  // markdown only when its content, fold state, or inline images change.
+  const sealedSig = sealedContentSignature(stream.timeline);
+  const imageCount = stream.images ? Object.keys(stream.images).length : 0;
+  const sealedKey = sealedSig + '\0' + notesCollapsed + '\0' + imageCount;
+  if (stream.sealedPaintKey !== sealedKey) {
+    stream.sealedPaintKey = sealedKey;
+    stream.sealedPaintHtml = renderSealedAnswerHtml(stream.timeline, { notesCollapsed });
+  }
+  const sealedAnswerHtml = stream.sealedPaintHtml;
   const liveText = streamingAnswerText(cleaned);
   const hasLiveAnswer = !!liveText.trim();
   const hasThinkFallback = !hasTimeline && !thinkingOpen && !!cleaned && !hasLiveAnswer;
@@ -1707,7 +1716,6 @@ function paintStreamIntoView(convo, stream, replyText, streaming) {
         sealedRoot = answerEl.querySelector(':scope > .agent-sealed');
         liveRoot = answerEl.querySelector(':scope > .agent-live');
       }
-      const sealedSig = sealedContentSignature(stream.timeline);
       if (sealedRoot.dataset.sealedSig !== sealedSig) {
         sealedRoot.innerHTML = sealedAnswerHtml;
         sealedRoot.dataset.sealedSig = sealedSig;
@@ -1729,9 +1737,8 @@ function paintStreamIntoView(convo, stream, replyText, streaming) {
     delete answerEl.dataset.renderedHtml;
     stream.enteredSteps = 0;
   } else if (cleaned || hasTimeline || sealedAnswerHtml) {
-    const committedHtml = renderCommittedParts(stream.timeline);
-    const orderSig = timelineOrderSignature(stream.timeline) + '\0' + sealedContentSignature(stream.timeline);
-    const committedSig = timelineSignature(stream.timeline) + '\0' + sealedContentSignature(stream.timeline);
+    const orderSig = timelineOrderSignature(stream.timeline) + '\0' + sealedSig;
+    const committedSig = timelineSignature(stream.timeline) + '\0' + sealedSig;
     const liveOnly =
       streaming &&
       thinkingOpen &&
@@ -1753,7 +1760,7 @@ function paintStreamIntoView(convo, stream, replyText, streaming) {
           }
           patchLiveToolBodies(answerEl, stream.timeline);
         } else if (answerEl.dataset.committedSig !== committedSig || !liveRoot) {
-          answerEl.innerHTML = committedHtml + sealedAnswerHtml + '<div class="agent-live"></div>';
+          answerEl.innerHTML = renderCommittedParts(stream.timeline) + sealedAnswerHtml + '<div class="agent-live"></div>';
           answerEl.dataset.committedSig = committedSig;
           answerEl.dataset.timelineOrderSig = orderSig;
           liveRoot = answerEl.querySelector(':scope > .agent-live');
@@ -1769,7 +1776,7 @@ function paintStreamIntoView(convo, stream, replyText, streaming) {
         }
         answerEl.dataset.committedSig = committedSig;
       } else {
-        answerEl.innerHTML = committedHtml + sealedAnswerHtml + (cleaned ? renderAssistantHtml(cleaned, { streaming }) : '');
+        answerEl.innerHTML = renderCommittedParts(stream.timeline) + sealedAnswerHtml + (cleaned ? renderAssistantHtml(cleaned, { streaming }) : '');
         answerEl.dataset.committedSig = committedSig;
         answerEl.dataset.timelineOrderSig = orderSig;
         stampTimelineKeysOnRoot(answerEl, stream.timeline);
@@ -3133,15 +3140,22 @@ document.addEventListener('click', (event) => {
   if (id) void submitToolApproval(id, !!allowBtn);
 });
 
-chatThread.addEventListener('change', (event) => {
-  const input = event.target.closest('.clarify-card input');
-  if (!input || !chatThread.contains(input)) return;
-  const card = input.closest('.clarify-card');
-  const host = card?.closest('.clarify-host');
+/** The live clarify question set that `el` belongs to, or null once answered. */
+function liveClarifyFor(el) {
+  const card = el.closest('.clarify-card');
   const clarifyId = card?.dataset.clarifyId;
   const stream = activeStream();
   const part = stream && clarifyId ? findClarifyPart(stream, clarifyId) : null;
-  if (!part || !part.live) return;
+  if (!part || !part.live) return null;
+  return { card, host: card.closest('.clarify-host'), stream, part };
+}
+
+chatThread.addEventListener('change', (event) => {
+  const input = event.target.closest('.clarify-card input');
+  if (!input || !chatThread.contains(input)) return;
+  const live = liveClarifyFor(input);
+  if (!live) return;
+  const { card, host, stream, part } = live;
   const qi = Number(input.dataset.clarifyQ);
   if (!Number.isFinite(qi)) return;
   if (!part.draft) part.draft = {};
@@ -3179,12 +3193,9 @@ chatThread.addEventListener('change', (event) => {
 chatThread.addEventListener('input', (event) => {
   const custom = event.target.closest('[data-clarify-custom]');
   if (!custom || !chatThread.contains(custom)) return;
-  const card = custom.closest('.clarify-card');
-  const host = card?.closest('.clarify-host');
-  const clarifyId = card?.dataset.clarifyId;
-  const stream = activeStream();
-  const part = stream && clarifyId ? findClarifyPart(stream, clarifyId) : null;
-  if (!part || !part.live) return;
+  const live = liveClarifyFor(custom);
+  if (!live) return;
+  const { card, host, stream, part } = live;
   const qi = Number(custom.dataset.clarifyQ);
   if (!Number.isFinite(qi)) return;
   if (!part.draft) part.draft = {};

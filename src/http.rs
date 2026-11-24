@@ -12,6 +12,28 @@ use std::{
 use futures_util::StreamExt;
 use reqwest::{Client, Url};
 
+/// Install the process-wide rustls provider once (macOS uses native TLS).
+/// `main` also installs it; doing it here keeps tests and tools independent.
+pub(crate) fn ensure_tls_provider() {
+    #[cfg(not(target_os = "macos"))]
+    {
+        static INSTALL: std::sync::Once = std::sync::Once::new();
+        INSTALL.call_once(|| {
+            let _ = rustls::crypto::ring::default_provider().install_default();
+        });
+    }
+}
+
+fn async_builder() -> reqwest::ClientBuilder {
+    ensure_tls_provider();
+    Client::builder()
+}
+
+fn blocking_builder() -> reqwest::blocking::ClientBuilder {
+    ensure_tls_provider();
+    reqwest::blocking::Client::builder()
+}
+
 const APP_UA: &str = concat!("gopher/", env!("GOPHER_BUILD_ID"));
 
 /// Desktop Chrome identity for public fetches (search / page scrape).
@@ -95,7 +117,7 @@ pub fn url_is_private_or_local(url: &str) -> bool {
 }
 
 fn build_llm_client(timeout: Duration, insecure: bool, no_redirect: bool) -> Client {
-    let mut builder = Client::builder()
+    let mut builder = async_builder()
         .connect_timeout(Duration::from_secs(30))
         .timeout(timeout)
         .user_agent(APP_UA);
@@ -159,9 +181,7 @@ fn build_blocking_client(
     insecure: bool,
     user_agent: &str,
 ) -> reqwest::blocking::Client {
-    let mut builder = reqwest::blocking::Client::builder()
-        .timeout(timeout)
-        .user_agent(user_agent);
+    let mut builder = blocking_builder().timeout(timeout).user_agent(user_agent);
     if insecure {
         builder = builder.danger_accept_invalid_certs(true);
     }
@@ -181,7 +201,7 @@ pub fn pinned_llm_client(timeout: Duration) -> Client {
 }
 
 pub fn pinned_blocking_client(timeout: Duration) -> reqwest::blocking::Client {
-    reqwest::blocking::Client::builder()
+    blocking_builder()
         .timeout(timeout)
         .redirect(reqwest::redirect::Policy::none())
         .user_agent(APP_UA)
@@ -207,7 +227,7 @@ pub fn llm_blocking_client(_api_base: &str, _timeout: Duration) -> reqwest::bloc
 pub fn public_client() -> Client {
     PUBLIC_CLIENT
         .get_or_init(|| {
-            Client::builder()
+            async_builder()
                 .timeout(Duration::from_secs(60))
                 .user_agent(BROWSER_UA)
                 // Prefer HTTP/1.1 — some news CDNs fingerprint HTTP/2 stacks and answer 406.
@@ -235,7 +255,7 @@ pub fn search_client() -> Client {
     SEARCH_CLIENT
         .get_or_init(|| {
             with_search_tls(
-                Client::builder()
+                async_builder()
                     .connect_timeout(Duration::from_secs(2))
                     .timeout(Duration::from_secs(8))
                     .user_agent(BROWSER_UA)
@@ -249,7 +269,7 @@ pub fn search_client() -> Client {
 
 /// Blocking client for one-off local focus pings.
 pub fn app_blocking_client(timeout: Duration) -> reqwest::blocking::Client {
-    reqwest::blocking::Client::builder()
+    blocking_builder()
         .timeout(timeout)
         .user_agent(APP_UA)
         .cookie_store(true)
@@ -398,7 +418,7 @@ impl GuardedClientPool {
             self.clients.push_back(entry);
             return Ok(client);
         }
-        let client = Client::builder()
+        let client = async_builder()
             .timeout(Duration::from_secs(60))
             .user_agent(BROWSER_UA)
             .redirect(reqwest::redirect::Policy::none())
@@ -491,14 +511,8 @@ mod tests {
         assert!(!url_is_private_or_local("http://[2606:4700:4700::1111]/v1"));
     }
 
-    fn init_tls() {
-        #[cfg(not(target_os = "macos"))]
-        let _ = rustls::crypto::ring::default_provider().install_default();
-    }
-
     #[tokio::test]
     async fn llm_connections_are_reused_and_cancellation_does_not_poison_other_requests() {
-        init_tls();
         use std::sync::{
             Arc,
             atomic::{AtomicUsize, Ordering},
@@ -598,7 +612,6 @@ mod tests {
 
     #[tokio::test]
     async fn llm_pool_separates_security_policies_and_timeouts_and_is_bounded() {
-        init_tls();
         let mut pool = LlmClientPool::default();
         let key = LlmClientKey {
             timeout: Duration::from_secs(2),
@@ -632,7 +645,6 @@ mod tests {
 
     #[tokio::test]
     async fn pooled_pinned_llm_client_still_refuses_redirects() {
-        init_tls();
         use axum::{Router, response::Redirect, routing::get};
         use std::sync::{
             Arc,
@@ -684,7 +696,6 @@ mod tests {
 
     #[tokio::test]
     async fn guarded_pool_reuses_connections_and_separates_dns_answers() {
-        init_tls();
         use std::sync::{
             Arc,
             atomic::{AtomicUsize, Ordering},
@@ -759,7 +770,6 @@ mod tests {
 
     #[tokio::test]
     async fn guarded_pool_is_bounded_and_dns_order_does_not_split_it() {
-        init_tls();
         let mut pool = GuardedClientPool::default();
         let first = "93.184.216.34:443".parse().unwrap();
         let second = "93.184.216.35:443".parse().unwrap();

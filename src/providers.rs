@@ -986,11 +986,7 @@ fn style_route_signal(base: &str, token: &str, style: ApiStyle, timeout: Duratio
         ApiStyle::Responses => "responses",
     };
     let url = format!("{base}/{path}");
-    let client = http::llm_blocking_client(&base, timeout);
-    let mut request = client.get(&url).timeout(timeout);
-    for (name, value) in provider_auth_headers(style, token) {
-        request = request.header(&name, &value);
-    }
+    let request = provider_get(&base, &url, style, token, timeout);
     match request.send() {
         Ok(response) => classify_route_status(response.status().as_u16()),
         Err(error) => {
@@ -1302,14 +1298,43 @@ fn local_thinking_support(
     out
 }
 
+/// GET `url` on a provider with that provider style's auth headers.
+fn provider_get(
+    base: &str,
+    url: &str,
+    style: ApiStyle,
+    token: &str,
+    timeout: Duration,
+) -> reqwest::blocking::RequestBuilder {
+    let mut request = http::llm_blocking_client(base, timeout)
+        .get(url)
+        .timeout(timeout);
+    for (name, value) in provider_auth_headers(style, token) {
+        request = request.header(&name, &value);
+    }
+    request
+}
+
+/// GET `url` on a local server root, sending the token as a bearer if set.
+fn bearer_get(
+    root: &str,
+    url: &str,
+    token: &str,
+    timeout: Duration,
+) -> reqwest::blocking::RequestBuilder {
+    let request = http::llm_blocking_client(root, timeout)
+        .get(url)
+        .timeout(timeout);
+    match token.trim() {
+        "" => request,
+        token => request.header("Authorization", &format!("Bearer {token}")),
+    }
+}
+
 fn root_has_get_path(root: &str, token: &str, path: &str, timeout: Duration) -> bool {
     let root = root.trim_end_matches('/');
     let url = format!("{root}{path}");
-    let client = http::llm_blocking_client(root, timeout);
-    let mut request = client.get(&url).timeout(timeout);
-    if !token.trim().is_empty() {
-        request = request.header("Authorization", &format!("Bearer {}", token.trim()));
-    }
+    let request = bearer_get(root, &url, token, timeout);
     match request.send() {
         Ok(response) => response.status().as_u16() == 200,
         Err(_) => false,
@@ -1714,11 +1739,7 @@ fn fetch_lmstudio_models(
 ) -> Option<Vec<(String, serde_json::Value)>> {
     let root = root.trim_end_matches('/');
     let url = format!("{root}/api/v1/models");
-    let client = http::llm_blocking_client(root, timeout);
-    let mut request = client.get(&url).timeout(timeout);
-    if !token.trim().is_empty() {
-        request = request.header("Authorization", &format!("Bearer {}", token.trim()));
-    }
+    let request = bearer_get(root, &url, token, timeout);
     let response = request.send().ok()?;
     if response.status().as_u16() != 200 {
         return None;
@@ -1897,11 +1918,7 @@ fn fetch_models_payload(
         return Err("No provider URL configured".into());
     };
     let url = format!("{base}/models");
-    let client = http::llm_blocking_client(&base, timeout);
-    let mut request = client.get(&url).timeout(timeout);
-    for (name, value) in provider_auth_headers(style, token) {
-        request = request.header(&name, &value);
-    }
+    let request = provider_get(&base, &url, style, token, timeout);
     let response = request.send().map_err(probe_http_error)?;
     if response.status().as_u16() != 200 {
         return Err(format!("Remote responded with {}", response.status()));

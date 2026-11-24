@@ -41,37 +41,65 @@ impl std::fmt::Debug for History {
     }
 }
 
-pub fn estimate_tokens(value: &Value) -> usize {
-    // Conservative compared with bytes/4 for typical code. This is a budget
-    // estimate, not a substitute for the provider's exact tokenizer.
-    fn bytes(value: &Value) -> usize {
-        match value {
-            Value::Object(object)
-                if matches!(
-                    object.get("type").and_then(Value::as_str),
-                    Some("image_url" | "input_image" | "image")
-                ) =>
-            {
-                6144
-            }
-            Value::Object(object) => {
-                2 + object
-                    .iter()
-                    .map(|(key, value)| key.len() + 4 + bytes(value))
-                    .sum::<usize>()
-            }
-            Value::Array(values) => 2 + values.iter().map(|value| 1 + bytes(value)).sum::<usize>(),
-            _ => value.to_string().len(),
+/// Approximate serialized size of `value`, computed without allocating.
+/// Images are vision input, not base64 text tokens: each counts as a fixed
+/// 6144 bytes (2048 tokens), a heuristic since real costs vary by provider.
+fn json_bytes(value: &Value) -> usize {
+    match value {
+        Value::Object(object)
+            if matches!(
+                object.get("type").and_then(Value::as_str),
+                Some("image_url" | "input_image" | "image")
+            ) =>
+        {
+            6144
         }
+        Value::Object(object) => {
+            2 + object
+                .iter()
+                .map(|(key, value)| key.len() + 4 + json_bytes(value))
+                .sum::<usize>()
+        }
+        Value::Array(values) => array_bytes(values),
+        Value::String(text) => json_string_len(text),
+        _ => value.to_string().len(),
     }
-    // Images are vision input, not base64 text tokens. Reserve 2048 tokens per
-    // image as a heuristic; actual image/token costs depend on the provider.
-    bytes(value).div_ceil(3)
+}
+
+fn array_bytes(values: &[Value]) -> usize {
+    2 + values
+        .iter()
+        .map(|value| 1 + json_bytes(value))
+        .sum::<usize>()
+}
+
+/// Length of `text` as a JSON string literal, matching serde_json's escaping.
+fn json_string_len(text: &str) -> usize {
+    2 + text
+        .chars()
+        .map(|ch| match ch {
+            '"' | '\\' | '\n' | '\r' | '\t' | '\u{8}' | '\u{c}' => 2,
+            '\0'..='\u{1f}' => 6,
+            _ => ch.len_utf8(),
+        })
+        .sum::<usize>()
+}
+
+#[cfg(test)]
+pub fn estimate_tokens(value: &Value) -> usize {
+    json_bytes(value).div_ceil(3)
+}
+
+/// Conservative token estimate for `messages` sent as one JSON array
+/// (bytes / 3, versus ~bytes / 4 for typical code), computed without cloning.
+/// A budget estimate, not a substitute for the provider's tokenizer.
+pub fn estimate_message_tokens(messages: &[Value]) -> usize {
+    array_bytes(messages).div_ceil(3)
 }
 
 pub fn message_budget(window: usize, definitions: &[Value]) -> Result<usize, String> {
     let reserve = (window / 4).max(1024);
-    let overhead = estimate_tokens(&json!(definitions)) + reserve;
+    let overhead = estimate_message_tokens(definitions) + reserve;
     window.checked_sub(overhead).filter(|budget| *budget >= 512)
         .ok_or_else(|| "The configured context window is too small for the enabled tool schemas and response reserve. Increase context_window_tokens or disable unused capabilities.".into())
 }
@@ -156,7 +184,7 @@ impl History {
 
     pub fn fit(&self, messages: &mut Vec<Value>, budget: usize) -> Result<bool, String> {
         let mut compacted = false;
-        while estimate_tokens(&json!(messages)) > budget {
+        while estimate_message_tokens(messages) > budget {
             // Evict whole assistant/tool exchanges, never leave orphan tool
             // results or function calls without their matching result messages.
             let candidate = messages.iter().enumerate().find_map(|(start, message)| {
@@ -397,7 +425,7 @@ fn compacted_chat_notice(messages: &[Value], max_bytes: usize) -> Value {
 /// The stored conversation is untouched; only the provider-bound message list is compacted.
 pub fn compact_chat_messages(messages: &mut Vec<Value>, window: usize) -> Result<bool, String> {
     let budget = message_budget(window, &[])?;
-    if estimate_tokens(&json!(messages)) <= budget {
+    if estimate_message_tokens(messages) <= budget {
         return Ok(false);
     }
 
@@ -405,20 +433,22 @@ pub fn compact_chat_messages(messages: &mut Vec<Value>, window: usize) -> Result
     let mut dropped = Vec::new();
     loop {
         if !dropped.is_empty() {
+            // Size each candidate arithmetically: kept messages plus one notice.
+            let kept_bytes = array_bytes(&kept);
             for summary_bytes in [1800, 900, 360] {
-                let mut candidate = kept.clone();
-                let insert_at = candidate
-                    .iter()
-                    .take_while(|message| {
-                        matches!(
-                            message.get("role").and_then(Value::as_str),
-                            Some("system" | "developer")
-                        )
-                    })
-                    .count();
-                candidate.insert(insert_at, compacted_chat_notice(&dropped, summary_bytes));
-                if estimate_tokens(&json!(candidate)) <= budget {
-                    *messages = candidate;
+                let notice = compacted_chat_notice(&dropped, summary_bytes);
+                if (kept_bytes + 1 + json_bytes(&notice)).div_ceil(3) <= budget {
+                    let insert_at = kept
+                        .iter()
+                        .take_while(|message| {
+                            matches!(
+                                message.get("role").and_then(Value::as_str),
+                                Some("system" | "developer")
+                            )
+                        })
+                        .count();
+                    kept.insert(insert_at, notice);
+                    *messages = kept;
                     return Ok(true);
                 }
             }
@@ -457,6 +487,32 @@ pub fn compact_chat_messages(messages: &mut Vec<Value>, window: usize) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn size_estimates_match_serialized_json_without_cloning() {
+        for text in [
+            "plain",
+            "quote \" and \\ slash",
+            "line\nbreak\ttab\r",
+            "\u{1}\u{8}\u{c}\u{1f}\u{7f}",
+            "ünïcødé 漢字 🦀",
+            "",
+        ] {
+            assert_eq!(
+                json_string_len(text),
+                serde_json::to_string(text).unwrap().len(),
+                "{text:?}"
+            );
+        }
+        let messages = vec![
+            json!({"role": "user", "content": "Hi \"there\"\n"}),
+            json!({"role": "assistant", "content": [{"type": "text", "text": "ok"}, {"type": "image_url", "image_url": {"url": "data:x"}}]}),
+        ];
+        assert_eq!(
+            estimate_message_tokens(&messages),
+            estimate_tokens(&json!(messages))
+        );
+    }
 
     #[test]
     fn compacts_complete_exchanges_preserves_instructions_and_recovers_originals() {

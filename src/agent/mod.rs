@@ -37,7 +37,7 @@ use self::text::{collapse_ws, truncate_chars};
 use crate::{
     anthropic::{self, AnthropicSseTranslator},
     chat::{
-        ChatStream, SseSender, StreamFail, next_stream_chunk, open_llm_sse, send_sse,
+        ChatStream, SseLines, SseSender, StreamFail, next_stream_chunk, open_llm_sse, send_sse,
         stream_from_worker,
     },
     http,
@@ -277,7 +277,6 @@ const DEFAULT_FETCH_URL_MAX_CHARS: usize = 8_000;
 const MIN_PAGE_FETCH_CHARS: usize = 1_000;
 const MAX_PAGE_FETCH_CHARS: usize = 200_000;
 const PAGE_FETCH_TIMEOUT: Duration = Duration::from_secs(8);
-const MAX_SSE_LINE_BYTES: usize = 1024 * 1024;
 const MAX_AGENT_TEXT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_TOOL_CALLS: usize = MAX_CONCURRENT_TOOL_CALLS;
 const MAX_TOOL_ARGUMENT_BYTES: usize = 2 * 1024 * 1024;
@@ -1839,39 +1838,20 @@ where
     S: StreamExt<Item = Result<B, reqwest::Error>> + Unpin,
     B: AsRef<[u8]>,
 {
-    let line_too_long = || StreamFail::Other("Model SSE line exceeded the safety limit.".into());
     let mut translator = AgentSseTranslator::new(style);
-    let mut buffer = Vec::new();
+    let mut lines = SseLines::default();
     while let Some(chunk) = next_stream_chunk(stream).await? {
-        buffer.extend_from_slice(chunk.as_ref());
-        let mut consumed = 0usize;
-        while let Some(relative) = buffer[consumed..].iter().position(|byte| *byte == b'\n') {
-            if relative > MAX_SSE_LINE_BYTES {
-                return Err(line_too_long());
-            }
-            let end = consumed + relative;
-            let mut line = &buffer[consumed..end];
-            if line.last() == Some(&b'\r') {
-                line = &line[..line.len() - 1];
-            }
-            let line = String::from_utf8_lossy(line);
+        lines.push(chunk.as_ref());
+        while let Some(line) = lines.next_line()? {
             if translator
                 .feed(&line, content, reasoning, native_tools, forwarding, tx)
                 .await?
             {
                 return Ok(());
             }
-            consumed = end + 1;
-        }
-        if consumed != 0 {
-            buffer = buffer.split_off(consumed);
-        }
-        if buffer.len() > MAX_SSE_LINE_BYTES {
-            return Err(line_too_long());
         }
     }
-    if !buffer.is_empty() {
-        let line = String::from_utf8_lossy(&buffer);
+    if let Some(line) = lines.remainder() {
         translator
             .feed(
                 line.trim_end_matches('\r'),
@@ -4209,7 +4189,7 @@ mod tests {
         .unwrap();
         assert_eq!(content, "你");
 
-        let chunks = [vec![b'x'; MAX_SSE_LINE_BYTES + 1]];
+        let chunks = [vec![b'x'; chat::MAX_SSE_LINE_BYTES + 1]];
         let mut stream = stream::iter(
             chunks
                 .iter()

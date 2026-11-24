@@ -1,4 +1,4 @@
-use std::{future::Future, io, pin::Pin, time::Duration};
+use std::{borrow::Cow, future::Future, io, pin::Pin, time::Duration};
 
 use futures_util::StreamExt;
 use tokio::{sync::mpsc, time::timeout};
@@ -14,7 +14,7 @@ use crate::{
 pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 pub(crate) const CHANNEL_CAPACITY: usize = 32;
 const MAX_ERROR_BODY_BYTES: usize = 64 * 1024;
-const MAX_SSE_LINE_BYTES: usize = 1024 * 1024;
+pub(crate) const MAX_SSE_LINE_BYTES: usize = 1024 * 1024;
 /// Silence limit for the first worker frame, response headers, and each
 /// subsequent upstream SSE chunk. Agent mode sends status frames immediately,
 /// so this has to apply per round — not only before the first byte of the run.
@@ -150,13 +150,16 @@ pub fn stream_remote_completion(
                 let anth =
                     anthropic::openai_to_anthropic_messages_for_provider(&payload, &api_base)
                         .map_err(StreamFail::Other)?;
-                proxy_anthropic_sse(&url, &upstream, &anth, &tx).await
+                let translator = AnthropicSseTranslator::default();
+                proxy_translated_sse(&url, style, &upstream, &anth, &tx, translator).await
             }
             ApiStyle::Responses => {
                 let url = format!("{api_base}/responses");
                 let store_false = upstream.kind == crate::providers::ProviderKind::OpenaiCodex;
                 let body = crate::responses::openai_chat_to_responses(&payload, store_false);
-                proxy_responses_sse(&url, &upstream, &body, &tx).await
+                let translator = crate::responses::ResponsesSseTranslator::default();
+                proxy_translated_sse(&url, ApiStyle::Responses, &upstream, &body, &tx, translator)
+                    .await
             }
         }
     })
@@ -260,15 +263,49 @@ async fn proxy_openai_sse(
     forward_raw_sse(response, tx).await
 }
 
-async fn proxy_anthropic_sse(
+/// Upstream event formats that are re-emitted as OpenAI chat-completion SSE.
+trait ChatSseTranslator {
+    fn push_line(&mut self, line: &str) -> Result<Vec<Vec<u8>>, String>;
+    fn is_finished(&self) -> bool;
+    /// Frame sent once the upstream stream ends, when the format needs one.
+    fn closing_frame(&self) -> Option<Vec<u8>> {
+        None
+    }
+}
+
+impl ChatSseTranslator for AnthropicSseTranslator {
+    fn push_line(&mut self, line: &str) -> Result<Vec<Vec<u8>>, String> {
+        AnthropicSseTranslator::push_line(self, line)
+    }
+    fn is_finished(&self) -> bool {
+        AnthropicSseTranslator::is_finished(self)
+    }
+    fn closing_frame(&self) -> Option<Vec<u8>> {
+        Some(self.finish_frames())
+    }
+}
+
+impl ChatSseTranslator for crate::responses::ResponsesSseTranslator {
+    fn push_line(&mut self, line: &str) -> Result<Vec<Vec<u8>>, String> {
+        crate::responses::ResponsesSseTranslator::push_line(self, line)
+    }
+    fn is_finished(&self) -> bool {
+        crate::responses::ResponsesSseTranslator::is_finished(self)
+    }
+}
+
+/// Stream a translated upstream response to the client as OpenAI-style SSE.
+async fn proxy_translated_sse(
     url: &str,
+    style: ApiStyle,
     upstream: &crate::subscription::PreparedUpstream,
     payload: &serde_json::Value,
     tx: &SseSender,
+    mut translator: impl ChatSseTranslator,
 ) -> Result<(), StreamFail> {
     let response = open_llm_sse(
         url,
-        upstream.style,
+        style,
         &upstream.token,
         payload,
         upstream.allow_insecure_tls,
@@ -278,44 +315,21 @@ async fn proxy_anthropic_sse(
     )
     .await?;
     let mut byte_stream = response.bytes_stream();
-    let mut buffer = Vec::new();
-    let mut translator = AnthropicSseTranslator::default();
-
-    while let Some(chunk) = next_stream_chunk(&mut byte_stream).await? {
-        buffer.extend_from_slice(&chunk);
-        let mut consumed = 0;
-        while let Some(relative) = buffer[consumed..].iter().position(|byte| *byte == b'\n') {
-            if relative > MAX_SSE_LINE_BYTES {
-                return Err(StreamFail::Other(
-                    "Model SSE line exceeded the safety limit.".into(),
-                ));
-            }
-            let end = consumed + relative;
-            let mut line = &buffer[consumed..end];
-            if line.last() == Some(&b'\r') {
-                line = &line[..line.len() - 1];
-            }
-            let line = String::from_utf8_lossy(line);
+    let mut lines = SseLines::default();
+    'read: while let Some(chunk) = next_stream_chunk(&mut byte_stream).await? {
+        lines.push(&chunk);
+        while let Some(line) = lines.next_line()? {
             for frame in translator.push_line(&line).map_err(StreamFail::Other)? {
                 send_sse(tx, frame).await?;
             }
             if translator.is_finished() {
-                send_sse(tx, translator.finish_frames()).await?;
-                return Ok(());
+                break 'read;
             }
-            consumed = end + 1;
-        }
-        if consumed != 0 {
-            buffer = buffer.split_off(consumed);
-        }
-        if buffer.len() > MAX_SSE_LINE_BYTES {
-            return Err(StreamFail::Other(
-                "Model SSE line exceeded the safety limit.".into(),
-            ));
         }
     }
-    if !buffer.is_empty() {
-        let line = String::from_utf8_lossy(&buffer);
+    if !translator.is_finished()
+        && let Some(line) = lines.remainder()
+    {
         for frame in translator
             .push_line(line.trim_end_matches('\r'))
             .map_err(StreamFail::Other)?
@@ -323,72 +337,61 @@ async fn proxy_anthropic_sse(
             send_sse(tx, frame).await?;
         }
     }
-    send_sse(tx, translator.finish_frames()).await?;
+    if let Some(frame) = translator.closing_frame() {
+        send_sse(tx, frame).await?;
+    }
     Ok(())
 }
 
-async fn proxy_responses_sse(
-    url: &str,
-    upstream: &crate::subscription::PreparedUpstream,
-    payload: &serde_json::Value,
-    tx: &SseSender,
-) -> Result<(), StreamFail> {
-    let response = open_llm_sse(
-        url,
-        ApiStyle::Responses,
-        &upstream.token,
-        payload,
-        upstream.allow_insecure_tls,
-        &upstream.extra_headers,
-        upstream.no_redirect,
-        upstream.kind,
-    )
-    .await?;
-    let mut byte_stream = response.bytes_stream();
-    let mut buffer = Vec::new();
-    let mut translator = crate::responses::ResponsesSseTranslator::default();
-    while let Some(chunk) = next_stream_chunk(&mut byte_stream).await? {
-        buffer.extend_from_slice(&chunk);
-        let mut consumed = 0;
-        while let Some(relative) = buffer[consumed..].iter().position(|byte| *byte == b'\n') {
-            if relative > MAX_SSE_LINE_BYTES {
-                return Err(StreamFail::Other(
-                    "Model SSE line exceeded the safety limit.".into(),
-                ));
-            }
-            let end = consumed + relative;
-            let mut line = &buffer[consumed..end];
-            if line.last() == Some(&b'\r') {
-                line = &line[..line.len() - 1];
-            }
-            let line = String::from_utf8_lossy(line);
-            for frame in translator.push_line(&line).map_err(StreamFail::Other)? {
-                send_sse(tx, frame).await?;
-            }
-            if translator.is_finished() {
-                return Ok(());
-            }
-            consumed = end + 1;
+/// Splits an upstream byte stream into SSE lines without their line endings,
+/// rejecting any line longer than `MAX_SSE_LINE_BYTES`. Consumed bytes are
+/// compacted in place, so steady streaming does not reallocate the buffer.
+#[derive(Default)]
+pub(crate) struct SseLines {
+    buffer: Vec<u8>,
+    start: usize,
+}
+
+impl SseLines {
+    pub(crate) fn push(&mut self, chunk: &[u8]) {
+        if self.start > 0 {
+            self.buffer.drain(..self.start);
+            self.start = 0;
         }
-        if consumed != 0 {
-            buffer = buffer.split_off(consumed);
-        }
-        if buffer.len() > MAX_SSE_LINE_BYTES {
-            return Err(StreamFail::Other(
-                "Model SSE line exceeded the safety limit.".into(),
-            ));
-        }
+        self.buffer.extend_from_slice(chunk);
     }
-    if !buffer.is_empty() {
-        let line = String::from_utf8_lossy(&buffer);
-        for frame in translator
-            .push_line(line.trim_end_matches('\r'))
-            .map_err(StreamFail::Other)?
-        {
-            send_sse(tx, frame).await?;
+
+    /// The next complete line, or `None` until more bytes arrive.
+    pub(crate) fn next_line(&mut self) -> Result<Option<Cow<'_, str>>, StreamFail> {
+        let begin = self.start;
+        let pending = &self.buffer[begin..];
+        let Some(relative) = pending.iter().position(|byte| *byte == b'\n') else {
+            return if pending.len() > MAX_SSE_LINE_BYTES {
+                Err(sse_line_too_long())
+            } else {
+                Ok(None)
+            };
+        };
+        if relative > MAX_SSE_LINE_BYTES {
+            return Err(sse_line_too_long());
         }
+        self.start = begin + relative + 1;
+        let mut line = &self.buffer[begin..begin + relative];
+        if line.last() == Some(&b'\r') {
+            line = &line[..line.len() - 1];
+        }
+        Ok(Some(String::from_utf8_lossy(line)))
     }
-    Ok(())
+
+    /// Bytes after the last newline: a final line the upstream did not terminate.
+    pub(crate) fn remainder(&self) -> Option<Cow<'_, str>> {
+        let rest = &self.buffer[self.start..];
+        (!rest.is_empty()).then(|| String::from_utf8_lossy(rest))
+    }
+}
+
+fn sse_line_too_long() -> StreamFail {
+    StreamFail::Other("Model SSE line exceeded the safety limit.".into())
 }
 
 async fn forward_raw_sse(response: reqwest::Response, tx: &SseSender) -> Result<(), StreamFail> {
@@ -1029,8 +1032,6 @@ mod stream_tests {
     #[tokio::test]
     async fn custom_responses_provider_streams_and_finishes_before_socket_close() {
         use axum::{Router, body::Body, routing::post};
-        #[cfg(not(target_os = "macos"))]
-        let _ = rustls::crypto::ring::default_provider().install_default();
         let router = Router::new().route("/v1/responses", post(|| async {
             let frames = futures_util::stream::iter([Ok::<_, std::io::Error>(
                 b"data: {\"type\":\"response.output_text.delta\",\"delta\":\"hello\"}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":7,\"output_tokens\":1,\"total_tokens\":8}}}\n\n".to_vec()

@@ -302,17 +302,21 @@ function isQueuePausedForEdit(convoId) {
   return !!(head && head.id === editingQueueId);
 }
 
+function queuedMessageHtml(item) {
+  return formatUserMessageHtml({
+    content: item.displayText,
+    attachments: item.attachments,
+    replyQuote: item.replyQuote,
+    replyToSpeakerHandle: item.replyToSpeakerHandle,
+  });
+}
+
 function refreshQueuedBubble(row, item, { paused = false, canSteer = false } = {}) {
   if (!row || !item) return;
   row.dataset.raw = item.editText || item.displayText || '';
   const bubble = row.querySelector('.msg-bubble');
   if (bubble && !row.classList.contains('is-editing')) {
-    bubble.innerHTML = formatUserMessageHtml({
-      content: item.displayText,
-      attachments: item.attachments,
-      replyQuote: item.replyQuote,
-      replyToSpeakerHandle: item.replyToSpeakerHandle,
-    });
+    bubble.innerHTML = queuedMessageHtml(item);
   }
   const label = row.querySelector('.msg-queued-label');
   if (label) {
@@ -349,12 +353,7 @@ function buildQueuedBubble(item, { paused = false, canSteer = false } = {}) {
   row.dataset.raw = item.editText || item.displayText || '';
   const bubble = document.createElement('div');
   bubble.className = 'msg-bubble';
-    bubble.innerHTML = formatUserMessageHtml({
-      content: item.displayText,
-      attachments: item.attachments,
-      replyQuote: item.replyQuote,
-      replyToSpeakerHandle: item.replyToSpeakerHandle,
-    });
+  bubble.innerHTML = queuedMessageHtml(item);
   const meta = document.createElement('div');
   meta.className = 'msg-queued-meta';
   meta.innerHTML = queuedMetaActionsHtml(item.id, { paused, canSteer });
