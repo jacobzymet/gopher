@@ -23,7 +23,7 @@ function harness() {
     chatModelSelect: { textContent: '' }, settingsModal: null, latestState: null,
     requireUnlockedData: () => true, saveConversations: () => { saves++; },
     saveSettings(next) { context.settings = next; },
-    rememberRecentModel() {}, closeModelMenu() {}, setIdentityTitle() {}, syncModelOriginPill() {},
+    rememberRecentModel() {}, closeModelMenu() {}, syncModelOriginPill() {},
     normalizeLoopRun: () => null, newId: () => 'new',
   });
   load(context, 'state.js', ['conversationModelId', 'syncConversationModel', 'setChatModelSelection', 'persistModelPickerState', 'normalizeConversation']);

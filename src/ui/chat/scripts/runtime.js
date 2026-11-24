@@ -206,8 +206,7 @@ function syncModelOriginPill(visible, providerName) {
   chatModelOriginPill.classList.remove('is-hidden');
   chatModelOriginPill.setAttribute('aria-hidden', 'false');
   chatModelOriginPill.textContent = name;
-  applyPrivacyMosaic(chatModelOriginPill, 'model-origin-provider:' + name);
-  setIdentityTitle(chatModelOriginPill, name);
+  chatModelOriginPill.title = name;
 }
 
 function modelOptionTitle(label, provider) {
@@ -533,11 +532,10 @@ function renderModelMenuList() {
   });
   chatModelList.innerHTML = html;
   chatModelList.querySelectorAll('.chat-model-provider').forEach((label) => {
-    applyPrivacyMosaic(label, 'model-menu-provider:' + label.textContent);
-    setIdentityTitle(label, label.textContent);
+    label.title = label.textContent;
   });
   chatModelList.querySelectorAll('.chat-model-option').forEach((optionEl) => {
-    setIdentityTitle(optionEl, modelOptionElementTitle(optionEl));
+    optionEl.title = modelOptionElementTitle(optionEl);
   });
 
   const empty = !modelMenuMatches.length;
@@ -768,7 +766,7 @@ function chooseModelOption(value) {
   setChatModelSelection(inheritDefault ? '' : value);
   const selected = modelMenuOptions.find((o) => o.value === selectedChatModel);
   chatModelSelect.textContent = selected ? selected.label : (modelIdLabel(selectedChatModel) || 'Model');
-  setIdentityTitle(chatModelSelect, selected ? modelOptionTitle(selected.label, selected.provider) : '');
+  chatModelSelect.title = selected ? modelOptionTitle(selected.label, selected.provider) : '';
   syncModelOriginPill(true, selected && selected.provider);
   closeModelMenu({ restoreFocus: true });
   if (latestState) updateInferenceState(latestState);
@@ -965,12 +963,9 @@ function syncModelSelector(data) {
     chatModelSelect.setAttribute('aria-busy', 'true');
   } else {
     chatModelSelect.removeAttribute('aria-busy');
-    setIdentityTitle(
-      chatModelSelect,
-      selected
-        ? modelOptionTitle(selected.label, selected.provider)
-        : (selectedChatModel ? modelIdLabel(selectedChatModel) : '')
-    );
+    chatModelSelect.title = selected
+      ? modelOptionTitle(selected.label, selected.provider)
+      : (selectedChatModel ? modelIdLabel(selectedChatModel) : '');
   }
   selectedRemoteModelId = selectedChatModel;
   syncModelOriginPill(true, selected && selected.provider);
@@ -3389,7 +3384,6 @@ document.getElementById('btnNewProject').addEventListener('click', createProject
 projectsSearch.addEventListener('input', renderProjectsPage);
 projectsSort.addEventListener('change', renderProjectsPage);
 const btnToggleSidebar = document.getElementById('btnToggleSidebar');
-const btnPrivacyMode = document.getElementById('btnPrivacyMode');
 const sidebarMobileMq = window.matchMedia('(max-width: 820px)');
 
 initTraceSidebarPreferred();
@@ -3462,45 +3456,6 @@ function setSidebarOpen(open) {
   syncSidebarToggleUi();
 }
 
-function syncPrivacyModeUi(enabled) {
-  chatShell.classList.toggle('privacy-mode', enabled);
-  syncIdentityTitles(enabled);
-  const selected = modelMenuOptions.find((option) => option.value === selectedChatModel);
-  if (chatModelSelect) {
-    setIdentityTitle(
-      chatModelSelect,
-      selected ? modelOptionTitle(selected.label, selected.provider) : ''
-    );
-  }
-  if (chatModelOriginPill) {
-    setIdentityTitle(chatModelOriginPill, chatModelOriginPill.textContent);
-  }
-  chatModelList?.querySelectorAll('.chat-model-option').forEach((optionEl) => {
-    setIdentityTitle(optionEl, modelOptionElementTitle(optionEl));
-    const badge = optionEl.querySelector('.chat-model-origin-pill');
-    if (badge) setIdentityTitle(badge, badge.textContent);
-  });
-  if (!btnPrivacyMode) return;
-  btnPrivacyMode.classList.toggle('is-active', enabled);
-  btnPrivacyMode.setAttribute('aria-pressed', enabled ? 'true' : 'false');
-  btnPrivacyMode.setAttribute('aria-label', enabled ? 'Turn off privacy mode' : 'Turn on privacy mode');
-  btnPrivacyMode.title = enabled
-    ? 'Privacy mode on — hover a surface to reveal it'
-    : 'Turn on privacy mode';
-}
-
-function setPrivacyMode(enabled, { persist = true } = {}) {
-  syncPrivacyModeUi(!!enabled);
-  if (!persist) return;
-  if (storageReady && settings.privacyMode !== !!enabled) {
-    saveSettings({ ...settings, privacyMode: !!enabled });
-  }
-}
-
-function applyStoredPrivacyMode() {
-  setPrivacyMode(settings.privacyMode === true, { persist: false });
-}
-
 function closeMobileSidebar() {
   if (sidebarIsMobileDrawer()) setSidebarOpen(false);
   else syncSidebarToggleUi();
@@ -3517,9 +3472,6 @@ function applyStoredSidebarCollapsed() {
 }
 
 btnToggleSidebar?.addEventListener('click', () => setSidebarOpen(!sidebarIsOpen()));
-btnPrivacyMode?.addEventListener('click', () => {
-  setPrivacyMode(!chatShell.classList.contains('privacy-mode'));
-});
 document.getElementById('sidebarBackdrop')?.addEventListener('click', () => {
   closeMobileSidebar();
 });
@@ -3555,7 +3507,6 @@ function closeSearchModal() {
 
 function openSearchModal() {
   if (!searchModal || !requireUnlockedData()) return;
-  searchModal.classList.toggle('privacy-mode', isPrivacyModeOn());
   closeSettings();
   openBackdrop(searchModal);
   if (searchModalInput) {
@@ -3614,8 +3565,6 @@ function renderSearchResults(query) {
       + '<span class="search-dialog-item-meta">' + highlightedSearchHtml(meta, terms) + '</span>'
       + '<span class="search-item-icon" aria-hidden="true">' + (kind === 'action' ? '↗' : kind === 'project' ? '▱' : '↵') + '</span>';
     if (kind !== 'action') {
-      applyPrivacyMosaic(btn.querySelector('.search-dialog-item-title'), 'search-title:' + btn.id);
-      applyPrivacyMosaic(btn.querySelector('.search-dialog-item-meta'), 'search-meta:' + btn.id);
     }
     if (shortcut) btn.setAttribute('aria-keyshortcuts', shortcut.replace('Mod', modifierLabel === '⌘' ? 'Meta' : 'Control'));
     btn.addEventListener('pointermove', () => {
@@ -4768,7 +4717,6 @@ btnAppUpdateCheck?.addEventListener('click', () => {
   await initLocalData();
   applyStoredSidebarCollapsed();
   document.documentElement.classList.add('ui-ready');
-  applyStoredPrivacyMode();
   applyChatBackground(settings);
   updateGreeting();
   syncAgentButton();

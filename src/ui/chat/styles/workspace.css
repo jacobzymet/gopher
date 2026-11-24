@@ -52,12 +52,6 @@
 .search-dialog-group span { font-weight: 400; letter-spacing: normal; text-transform: none; }
 .search-dialog-hint { display: flex; justify-content: space-between; gap: 0.5rem; }
 .search-dialog-hint kbd { font: inherit; color: var(--color-ink-2); }
-.privacy-mode .search-dialog-item .privacy-mask,
-.privacy-mode .search-dialog-item .privacy-mask mark { color: transparent; text-shadow: none; background: transparent; user-select: none; }
-.privacy-mode .search-dialog-item .privacy-mask::after { content: ''; opacity: 1; }
-.privacy-mode .search-dialog-item:hover .privacy-mask,
-.privacy-mode .search-dialog-item:hover .privacy-mask mark { color: var(--color-ink); }
-.privacy-mode .search-dialog-item:hover .privacy-mask::after { opacity: 0; }
 
 .welcome-tools { width: 100%; order: 2; margin-top: 0.8rem; }
 .welcome-starters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.6rem; }

@@ -255,22 +255,6 @@
   color: var(--color-ink);
   font-weight: 620;
 }
-.privacy-mode .notification-card-title.privacy-mask,
-.privacy-mode .notification-card-detail.privacy-mask {
-  filter: blur(5px);
-  color: color-mix(in oklch, var(--color-muted) 48%, transparent);
-}
-.privacy-mode .notification-card:hover .notification-card-title.privacy-mask,
-.privacy-mode .notification-card:focus-visible .notification-card-title.privacy-mask,
-.privacy-mode .notification-card:hover .notification-card-detail.privacy-mask,
-.privacy-mode .notification-card:focus-visible .notification-card-detail.privacy-mask {
-  filter: none;
-  color: var(--color-ink);
-}
-.privacy-mode .notification-card:hover .notification-card-detail.privacy-mask,
-.privacy-mode .notification-card:focus-visible .notification-card-detail.privacy-mask {
-  color: var(--color-muted);
-}
 @media (max-width: 620px) {
   .chat-main > #notificationsView {
     top: calc(var(--chat-topbar-h) + 0.35rem);

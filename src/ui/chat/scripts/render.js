@@ -2728,10 +2728,9 @@ function createConvoItem(convo) {
   titleText.className = 'convo-title-text';
   titleText.textContent = fullTitle;
   title.appendChild(titleText);
-  applyPrivacyMosaic(title, 'conversation:' + convo.id);
-  const identityTitle = convo.incognito ? fullTitle + ' (temporary session — not saved)' : fullTitle;
-  setIdentityTitle(title, identityTitle);
-  setIdentityTitle(item, identityTitle);
+  const hoverTitle = convo.incognito ? fullTitle + ' (temporary session — not saved)' : fullTitle;
+  title.title = hoverTitle;
+  item.title = hoverTitle;
   const more = document.createElement('button');
   more.type = 'button';
   more.className = 'convo-more';
@@ -3119,10 +3118,8 @@ function buildNotificationCard(item) {
   card.querySelector('.notification-overline span').textContent = formatNotificationTime(item.at);
   const title = card.querySelector('.notification-card-title');
   title.textContent = item.title;
-  applyPrivacyMosaic(title, 'notification:' + item.convo.id);
   const detail = card.querySelector('.notification-card-detail');
   detail.innerHTML = renderNotificationMarkdown(item.detail);
-  applyPrivacyMosaic(detail, 'notification-detail:' + item.convo.id + ':' + item.type);
   card.setAttribute('aria-label', item.label + ': ' + item.title);
   card.addEventListener('click', () => selectConversation(item.convo.id));
   return card;
@@ -4970,8 +4967,7 @@ function renderSidebar() {
     const name = document.createElement('span');
     name.className = 'sidebar-project-chip-name';
     name.textContent = project.name;
-    applyPrivacyMosaic(name, 'project:' + project.id);
-    setIdentityTitle(name, project.name);
+    name.title = project.name;
     const settingsBtn = document.createElement('button');
     settingsBtn.type = 'button';
     settingsBtn.className = 'project-settings-btn';

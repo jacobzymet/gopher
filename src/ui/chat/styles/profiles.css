@@ -179,7 +179,7 @@
 }
 
 /* Account controls live in the global top bar; the legacy class names remain so
-   profile, notification, privacy, and encryption behavior stays wired in one place. */
+   profile, notification, and encryption behavior stays wired in one place. */
 .topbar-account-cluster {
   position: relative;
   flex: 0 0 auto;
@@ -641,69 +641,11 @@
 
 .profile-dialog-body .settings-pane-lede { margin-bottom: 0; }
 
-.privacy-mode .sidebar-account-copy strong.privacy-mask,
-.privacy-mode .sidebar-active-profile-name.privacy-mask,
-.privacy-mode .sidebar-profile-option-copy strong.privacy-mask,
-.privacy-mode .profile-settings-copy strong.privacy-mask {
-  color: transparent;
-  background: transparent;
-}
 
-.privacy-mode .sidebar-account-copy .privacy-mask::after,
-.privacy-mode .sidebar-profile-option-copy strong.privacy-mask::after,
-.privacy-mode .profile-settings-copy strong.privacy-mask::after {
-  content: "";
-  opacity: 1;
-}
 
-.privacy-mode .sidebar-account-avatar.privacy-mask-dense,
-.privacy-mode .sidebar-profile-option-mark.privacy-mask-dense,
-.privacy-mode .profile-settings-mark.privacy-mask-dense {
-  position: relative;
-  color: transparent;
-  filter: none;
-}
 
-.privacy-mode .sidebar-account-avatar.privacy-mask-dense::before,
-.privacy-mode .sidebar-profile-option-mark.privacy-mask-dense::before,
-.privacy-mode .profile-settings-mark.privacy-mask-dense::before {
-  content: "";
-  position: absolute;
-  z-index: 2;
-  top: 50%;
-  left: 50%;
-  margin: -11.5px 0 0 -11.5px;
-  width: 3px;
-  height: 3px;
-  border-radius: 1px;
-  background: transparent;
-  box-shadow: var(--privacy-pixels);
-  pointer-events: none;
-}
 
-.privacy-mode .sidebar-account-trigger:hover .privacy-mask,
-.privacy-mode .sidebar-account-trigger:focus-visible .privacy-mask,
-.privacy-mode .sidebar-profile-option:hover .privacy-mask,
-.privacy-mode .sidebar-profile-option:focus-visible .privacy-mask,
-.privacy-mode .profile-settings-card:hover .privacy-mask,
-.privacy-mode .profile-settings-card:focus-within .privacy-mask {
-  color: inherit;
-}
 
-.privacy-mode .sidebar-account-trigger:hover .privacy-mask::after,
-.privacy-mode .sidebar-account-trigger:focus-visible .privacy-mask::after,
-.privacy-mode .sidebar-profile-option:hover .privacy-mask::after,
-.privacy-mode .sidebar-profile-option:focus-visible .privacy-mask::after,
-.privacy-mode .profile-settings-card:hover .privacy-mask::after,
-.privacy-mode .profile-settings-card:focus-within .privacy-mask::after,
-.privacy-mode .sidebar-account-trigger:hover .privacy-mask-dense::before,
-.privacy-mode .sidebar-account-trigger:focus-visible .privacy-mask-dense::before,
-.privacy-mode .sidebar-profile-option:hover .privacy-mask-dense::before,
-.privacy-mode .sidebar-profile-option:focus-visible .privacy-mask-dense::before,
-.privacy-mode .profile-settings-card:hover .privacy-mask-dense::before,
-.privacy-mode .profile-settings-card:focus-within .privacy-mask-dense::before {
-  opacity: 0;
-}
 
 @media (max-width: 640px) {
   .profiles-settings-head { align-items: stretch; flex-direction: column; }

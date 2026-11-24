@@ -1,67 +1,5 @@
 const TRACE_DESKTOP_MQ = window.matchMedia('(min-width: 821px)');
 
-/**
- * Build a synthetic pixel mosaic from an opaque UI identifier. The pattern is
- * deliberately unrelated to the protected text, so it cannot be sharpened or
- * processed back into the original words.
- */
-function applyPrivacyMosaic(el, seed, { dense = false } = {}) {
-  if (!el) return;
-  let state = 2166136261;
-  const source = String(seed || 'private-surface');
-  for (let i = 0; i < source.length; i += 1) {
-    state ^= source.charCodeAt(i);
-    state = Math.imul(state, 16777619);
-  }
-  const random = () => {
-    state += 0x6d2b79f5;
-    let value = state;
-    value = Math.imul(value ^ (value >>> 15), value | 1);
-    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
-    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
-  };
-
-  const rows = dense ? 6 : 3;
-  const columns = dense ? 6 : (15 + Math.floor(random() * 12));
-  const shadows = [];
-  for (let row = 0; row < rows; row += 1) {
-    for (let column = 0; column < columns; column += 1) {
-      if (dense) {
-        const center = (columns - 1) / 2;
-        const distance = Math.hypot(column - center, row - center);
-        if (distance > 2.6) continue;
-      }
-      if (column > 0 && random() < 0.2) continue;
-      const shade = 1 + Math.floor(random() * 4);
-      const x = (column * 4).toFixed(1);
-      const y = (row * 4).toFixed(1);
-      shadows.push(x + 'px ' + y + 'px 0 var(--privacy-pixel-' + shade + ')');
-    }
-  }
-  el.classList.add('privacy-mask');
-  if (dense) el.classList.add('privacy-mask-dense');
-  el.style.setProperty('--privacy-pixels', shadows.join(', '));
-}
-
-function isPrivacyModeOn() {
-  return !!document.getElementById('chatShell')?.classList.contains('privacy-mode');
-}
-
-/** Native `title` tooltips leak mosaiced identity; keep the value for when privacy turns off. */
-function setIdentityTitle(el, text) {
-  if (!el) return;
-  const value = String(text || '');
-  if (value) el.dataset.identityTitle = value;
-  else delete el.dataset.identityTitle;
-  el.title = isPrivacyModeOn() ? '' : value;
-}
-
-function syncIdentityTitles(privacyOn) {
-  document.querySelectorAll('[data-identity-title]').forEach((el) => {
-    el.title = privacyOn ? '' : (el.dataset.identityTitle || '');
-  });
-}
-
 function normalizeThinkingEffort(value) {
   return typeof value === 'string' && value.trim() ? value.trim() : 'auto';
 }
@@ -130,7 +68,6 @@ const DEFAULT_SETTINGS = {
   pinnedModelIds: [],
   collapsedModelProviders: [],
   sidebarCollapsed: false,
-  privacyMode: false,
   autoOpenTraceSidebar: true,
   updateDismissed: '',
   browserMigrationVersion: 1,
@@ -719,11 +656,10 @@ function setModelHintWithProvider(prefix, providerLabel) {
   const provider = String(providerLabel || '').trim();
   if (!provider) return;
   modelHintEl.appendChild(document.createTextNode(' via '));
-  const protectedProvider = document.createElement('span');
-  protectedProvider.className = 'model-hint-provider';
-  protectedProvider.textContent = provider;
-  applyPrivacyMosaic(protectedProvider, 'model-hint-provider:' + provider);
-  modelHintEl.appendChild(protectedProvider);
+  const providerEl = document.createElement('span');
+  providerEl.className = 'model-hint-provider';
+  providerEl.textContent = provider;
+  modelHintEl.appendChild(providerEl);
 }
 const chatModelSelect = document.getElementById('chatModelSelect');
 const chatModelSelectWrap = document.getElementById('chatModelSelectWrap');
@@ -1460,15 +1396,12 @@ function syncAccountProfileUi() {
   const profileName = profile?.name || 'Personal';
   if (sidebarAccountName) {
     sidebarAccountName.textContent = accountName;
-    applyPrivacyMosaic(sidebarAccountName, 'account-name:' + accountName);
   }
   if (sidebarAccountAvatar) {
     sidebarAccountAvatar.textContent = profileInitials(accountName);
-    applyPrivacyMosaic(sidebarAccountAvatar, 'account-avatar:' + accountName, { dense: true });
   }
   if (sidebarActiveProfileName) {
     sidebarActiveProfileName.textContent = profileName;
-    applyPrivacyMosaic(sidebarActiveProfileName, 'active-profile:' + (profile?.id || DEFAULT_PROFILE_ID));
   }
   const personalizationTitle = document.getElementById('personalizationProfileTitle');
   if (personalizationTitle) personalizationTitle.textContent = profileName + ' profile';
@@ -1498,12 +1431,10 @@ function renderSidebarProfileList() {
     const mark = document.createElement('span');
     mark.className = 'sidebar-profile-option-mark';
     mark.textContent = profileInitials(profile.name);
-    applyPrivacyMosaic(mark, 'profile-menu-avatar:' + profile.id, { dense: true });
     const copy = document.createElement('span');
     copy.className = 'sidebar-profile-option-copy';
     const name = document.createElement('strong');
     name.textContent = profile.name;
-    applyPrivacyMosaic(name, 'profile-menu-name:' + profile.id);
     const detail = document.createElement('span');
     const chats = profile.conversations.length;
     detail.textContent = chats + ' chat' + (chats === 1 ? '' : 's');
@@ -1761,9 +1692,9 @@ function revealGeneratedTitle(convo, title) {
     );
   }
   if (sidebarEl) {
-    setIdentityTitle(sidebarEl, title);
+    sidebarEl.title = title;
     const row = sidebarEl.closest('.convo-item');
-    if (row) setIdentityTitle(row, title);
+    if (row) row.title = title;
     typeTitleInto(sidebarEl, sidebarLabel);
   } else renderSidebar();
   if (activeId === convo.id && convoTitleEl && !convo.incognito) {
@@ -2060,7 +1991,6 @@ function normalizeSettings(parsed) {
     pinnedModelIds: normalizeModelIds(parsed.pinnedModelIds, PINNED_MODELS_MAX),
     collapsedModelProviders: normalizeModelIds(parsed.collapsedModelProviders, 64),
     sidebarCollapsed: parsed.sidebarCollapsed === true,
-    privacyMode: parsed.privacyMode === true,
     autoOpenTraceSidebar: parsed.autoOpenTraceSidebar !== false,
     updateDismissed: typeof parsed.updateDismissed === 'string'
       ? parsed.updateDismissed.trim()

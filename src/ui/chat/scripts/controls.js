@@ -1096,12 +1096,10 @@ function renderProfilesSettingsList() {
     const mark = document.createElement('span');
     mark.className = 'profile-settings-mark';
     mark.textContent = profileInitials(profile.name);
-    applyPrivacyMosaic(mark, 'profile-settings-avatar:' + profile.id, { dense: true });
     const copy = document.createElement('span');
     copy.className = 'profile-settings-copy';
     const title = document.createElement('strong');
     title.textContent = profile.name;
-    applyPrivacyMosaic(title, 'profile-settings-name:' + profile.id);
     const meta = document.createElement('span');
     const chatCount = profile.conversations.length;
     const projectCount = profile.projects.length;

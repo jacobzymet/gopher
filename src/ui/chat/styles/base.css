@@ -361,33 +361,6 @@ html:not(.ui-ready) .chat-sidebar {
   z-index: 6;
 }
 .sidebar-head .wordmark { min-width: 0; }
-.topbar-icon-actions .btn-privacy-mode {
-  width: 2rem;
-  min-width: 2rem;
-  height: 2rem;
-  min-height: 2rem;
-  padding: 0;
-  color: var(--color-ink-2);
-  transition:
-    color var(--dur-short) var(--ease-settle),
-    background var(--dur-short) var(--ease-settle),
-    box-shadow var(--dur-short) var(--ease-settle),
-    transform var(--dur-short) var(--ease-release);
-}
-.topbar-icon-actions .btn-privacy-mode > svg {
-  width: 1.05rem;
-  height: 1.05rem;
-}
-.topbar-icon-actions .btn-privacy-mode:hover { color: var(--color-ink); }
-.topbar-icon-actions .btn-privacy-mode.is-active {
-  color: var(--color-accent);
-  background: var(--accent-wash);
-  box-shadow: inset 0 0 0 1px var(--accent-edge);
-}
-.topbar-icon-actions .btn-privacy-mode.is-active:hover {
-  background: var(--accent-wash-2);
-  transform: scale(1.04);
-}
 .sidebar-actions {
   display: flex;
   flex-direction: column;
@@ -1144,78 +1117,12 @@ button.sidebar-utility-row:hover .sidebar-utility-chevron {
   background: color-mix(in oklch, var(--color-warn) 8%, transparent);
 }
 
-/* Privacy mode is a screen-sharing aid for identity-bearing UI surfaces. The mosaic is
-   synthetic—not a filter over the real glyphs—and therefore carries no shape
-   information from the protected title or provider name. */
-.privacy-mask {
-  --privacy-pixel-2: color-mix(in oklch, var(--color-ink-2) 52%, transparent);
-  position: relative;
-  transition: color 180ms var(--ease-settle);
-}
-.privacy-mask::after {
-  content: none;
-  position: absolute;
-  z-index: 1;
-  top: calc(50% - 5px);
-  left: 0.1rem;
-  width: 3px;
-  height: 3px;
-  border-radius: 1px;
-  background: var(--privacy-pixel-2);
-  box-shadow: var(--privacy-pixels);
-  pointer-events: none;
-}
 .model-hint-provider {
   display: inline-block;
   max-width: 100%;
   clip-path: inset(0);
   vertical-align: baseline;
   white-space: nowrap;
-}
-.privacy-mode .convo-item:not(.is-active) .convo-title,
-.privacy-mode .sidebar-project-chip-name,
-.privacy-mode .model-hint-provider,
-.privacy-mode .chat-model-origin-pill.privacy-mask,
-.privacy-mode .chat-model-origin-pill.privacy-mask * {
-  color: transparent;
-}
-.privacy-mode .chat-model-origin-pill .chat-model-mark {
-  background: transparent;
-}
-.privacy-mode .chat-model-origin-pill.privacy-mask {
-  overflow: hidden;
-}
-.privacy-mode .convo-item:not(.is-active) .privacy-mask::after,
-.privacy-mode .sidebar-project-chip-name.privacy-mask::after,
-.privacy-mode .model-hint-provider.privacy-mask::after,
-.privacy-mode .chat-model-origin-pill.privacy-mask::after {
-  content: "";
-  opacity: 1;
-  filter: blur(0);
-  transform: scale(1);
-  transform-origin: left center;
-  transition:
-    opacity 150ms var(--ease-settle),
-    filter 220ms var(--ease-settle),
-    transform 240ms var(--ease-settle);
-}
-.privacy-mode .convo-item:not(.is-active):hover .convo-title,
-.privacy-mode .convo-item:not(.is-active):focus-within .convo-title,
-.privacy-mode .sidebar-project-chip-name:hover {
-  color: var(--color-ink);
-}
-.privacy-mode .convo-item:not(.is-active):hover .privacy-mask::after,
-.privacy-mode .convo-item:not(.is-active):focus-within .privacy-mask::after,
-.privacy-mode .sidebar-project-chip-name:hover::after {
-  opacity: 0;
-  filter: blur(3px);
-  transform: scale(0.96);
-}
-@media (prefers-reduced-motion: reduce) {
-  .privacy-mask,
-  .privacy-mask::after {
-    transition: none;
-  }
 }
 .update-toast {
   position: fixed;

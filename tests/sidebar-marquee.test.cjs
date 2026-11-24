@@ -39,7 +39,7 @@ async function withSidebar(run, { viewport, fast = true, convo = {}, ...settings
       'const isConvoBusy = () => false;',
       'const notificationIsUnread = (convo) => !!convo.unread;',
       extract(render, 'createConvoItem'),
-      ...['applyPrivacyMosaic', 'isPrivacyModeOn', 'setIdentityTitle', 'titleTypeHost', 'stopTitleTyping', 'typeTitleInto']
+      ...['titleTypeHost', 'stopTitleTyping', 'typeTitleInto']
         .map((name) => extract(state, name)),
     ].join('\n') });
     await page.evaluate(({ convo, settings, longTitle }) => {
@@ -48,7 +48,6 @@ async function withSidebar(run, { viewport, fast = true, convo = {}, ...settings
       if (settings.width) document.documentElement.style.setProperty('--sidebar-w', settings.width + 'px');
       if (settings.zoom) document.documentElement.style.zoom = settings.zoom;
       conversationSelectionMode = !!settings.bulk;
-      document.getElementById('chatShell').classList.toggle('privacy-mode', !!settings.privacy);
       document.getElementById('chatShell').classList.add('sidebar-open');
       document.getElementById('convoList').appendChild(createConvoItem({
         id: 'marquee', title: longTitle, updatedAt: Date.now() - 4 * 3600000, ...convo,
@@ -152,7 +151,7 @@ test('first hover accounts for sidebar sizes, font scales, zoom, and row adornme
     { width: 352, scale: 'large', convo: { id: 'active' } },
     { width: 284, zoom: 1.25, nested: true },
     { width: 284, zoom: 0.8, bulk: true },
-    { viewport: { width: 390, height: 844 }, scale: 'large', privacy: true },
+    { viewport: { width: 390, height: 844 }, scale: 'large' },
   ];
   for (const settings of variants) await withSidebar(async (page) => {
     await page.locator('.convo-title').hover();

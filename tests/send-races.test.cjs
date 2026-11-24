@@ -62,7 +62,7 @@ for (const [name, mutate] of [
   ['change text', (s) => { s.composerInput.value = 'new draft'; }],
   ['add an attachment', (s) => { s.pendingAttachments.push({ id: 'new-file' }); }],
   ['change models', (s) => { s.selectedChatModel = 'other-model'; }],
-  ['change privacy mode', (s) => { s.draftIncognito = true; }],
+  ['switch to a temporary chat', (s) => { s.draftIncognito = true; }],
   ['change workspace', (s) => { s.draftWorkspaceRoot = 'another-workspace'; }],
   ['delete the destination', (s) => { s.conversations.shift(); }],
 ]) {
