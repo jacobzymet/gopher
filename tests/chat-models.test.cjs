@@ -241,6 +241,21 @@ test('real chat model picks survive switching, default changes, reload, and back
     assert.equal(await page.locator('#chatModelSelect').textContent(), 'beta');
     await page.evaluate(() => fillDefaultModelSetting());
     assert.equal(await page.locator('#settingDefaultModel').inputValue(), ids.gamma);
+    // The Default model setting is chosen by searching the shared picker, without
+    // changing the open chat's model; the choice is applied only on Save.
+    await page.evaluate(() => openSettings('composer'));
+    await page.locator('#btnDefaultModelPick').click();
+    await page.locator('#chatModelSearch').fill('alp');
+    assert.equal(await page.locator('[data-model-pick]').count(), 1);
+    await page.locator('[data-model-pick]').filter({ hasText: 'alpha' }).click();
+    assert.equal(await page.locator('#settingDefaultModel').inputValue(), ids.alpha);
+    assert.equal(await page.locator('#defaultModelPickText').textContent(), await page.evaluate(id => defaultModelChoiceLabel(id), ids.alpha));
+    assert.equal(await page.evaluate(() => settings.selectedChatModel), ids.gamma);
+    assert.equal(await page.locator('#chatModelSelect').textContent(), 'beta');
+    await page.locator('#btnSettingsSave').click();
+    await page.waitForFunction(id => settings.selectedChatModel === id, ids.alpha);
+    await page.evaluate(() => closeSettings());
+    await page.evaluate(async id => { await saveSettings({ ...settings, selectedChatModel: id }, { immediate: true }); }, ids.gamma);
     await page.evaluate(async () => { saveConversations({ immediate: true }); await storeWriteChain; });
     await page.reload();
     await page.waitForFunction(() => storageReady && modelMenuOptions.filter(model => !model.connectKind).length === 3);

@@ -530,13 +530,14 @@
               <div class="set-panel">
                 <div class="set-row">
                   <div class="set-text">
-                    <label class="set-label" for="settingDefaultModel">Default model</label>
+                    <span class="set-label" id="settingDefaultModelLabel">Default model</span>
                     <p class="set-desc" id="settingDefaultModelHint">Chats use this until you pick a different model in that chat.</p>
                   </div>
-                  <div class="set-control">
-                    <select class="field-select" id="settingDefaultModel" aria-describedby="settingDefaultModelHint">
-                      <option value="">No models available</option>
-                    </select>
+                  <div class="set-control is-wide">
+                    <input type="hidden" id="settingDefaultModel" value="">
+                    <button type="button" class="field-select model-pick-trigger" id="btnDefaultModelPick" aria-haspopup="dialog" aria-expanded="false" aria-labelledby="settingDefaultModelLabel defaultModelPickText" aria-describedby="settingDefaultModelHint">
+                      <span id="defaultModelPickText">First available model</span>
+                    </button>
                   </div>
                 </div>
                 <label class="set-row is-switch" for="settingEnterSends">

@@ -1617,6 +1617,24 @@ html[data-session-locked] #unlockModal { display: flex !important; opacity: 1; p
 .settings-encryption-form .field .set-label { font-size: var(--text-xs); }
 .skill-editor .set-group-title { margin-top: 0.25rem; }
 
+.model-pick-trigger {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--color-ink);
+  font: inherit;
+  font-size: var(--text-sm);
+}
+.model-pick-trigger:disabled { cursor: default; color: var(--color-muted); }
+.model-pick-trigger > span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .settings-instant-note {
   display: none;
   margin: 0 auto 0 0.15rem;

@@ -1032,59 +1032,55 @@ function syncChatBackgroundForm() {
   }
 }
 
-function fillDefaultModelSetting() {
-  const select = document.getElementById('settingDefaultModel');
-  if (!select) return;
-  // Sign-in placeholders ("Connect …") are not models, so they cannot be the default.
-  const options = ((typeof modelMenuOptions !== 'undefined' && modelMenuOptions.length)
-    ? modelMenuOptions
-    : ((latestState?.network?.remote_models || []).map((model) => (
-      typeof catalogOptionFromRemote === 'function'
-        ? catalogOptionFromRemote(model)
-        : {
-          value: model.id,
-          label: model.model || model.label || model.id,
-          provider: String(model.provider_name || '').trim(),
-        }
-    )))).filter((option) => !option.connectKind);
-  const current = String(settings.selectedChatModel || '').trim();
-  select.replaceChildren();
-  if (!options.length) {
-    select.disabled = true;
-    const empty = document.createElement('option');
-    empty.value = '';
-    empty.textContent = 'No models available yet';
-    select.appendChild(empty);
+function defaultModelChoiceLabel(value) {
+  if (!value) {
+    return modelMenuOptions.some((option) => !option.connectKind)
+      ? 'First available model'
+      : 'No models available yet';
+  }
+  const option = modelMenuOptions.find((item) => item.value === value);
+  if (!option) return modelIdLabel(value) || value;
+  return option.provider ? option.label + ' · ' + option.provider : option.label;
+}
+
+/** Show `value` as the Default model choice; the hidden field is what Save reads. */
+function setDefaultModelChoice(value) {
+  const input = document.getElementById('settingDefaultModel');
+  if (!input) return;
+  input.value = String(value || '').trim();
+  const text = document.getElementById('defaultModelPickText');
+  if (text) text.textContent = defaultModelChoiceLabel(input.value);
+  const trigger = document.getElementById('btnDefaultModelPick');
+  if (trigger) trigger.disabled = !modelMenuOptions.some((option) => !option.connectKind);
+}
+
+/**
+ * Sync the Default model control. While Settings is open, a choice that has
+ * not been saved yet is kept; `reset` (or a closed dialog) shows the saved one.
+ */
+function fillDefaultModelSetting({ reset = false } = {}) {
+  const input = document.getElementById('settingDefaultModel');
+  if (!input) return;
+  const editing = !reset && settingsModal && !settingsModal.classList.contains('is-hidden');
+  setDefaultModelChoice(editing ? input.value : settings.selectedChatModel);
+}
+
+function openDefaultModelPicker() {
+  const trigger = document.getElementById('btnDefaultModelPick');
+  if (!trigger || trigger.disabled) return;
+  if (modelMenuIsOpen()) {
+    closeModelMenu({ restoreFocus: true });
     return;
   }
-  select.disabled = false;
-  // An empty value means no saved default: chats start on the first model available.
-  const firstAvailable = document.createElement('option');
-  firstAvailable.value = '';
-  firstAvailable.textContent = 'First available model';
-  select.appendChild(firstAvailable);
-  let hasCurrent = false;
-  options.forEach((option) => {
-    const opt = document.createElement('option');
-    opt.value = option.value;
-    opt.textContent = option.provider
-      ? (option.label + ' · ' + option.provider)
-      : option.label;
-    if (option.value === current) {
-      opt.selected = true;
-      hasCurrent = true;
-    }
-    select.appendChild(opt);
+  openModelMenu({
+    anchor: trigger.closest('.set-control'),
+    trigger,
+    selectedId: document.getElementById('settingDefaultModel')?.value || '',
+    onPick(value) {
+      setDefaultModelChoice(value);
+      syncSettingsSaveButton();
+    },
   });
-  if (current && !hasCurrent) {
-    const opt = document.createElement('option');
-    opt.value = current;
-    opt.textContent = (typeof modelIdLabel === 'function' ? modelIdLabel(current) : '') || current;
-    opt.selected = true;
-    select.insertBefore(opt, firstAvailable.nextSibling);
-  } else if (!current) {
-    select.value = '';
-  }
 }
 
 let editingProfileId = null;
@@ -1300,7 +1296,7 @@ function fillSettingsFormFromState() {
   syncFetchUrlControls();
   syncTerminalSkillControls();
   syncAttachmentFallbackControls();
-  fillDefaultModelSetting();
+  fillDefaultModelSetting({ reset: true });
 }
 
 function readSettingsForm() {
@@ -1354,7 +1350,8 @@ function readSettingsForm() {
     chatBackgroundImageName: pendingChatBackgroundImageName,
     chatBackgroundPosition: document.getElementById('settingChatBackgroundPosition').value,
     chatBackgroundOverlay: Number(document.getElementById('settingChatBackgroundOverlay').value),
-    selectedChatModel: defaultModel || settings.selectedChatModel || '',
+    // Filled from the saved value whenever Settings opens.
+    selectedChatModel: defaultModel,
   });
 }
 

@@ -325,11 +325,11 @@ function modelMenuIsOpen() {
 
 let modelMenuCloseTimer = null;
 
-/** When set, the shared menu is picking a model for a loop agent instead of the chat. */
+/** When set, the shared menu picks a model for a setting instead of the current chat. */
 let modelMenuContext = null;
 
 function modelMenuSelectedId() {
-  if (modelMenuContext && modelMenuContext.selectedId) return modelMenuContext.selectedId;
+  if (modelMenuContext) return modelMenuContext.selectedId || '';
   return selectedChatModel;
 }
 
@@ -3779,6 +3779,7 @@ settingsModal.querySelector('.settings-dialog')?.addEventListener('change', (eve
   syncSettingsSaveButton();
 });
 document.getElementById('settingSkillWebSearch').addEventListener('change', syncWebSearchControls);
+document.getElementById('btnDefaultModelPick')?.addEventListener('click', openDefaultModelPicker);
 document.getElementById('btnWebSearchAdvanced')?.addEventListener('click', () => {
   const toggle = document.getElementById('btnWebSearchAdvanced');
   const panel = document.getElementById('webSearchOptions');
