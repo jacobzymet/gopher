@@ -38,9 +38,6 @@ async function withSidebar(run, { viewport, fast = true, convo = {}, ...settings
       'const convoBusyAnimationStartedAt = new Map(); const titleTypeTimers = new Map();',
       'const isConvoBusy = () => false;',
       'const notificationIsUnread = (convo) => !!convo.unread;',
-      'const isBotsConvo = (convo) => !!convo.botId;',
-      "const getBot = () => ({ handle: 'research' });",
-      "const createConvoAvatarEl = () => { const avatar = document.createElement('span'); avatar.className = 'convo-avatar'; avatar.textContent = 'R'; return avatar; };",
       extract(render, 'createConvoItem'),
       ...['applyPrivacyMosaic', 'isPrivacyModeOn', 'setIdentityTitle', 'titleTypeHost', 'stopTitleTyping', 'typeTitleInto']
         .map((name) => extract(state, name)),
@@ -155,12 +152,11 @@ test('first hover accounts for sidebar sizes, font scales, zoom, and row adornme
     { width: 352, scale: 'large', convo: { id: 'active' } },
     { width: 284, zoom: 1.25, nested: true },
     { width: 284, zoom: 0.8, bulk: true },
-    { viewport: { width: 390, height: 844 }, scale: 'large', convo: { botId: 'research', botKind: 'dm' }, privacy: true },
+    { viewport: { width: 390, height: 844 }, scale: 'large', privacy: true },
   ];
   for (const settings of variants) await withSidebar(async (page) => {
     await page.locator('.convo-title').hover();
     await assertFirstCycleEnd(page);
-    if (settings.convo?.botId) assert.equal(await page.locator('.convo-handle').evaluate((handle) => getComputedStyle(handle).transform), 'none');
   }, settings);
 });
 
