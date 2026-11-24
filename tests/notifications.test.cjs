@@ -364,7 +364,7 @@ test('real approval inbox follows live SSE, clears on Stop, and ignores finished
     await page.evaluate(async () => { notificationWriter.close(); await notificationRun; });
     await page.evaluate(() => openSettings('agent-capabilities'));
     const manual = page.locator('#approvalModeToggle [data-approval-mode="manual"]');
-    assert.equal(await manual.textContent(), 'Ask before every action');
+    assert.equal(await manual.textContent(), 'Ask every time');
     assert.equal(await manual.getAttribute('aria-selected'), 'true');
     await page.locator('#approvalModeToggle [data-approval-mode="auto_safe"]').click();
     await page.locator('#btnSettingsSave').click();

@@ -344,8 +344,3 @@
 .agent-step-risk.is-terminal {
   color: var(--color-danger);
 }
-.segmented-stack {
-  flex-wrap: wrap;
-  width: max-content;
-  max-width: 100%;
-}

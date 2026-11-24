@@ -21,7 +21,7 @@ function element(tagName = 'div') {
     setAttribute(name, value) { this.attributes[name] = value; },
     replaceChildren(...children) { this.children = children; this.replacements = (this.replacements || 0) + 1; },
     querySelectorAll(selector) { return this.children.filter((child) => selector === 'option' ? child.tagName === 'option' : child.dataset.effort); },
-    closest() { return { style: {} }; },
+    closest() { return { style: {}, classList: { toggle() {} } }; },
   };
 }
 

@@ -1,3 +1,6 @@
+// These panes act immediately; Save only matters for edits made elsewhere.
+const INSTANT_SETTINGS_PANES = new Set(['providers', 'profiles', 'skills', 'data', 'app']);
+
 function showSettingsPane(pane) {
   document.querySelectorAll('.settings-nav-btn').forEach((btn) => {
     btn.classList.toggle('is-active', btn.dataset.settingsPane === pane);
@@ -6,7 +9,7 @@ function showSettingsPane(pane) {
     el.classList.toggle('is-active', el.dataset.settingsPane === pane);
   });
   const scroll = document.getElementById('settingsScroll');
-  document.querySelector('.settings-main')?.classList.toggle('is-provider-pane', pane === 'providers');
+  document.querySelector('.settings-main')?.classList.toggle('is-instant-pane', INSTANT_SETTINGS_PANES.has(pane));
   if (scroll) scroll.scrollTop = 0;
   if (typeof setProviderSettingsActive === 'function') {
     setProviderSettingsActive(pane === 'providers');
@@ -32,8 +35,7 @@ function refreshSettingsDataSummary() {
   const chatLabel = chatCount === 1 ? '1 chat' : chatCount + ' chats';
   const projectLabel = projectCount === 1 ? '1 project' : projectCount + ' projects';
   const profileLabel = activeProfile()?.name || 'Personal';
-  el.textContent = profileLabel + ' profile. Stored on disk: '
-    + chatLabel + ' and ' + projectLabel + '.';
+  el.textContent = profileLabel + ' profile: ' + chatLabel + ', ' + projectLabel + '.';
   const clearChats = document.getElementById('btnClearChats');
   const clearProjects = document.getElementById('btnClearProjects');
   const clearAll = document.getElementById('btnClearAllData');
@@ -1000,8 +1002,8 @@ function syncChatBackgroundForm() {
     hint.textContent = hasInvalidUrl
       ? 'Enter a valid URL beginning with http:// or https://.'
       : (isLocal
-        ? 'Local image: ' + (pendingChatBackgroundImageName || 'Selected image')
-        : 'Enter a remote URL or choose a PNG, JPEG, WebP, GIF, or AVIF file up to 1 MB.');
+        ? 'Using ' + (pendingChatBackgroundImageName || 'a file from this computer') + '.'
+        : 'A web address, or a PNG, JPEG, WebP, GIF, or AVIF file up to 1 MB.');
   }
   if (clearButton) clearButton.disabled = !source && !pendingChatBackgroundImage;
   const positionInput = document.getElementById('settingChatBackgroundPosition');
@@ -1033,7 +1035,8 @@ function syncChatBackgroundForm() {
 function fillDefaultModelSetting() {
   const select = document.getElementById('settingDefaultModel');
   if (!select) return;
-  const options = (typeof modelMenuOptions !== 'undefined' && modelMenuOptions.length)
+  // Sign-in placeholders ("Connect …") are not models, so they cannot be the default.
+  const options = ((typeof modelMenuOptions !== 'undefined' && modelMenuOptions.length)
     ? modelMenuOptions
     : ((latestState?.network?.remote_models || []).map((model) => (
       typeof catalogOptionFromRemote === 'function'
@@ -1043,9 +1046,8 @@ function fillDefaultModelSetting() {
           label: model.model || model.label || model.id,
           provider: String(model.provider_name || '').trim(),
         }
-    )));
+    )))).filter((option) => !option.connectKind);
   const current = String(settings.selectedChatModel || '').trim();
-  const previous = select.value;
   select.replaceChildren();
   if (!options.length) {
     select.disabled = true;
@@ -1056,6 +1058,11 @@ function fillDefaultModelSetting() {
     return;
   }
   select.disabled = false;
+  // An empty value means no saved default: chats start on the first model available.
+  const firstAvailable = document.createElement('option');
+  firstAvailable.value = '';
+  firstAvailable.textContent = 'First available model';
+  select.appendChild(firstAvailable);
   let hasCurrent = false;
   options.forEach((option) => {
     const opt = document.createElement('option');
@@ -1074,11 +1081,9 @@ function fillDefaultModelSetting() {
     opt.value = current;
     opt.textContent = (typeof modelIdLabel === 'function' ? modelIdLabel(current) : '') || current;
     opt.selected = true;
-    select.insertBefore(opt, select.firstChild);
-  } else if (!current && select.options.length) {
-    select.selectedIndex = 0;
-  } else if (!hasCurrent && previous && [...select.options].some((opt) => opt.value === previous)) {
-    select.value = previous;
+    select.insertBefore(opt, firstAvailable.nextSibling);
+  } else if (!current) {
+    select.value = '';
   }
 }
 
@@ -1408,6 +1413,11 @@ function openSettings(pane = 'personalization') {
     document.getElementById('fetchUrlOptions'),
     false
   );
+  setCapabilityAdvancedOpen(
+    document.getElementById('btnTerminalAdvanced'),
+    document.getElementById('terminalOptions'),
+    false
+  );
   refreshLocalDataPane();
   showSettingsPane(pane);
   openBackdrop(settingsModal);
@@ -1431,9 +1441,7 @@ function syncWebSearchControls() {
   const provider = document.getElementById('settingWebSearchProvider')?.value || 'auto';
   const parallelKey = (document.getElementById('settingWebSearchParallelApiKey')?.value || '').trim();
   const depth = document.getElementById('settingWebSearchDepth')?.value || 'off';
-  const moreToggle = document.getElementById('btnWebSearchMore');
   if (toggle) toggle.disabled = !enabled;
-  if (moreToggle) moreToggle.disabled = !enabled;
   if (!options) return;
   options.querySelectorAll('input, select').forEach((control) => {
     control.disabled = !enabled;
@@ -1455,7 +1463,7 @@ function syncWebSearchControls() {
       el.hidden = depth === 'off';
     }
   });
-  options.style.opacity = enabled ? '' : '0.55';
+  options.classList.toggle('is-disabled', !enabled);
 }
 
 function syncFetchUrlControls() {
@@ -1467,7 +1475,7 @@ function syncFetchUrlControls() {
   options.querySelectorAll('input, select').forEach((control) => {
     control.disabled = !enabled;
   });
-  options.style.opacity = enabled ? '' : '0.55';
+  options.classList.toggle('is-disabled', !enabled);
 }
 
 function syncTerminalSkillControls() {
@@ -1479,7 +1487,7 @@ function syncTerminalSkillControls() {
   options.querySelectorAll('input, select').forEach((control) => {
     control.disabled = !enabled;
   });
-  options.style.opacity = enabled ? '' : '0.55';
+  options.classList.toggle('is-disabled', !enabled);
 }
 
 function syncApprovalModeControls() {
@@ -1500,11 +1508,8 @@ function syncAttachmentFallbackControls() {
   const enabled = !!(fallback && fallback.checked);
   if (ocr) ocr.disabled = !enabled;
   if (maxChars) maxChars.disabled = !enabled;
-  if (ocr) ocr.closest('.field-check').style.opacity = enabled ? '' : '0.55';
-  if (maxChars) {
-    const row = maxChars.closest('.settings-row');
-    if (row) row.style.opacity = enabled ? '' : '0.55';
-  }
+  ocr?.closest('.set-row')?.classList.toggle('is-disabled', !enabled);
+  maxChars?.closest('.set-row')?.classList.toggle('is-disabled', !enabled);
 }
 
 function closeSettings() {
@@ -1554,15 +1559,12 @@ function renderUserSkills() {
           <div class="skill-title">${escapeHtml(skill.name)}</div>
           <p class="skill-desc">${escapeHtml(skill.description || 'No description')}</p>
         </div>
-        <label class="field-check" style="margin:0">
-          <input type="checkbox" data-skill-enabled ${skill.enabled ? 'checked' : ''}>
-          <span style="font-size:var(--text-xs)">On</span>
-        </label>
+        <input type="checkbox" class="switch" data-skill-enabled aria-label="Enable ${escapeHtml(skill.name)}" ${skill.enabled ? 'checked' : ''}>
       </div>
-      <div class="skill-meta">${skill.content_chars || 0} chars${skill.source_filename ? ' · ' + escapeHtml(skill.source_filename) : ''}</div>
+      <div class="skill-meta">${Number(skill.content_chars || 0).toLocaleString()} characters${skill.source_filename ? ' · ' + escapeHtml(skill.source_filename) : ''}</div>
       <div class="skill-actions">
-        <button type="button" class="btn btn-outline" data-skill-edit>Edit</button>
-        <button type="button" class="btn btn-outline" data-skill-delete>Delete</button>
+        <button type="button" class="btn btn-ghost btn-small" data-skill-edit>Edit</button>
+        <button type="button" class="btn btn-ghost btn-small" data-skill-delete>Delete</button>
       </div>
     </li>
   `).join('');
@@ -2122,14 +2124,12 @@ function syncComposerThinkVisibility(model) {
   wrap.classList.toggle('is-hidden', !thinkingSupported);
   if (!thinkingSupported) setThinkMenuOpen(false);
   const effort = document.getElementById('settingThinkingEffort');
-  const effortRow = effort && effort.closest('.settings-row');
+  const effortRow = effort && effort.closest('.set-row');
   if (effort) {
     effort.disabled = !thinkingSupported;
     if (effortRow) {
-      effortRow.style.opacity = thinkingSupported ? '' : '0.55';
-      effortRow.title = thinkingSupported
-        ? ''
-        : 'Current model does not expose controllable thinking.';
+      effortRow.classList.toggle('is-disabled', !thinkingSupported);
+      effortRow.title = thinkingSupported ? '' : "The selected model doesn't support effort levels.";
     }
   }
   syncThinkingEffortControls(activeThinkingEffort);

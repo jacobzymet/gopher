@@ -285,7 +285,7 @@ function renderProviderSettings() {
       </li>`;
   }).join('');
   if (hint && !hint.dataset.sticky) {
-    setProviderFormHint('Select Add to test the connection automatically.');
+    setProviderFormHint('Adding a provider tests the connection.');
   }
 }
 
@@ -312,7 +312,7 @@ function clearProviderForm() {
   clearProviderError();
   hideProviderConnectionTest();
   syncProviderStyleHints();
-  setProviderFormHint('The base URL must end in /v1. The app detects the API style unless you select a style. Select Add to test the connection automatically.');
+  setProviderFormHint('Adding a provider tests the connection.');
 }
 
 function beginProviderEdit(provider) {
@@ -336,8 +336,8 @@ function beginProviderEdit(provider) {
   syncProviderStyleHints();
   setProviderFormHint(
     provider.token_set || provider.token_masked
-      ? 'Change the name or URL, or enter a new token. Leave the token blank to keep the saved token. Select Save to test the connection and detect the API style again.'
-      : 'Enter a token if the provider requires authentication. Select Save to test the connection and detect the API style.',
+      ? 'Leave the key blank to keep the saved one. Saving tests the connection again.'
+      : 'Saving tests the connection.',
     true
   );
   document.getElementById('providerToken').focus();
@@ -465,7 +465,7 @@ function bindProviderSettings() {
           await mutateProvider('/api/providers/' + encodeURIComponent(id) + '/activate', {
             method: 'POST',
           });
-          setProviderFormHint('Chat now uses the selected provider as the default provider.', true);
+          setProviderFormHint('Default provider changed.', true);
         } catch (error) {
           showProviderError(error.message);
         }
@@ -557,7 +557,7 @@ function bindProviderSettings() {
           });
           clearProviderForm();
           showProviderConnectionTest('ok', 'Provider updated', summary.detail);
-          setProviderFormHint('Provider updated. Connection verified.', true);
+          setProviderFormHint('Saved. Connection works.', true);
         } else {
           await mutateProvider('/api/providers', {
             method: 'POST',
@@ -572,7 +572,7 @@ function bindProviderSettings() {
           });
           clearProviderForm();
           showProviderConnectionTest('ok', 'Provider added', summary.detail);
-          setProviderFormHint('Provider added. Chat now uses it as the default provider. Connection verified.', true);
+          setProviderFormHint('Added and set as default. Connection works.', true);
         }
       } catch (error) {
         showProviderConnectionTest(

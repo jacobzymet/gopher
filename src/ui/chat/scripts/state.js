@@ -2050,15 +2050,8 @@ function refreshLocalDataPane() {
   const pathEl = document.getElementById('settingsDataPath');
   const filesEl = document.getElementById('settingsDataFiles');
   const openBtn = document.getElementById('btnOpenDataDir');
-  const personalizationLede = document.querySelector(
-    '.settings-pane[data-settings-pane="personalization"] .settings-pane-lede'
-  );
-
   if (lede) {
-    lede.textContent = 'The app stores profiles, chats, projects, and settings in the operating system data folder.';
-  }
-  if (personalizationLede) {
-    personalizationLede.textContent = 'The app stores this information with your local data. The app sends it as a system prompt with each message.';
+    lede.textContent = 'Profiles, chats, projects, and settings are stored on this computer.';
   }
   if (pathEl) {
     pathEl.textContent = dataInfo?.data_dir || 'Not available';
@@ -2066,8 +2059,8 @@ function refreshLocalDataPane() {
   if (filesEl) {
     if (dataInfo) {
       filesEl.textContent = dataInfo.encryption_enabled
-        ? 'One passphrase encrypts all profiles, preferences, provider credentials, skills, and saved diagnostic logs. The config.toml file contains only startup configuration that is not sensitive.'
-        : 'This folder contains config.toml, chats.json, preferences.json, and chat-skills/. The chats.json file contains the profile data.';
+        ? 'Everything here is encrypted except config.toml, which holds only startup options.'
+        : 'Chats and profiles are in chats.json, settings in preferences.json, and skills in chat-skills/.';
     } else {
       filesEl.textContent = 'Not available';
     }
@@ -2131,18 +2124,18 @@ function refreshEncryptionPane() {
   if (disableForm) disableForm.classList.add('is-hidden');
 
   if (!enabled) {
-    statusEl.textContent = 'Off. The app stores chats, settings, provider configuration, provider credentials, and skills without encryption.';
+    statusEl.textContent = 'Off. Chats, settings, and provider keys are saved as plain files.';
     enableEl.classList.remove('is-hidden');
     return;
   }
 
   if (!unlocked) {
-    statusEl.textContent = 'Locked. Enter your passphrase to read and write encrypted data.';
+    statusEl.textContent = 'Locked. Enter your passphrase to open your data.';
     unlockEl.classList.remove('is-hidden');
     return;
   }
 
-  statusEl.textContent = 'Unlocked. The app encrypts chats, settings, provider configuration, provider credentials, and skill contents on disk.';
+  statusEl.textContent = 'On and unlocked for this session.';
   activeEl.classList.remove('is-hidden');
 }
 

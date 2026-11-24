@@ -395,11 +395,7 @@
     <div class="dialog settings-dialog">
       <button type="button" class="dialog-close" id="btnSettingsClose" aria-label="Close">×</button>
       <aside class="settings-nav" aria-label="Settings sections">
-        <p class="settings-nav-group">Settings</p>
-        <button type="button" class="settings-nav-btn" data-settings-pane="providers">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="7" x="3" y="3" rx="2"/><rect width="18" height="7" x="3" y="14" rx="2"/><path d="M7 6.5h.01M7 17.5h.01"/></svg>
-          <span>Providers</span>
-        </button>
+        <p class="settings-nav-group">You</p>
         <button type="button" class="settings-nav-btn is-active" data-settings-pane="personalization">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
           <span>Personalization</span>
@@ -408,37 +404,44 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           <span>Profiles</span>
         </button>
-        <button type="button" class="settings-nav-btn" data-settings-pane="appearance">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
-          <span>Appearance</span>
+        <p class="settings-nav-group">Chat</p>
+        <button type="button" class="settings-nav-btn" data-settings-pane="composer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+          <span>Composer</span>
         </button>
         <button type="button" class="settings-nav-btn" data-settings-pane="thinking">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 1 6 6c0 2.2-1.2 3.8-2.5 5-.9.8-1.5 1.7-1.5 3h-4c0-1.3-.6-2.2-1.5-3C7.2 12.8 6 11.2 6 9a6 6 0 0 1 6-6Z"/><path d="M10 21h4"/></svg>
           <span>Thinking</span>
         </button>
+        <button type="button" class="settings-nav-btn" data-settings-pane="attachments">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+          <span>Attachments</span>
+        </button>
+        <p class="settings-nav-group">Models &amp; tools</p>
+        <button type="button" class="settings-nav-btn" data-settings-pane="providers">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="7" x="3" y="3" rx="2"/><rect width="18" height="7" x="3" y="14" rx="2"/><path d="M7 6.5h.01M7 17.5h.01"/></svg>
+          <span>Providers</span>
+        </button>
         <button type="button" class="settings-nav-btn" data-settings-pane="agent-capabilities">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg>
-          <span>Agent capabilities</span>
+          <span>Agent tools</span>
         </button>
         <button type="button" class="settings-nav-btn" data-settings-pane="skills">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76Z"/></svg>
           <span>Skills</span>
         </button>
-        <button type="button" class="settings-nav-btn" data-settings-pane="composer">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-          <span>Composer</span>
-        </button>
-        <button type="button" class="settings-nav-btn" data-settings-pane="attachments">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-          <span>Attachments</span>
+        <p class="settings-nav-group">App</p>
+        <button type="button" class="settings-nav-btn" data-settings-pane="appearance">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+          <span>Appearance</span>
         </button>
         <button type="button" class="settings-nav-btn" data-settings-pane="data">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg>
-          <span>Local data</span>
+          <span>Data &amp; encryption</span>
         </button>
         <button type="button" class="settings-nav-btn" data-settings-pane="app">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-          <span>App</span>
+          <span>Updates</span>
         </button>
         <button type="button" class="settings-nav-btn" data-settings-pane="logs">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2h-3"/><rect x="8" y="1" width="8" height="4" rx="1"/><path d="M8 10h8M8 14h8M8 18h5"/></svg>
@@ -447,15 +450,204 @@
       </aside>
       <div class="settings-main">
         <div class="settings-scroll" id="settingsScroll">
+
+          <section class="settings-pane is-active" data-settings-pane="personalization" aria-labelledby="settingsTitle">
+            <h2 class="settings-pane-title" id="settingsTitle">Personalization</h2>
+            <p class="settings-pane-lede">Sent to the model with every message in the <strong id="personalizationProfileTitle">Personal profile</strong>.</p>
+
+            <div class="set-group">
+              <h3 class="set-group-title">About you</h3>
+              <div class="set-panel">
+                <div class="set-row">
+                  <div class="set-text">
+                    <label class="set-label" for="settingName">Name</label>
+                    <p class="set-desc">Shared by all profiles and shown on your avatar.</p>
+                  </div>
+                  <div class="set-control">
+                    <input class="field-input" id="settingName" type="text" autocomplete="name" placeholder="Optional">
+                  </div>
+                </div>
+                <div class="set-row is-stacked">
+                  <div class="set-text">
+                    <label class="set-label" for="settingAbout">About you</label>
+                    <p class="set-desc">Your role, interests, and how you like answers.</p>
+                  </div>
+                  <textarea class="field-textarea" id="settingAbout" placeholder="I'm a backend engineer. Keep answers short and show code first."></textarea>
+                </div>
+              </div>
+            </div>
+
+            <div class="set-group">
+              <h3 class="set-group-title">Instructions</h3>
+              <div class="set-panel">
+                <div class="set-row is-stacked">
+                  <div class="set-text">
+                    <label class="set-label" for="settingInstructions">Custom instructions</label>
+                    <p class="set-desc">A project's own instructions replace these inside that project.</p>
+                  </div>
+                  <textarea class="field-textarea" id="settingInstructions" placeholder="How should the assistant behave?"></textarea>
+                </div>
+              </div>
+            </div>
+
+            <div class="set-group">
+              <h3 class="set-group-title">Memory</h3>
+              <div class="set-panel">
+                <div class="set-row is-stacked">
+                  <div class="set-text">
+                    <label class="set-label" for="settingMemory">Shared memory</label>
+                    <p class="set-desc">Facts the model keeps across chats and projects in this profile. The model can update it. Temporary chats and projects with project-only memory don't use it.</p>
+                  </div>
+                  <textarea class="field-textarea is-tall" id="settingMemory" placeholder="Prefers metric units. Works in Rust and TypeScript."></textarea>
+                </div>
+                <label class="set-row is-switch" for="settingChatRetrieval">
+                  <span class="set-text">
+                    <span class="set-label">Search past chats</span>
+                    <span class="set-desc">The model can look up your other chats in this profile. Project chats only search their project. Matching text is sent to your model provider.</span>
+                  </span>
+                  <input type="checkbox" class="switch" id="settingChatRetrieval" checked>
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section class="settings-pane" data-settings-pane="profiles">
+            <h2 class="settings-pane-title">Profiles</h2>
+            <p class="settings-pane-lede">Each profile has its own chats, projects, instructions, and memory. When encryption is on, one passphrase unlocks all of them.</p>
+            <div class="set-group">
+              <div class="set-group-head">
+                <h3 class="set-group-title">Your profiles</h3>
+                <button type="button" class="btn btn-outline btn-small" id="btnSettingsProfileCreate">New profile</button>
+              </div>
+              <div class="profiles-settings-list" id="profilesSettingsList"></div>
+            </div>
+          </section>
+
+          <section class="settings-pane" data-settings-pane="composer">
+            <h2 class="settings-pane-title">Composer</h2>
+            <p class="settings-pane-lede">The model new chats start with, and how the message box behaves.</p>
+            <div class="set-group">
+              <div class="set-panel">
+                <div class="set-row">
+                  <div class="set-text">
+                    <label class="set-label" for="settingDefaultModel">Default model</label>
+                    <p class="set-desc" id="settingDefaultModelHint">Chats use this until you pick a different model in that chat.</p>
+                  </div>
+                  <div class="set-control">
+                    <select class="field-select" id="settingDefaultModel" aria-describedby="settingDefaultModelHint">
+                      <option value="">No models available</option>
+                    </select>
+                  </div>
+                </div>
+                <label class="set-row is-switch" for="settingEnterSends">
+                  <span class="set-text">
+                    <span class="set-label">Enter sends</span>
+                    <span class="set-desc">Shift+Enter adds a new line. When off, use Ctrl+Enter to send.</span>
+                  </span>
+                  <input type="checkbox" class="switch" id="settingEnterSends" checked>
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section class="settings-pane" data-settings-pane="thinking">
+            <h2 class="settings-pane-title">Thinking</h2>
+            <p class="settings-pane-lede">How hard reasoning models think, and how much of it you see.</p>
+            <div class="set-group">
+              <div class="set-panel">
+                <div class="set-row">
+                  <div class="set-text">
+                    <label class="set-label" for="settingThinkingEffort">Effort</label>
+                    <p class="set-desc">Choices depend on the selected model.</p>
+                  </div>
+                  <div class="set-control">
+                    <select class="field-select" id="settingThinkingEffort">
+                      <option value="auto">Model default</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="set-row">
+                  <div class="set-text">
+                    <label class="set-label" for="settingThinking">Show reasoning</label>
+                    <p class="set-desc">Collapsed shows it live, then folds it away when it's done.</p>
+                  </div>
+                  <div class="set-control">
+                    <select class="field-select" id="settingThinking">
+                      <option value="collapsed">Collapsed when done</option>
+                      <option value="visible">Always</option>
+                      <option value="hidden">Never</option>
+                    </select>
+                  </div>
+                </div>
+                <label class="set-row is-switch" for="settingAutoOpenTraceSidebar">
+                  <span class="set-text">
+                    <span class="set-label">Open the activity panel automatically</span>
+                    <span class="set-desc">When reasoning or tool calls start streaming.</span>
+                  </span>
+                  <input type="checkbox" class="switch" id="settingAutoOpenTraceSidebar">
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section class="settings-pane" data-settings-pane="attachments">
+            <h2 class="settings-pane-title">Attachments</h2>
+            <p class="settings-pane-lede">When the paperclip appears, and what happens for models that can't read files.</p>
+            <div class="set-group">
+              <div class="set-panel">
+                <div class="set-row">
+                  <div class="set-text">
+                    <label class="set-label" for="settingAttachmentsMode">Allow attachments</label>
+                    <p class="set-desc">Some models don't report file support. Choose Always to attach anyway.</p>
+                  </div>
+                  <div class="set-control">
+                    <select class="field-select" id="settingAttachmentsMode">
+                      <option value="auto">For models that accept files</option>
+                      <option value="on">Always</option>
+                      <option value="off">Never</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="set-group">
+              <h3 class="set-group-title">For models that can't read files</h3>
+              <div class="set-panel">
+                <label class="set-row is-switch" for="settingAttachmentTextFallback">
+                  <span class="set-text">
+                    <span class="set-label">Paste file text into the message</span>
+                    <span class="set-desc">Converts PDFs and text files to Markdown. Skipped for models with less than 16K tokens of context.</span>
+                  </span>
+                  <input type="checkbox" class="switch" id="settingAttachmentTextFallback">
+                </label>
+                <label class="set-row is-switch" for="settingAttachmentOcr">
+                  <span class="set-text">
+                    <span class="set-label">Read text in images</span>
+                    <span class="set-desc">For models without vision. Loads the OCR engine the first time it's used.</span>
+                  </span>
+                  <input type="checkbox" class="switch" id="settingAttachmentOcr">
+                </label>
+                <div class="set-row">
+                  <div class="set-text">
+                    <label class="set-label" for="settingAttachmentMaxChars">Character limit</label>
+                    <p class="set-desc">Longer text is cut off.</p>
+                  </div>
+                  <div class="set-control is-narrow">
+                    <input class="field-input" id="settingAttachmentMaxChars" type="number" min="2000" max="500000" step="1000" value="48000">
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
           <section class="settings-pane" data-settings-pane="providers" aria-labelledby="providersTitle">
             <h2 class="settings-pane-title" id="providersTitle">Providers</h2>
-            <p class="settings-pane-lede">Providers that Chat can use. The model menu lists all available models. If a request does not specify a model, Chat uses the default provider.</p>
+            <p class="settings-pane-lede">The services your models come from. Every model from every provider appears in the model menu.</p>
 
-            <div class="settings-section">
-              <h3 class="settings-section-title">Your providers</h3>
-              <p class="field-hint">Select Edit to change a name or URL. Chat uses the default provider only when a request does not specify a model.</p>
+            <div class="set-group">
+              <h3 class="set-group-title">Your providers</h3>
               <ul id="providerList" class="provider-list" aria-live="polite"></ul>
-              <p id="providerEmpty" class="field-hint">No providers yet. Add a base URL below.</p>
+              <p id="providerEmpty" class="set-empty">No providers yet. Add one below.</p>
               <div class="builtin-connect is-hidden" data-connect-panel>
                 <p class="builtin-connect-text"></p>
                 <div class="builtin-connect-codex">
@@ -468,483 +660,310 @@
               </div>
             </div>
 
-            <div class="settings-section">
-              <h3 class="settings-section-title" id="providerFormTitle">Add a provider</h3>
-              <div class="settings-row">
-                <label class="field-label" for="providerName">Name</label>
-                <div>
-                  <input class="field-input" id="providerName" type="text" maxlength="64" placeholder="OpenAI, Claude, or home lab" autocomplete="off" spellcheck="false">
-                  <p class="field-hint">Chat shows this name in the model menu and provider list.</p>
+            <div class="set-group">
+              <h3 class="set-group-title" id="providerFormTitle">Add a provider</h3>
+              <div class="set-panel">
+                <div class="set-row">
+                  <div class="set-text">
+                    <label class="set-label" for="providerName">Name</label>
+                    <p class="set-desc">How it's labeled in the model menu.</p>
+                  </div>
+                  <div class="set-control">
+                    <input class="field-input" id="providerName" type="text" maxlength="64" placeholder="Home lab" autocomplete="off" spellcheck="false">
+                  </div>
                 </div>
-              </div>
-              <div class="settings-row">
-                <label class="field-label" for="providerApiStyle">API style</label>
-                <div>
-                  <select class="field-select" id="providerApiStyle" aria-describedby="providerFormHint">
-                    <option value="auto" selected>Auto-detect</option>
-                    <option value="openai">OpenAI-compatible</option>
-                    <option value="anthropic">Anthropic Messages</option>
-                  </select>
-                  <p class="field-hint">Select Auto-detect unless the provider requires a specific API style.</p>
+                <div class="set-row">
+                  <div class="set-text">
+                    <label class="set-label" for="providerBase">Base URL</label>
+                    <p class="set-desc">Usually ends in <code>/v1</code>.</p>
+                  </div>
+                  <div class="set-control is-wide">
+                    <input class="field-input" id="providerBase" type="url" placeholder="https://api.openai.com/v1" autocomplete="off" spellcheck="false">
+                  </div>
                 </div>
-              </div>
-              <div class="settings-row">
-                <label class="field-label" for="providerBase">Base URL</label>
-                <div>
-                  <input class="field-input" id="providerBase" type="url" placeholder="https://api.openai.com/v1" autocomplete="off" spellcheck="false">
-                  <p class="field-hint">The URL must end in <code>/v1</code>.</p>
+                <div class="set-row">
+                  <div class="set-text">
+                    <label class="set-label" for="providerToken">API key</label>
+                    <p class="set-desc">Optional. For Cloudflare Access, enter <code>cf-access:&lt;id&gt;:&lt;secret&gt;</code>.</p>
+                  </div>
+                  <div class="set-control is-wide">
+                    <input class="field-input" id="providerToken" type="password" placeholder="API token, or leave blank" autocomplete="off" spellcheck="false">
+                  </div>
                 </div>
-              </div>
-              <div class="settings-row">
-                <label class="field-label" for="providerToken">API token</label>
-                <div>
-                  <input class="field-input" id="providerToken" type="password" placeholder="sk-… or leave blank" autocomplete="off" spellcheck="false">
-                  <p class="field-hint">The token is optional. For Cloudflare Access, use <code>cf-access:&lt;client-id&gt;:&lt;client-secret&gt;</code>. During an edit, leave this field blank to keep the saved token.</p>
+                <div class="set-row">
+                  <div class="set-text">
+                    <label class="set-label" for="providerApiStyle">API style</label>
+                    <p class="set-desc">Auto-detect works for most providers.</p>
+                  </div>
+                  <div class="set-control">
+                    <select class="field-select" id="providerApiStyle" aria-describedby="providerFormHint">
+                      <option value="auto" selected>Auto-detect</option>
+                      <option value="openai">OpenAI-compatible</option>
+                      <option value="anthropic">Anthropic Messages</option>
+                    </select>
+                  </div>
                 </div>
+                <label class="set-row is-switch" for="providerAllowInsecureTls">
+                  <span class="set-text">
+                    <span class="set-label">Allow invalid HTTPS certificates</span>
+                    <span class="set-desc">Only for self-signed local servers. Anyone on the network could read the traffic.</span>
+                  </span>
+                  <input type="checkbox" class="switch" id="providerAllowInsecureTls">
+                </label>
               </div>
-              <label class="field-check" for="providerAllowInsecureTls">
-                <input id="providerAllowInsecureTls" type="checkbox">
-                <span>Allow invalid HTTPS certificates <span style="color:var(--color-muted)">(unsafe)</span></span>
-              </label>
-              <p id="providerFormHint" class="field-hint">Select Add to test the connection automatically.</p>
-              <div class="skills-toolbar">
+              <div class="set-actions">
                 <button type="button" class="btn btn-primary" id="btnSaveProvider">Add</button>
                 <button type="button" class="btn btn-ghost is-hidden" id="btnCancelProviderEdit">Cancel</button>
+                <p id="providerFormHint" class="set-note">Adding a provider tests the connection.</p>
               </div>
-              <p id="providerConnectionTest" class="field-hint connection-test is-hidden" role="status" aria-live="polite">
+              <p id="providerConnectionTest" class="set-note connection-test is-hidden" role="status" aria-live="polite">
                 <strong id="providerConnectionTitle">Connection test</strong>
                 <span id="providerConnectionDetail"></span>
               </p>
               <span id="providerConnectionMark" class="is-hidden" aria-hidden="true"></span>
-              <p id="providerError" class="field-hint provider-error is-hidden" role="alert"></p>
-            </div>
-          </section>
-
-          <section class="settings-pane is-active" data-settings-pane="personalization" aria-labelledby="settingsTitle">
-            <h2 class="settings-pane-title" id="settingsTitle">Personalization</h2>
-            <p class="settings-pane-lede">The app stores this information with your local data. The app sends it as a system prompt with each message.</p>
-            <div class="settings-section">
-              <h3 class="settings-section-title" id="personalizationProfileTitle">Personal profile</h3>
-              <div class="settings-row">
-                <label class="field-label" for="settingName">Your name</label>
-                <div>
-                  <input class="field-input" id="settingName" type="text" autocomplete="name" placeholder="Optional">
-                  <p class="field-hint">All profiles use this name and the account avatar uses its initials.</p>
-                </div>
-              </div>
-              <div class="settings-row-stack">
-                <label class="field-label" for="settingAbout">About you</label>
-                <textarea class="field-textarea" id="settingAbout" placeholder="Interests, role, preferred tone…"></textarea>
-                <p class="field-hint">Only the active profile stores this information. The model uses it to customize replies.</p>
-              </div>
-            </div>
-            <div class="settings-section">
-              <h3 class="settings-section-title">Instructions</h3>
-              <div class="settings-row-stack">
-                <label class="field-label" for="settingInstructions">Custom instructions</label>
-                <textarea class="field-textarea" id="settingInstructions" placeholder="How should the assistant behave?"></textarea>
-                <p class="field-hint">Project instructions replace these instructions when both are set.</p>
-              </div>
-            </div>
-            <div class="settings-section">
-              <h3 class="settings-section-title">Long-term memory</h3>
-              <div class="settings-row-stack">
-                <label class="field-label" for="settingMemory">Shared memory</label>
-                <textarea class="field-textarea" id="settingMemory" style="min-height:9rem" placeholder="Durable facts the model should remember across all chats and projects…"></textarea>
-                <p class="field-hint">Saved chats and projects in this profile use this memory. Ghost chats and projects with project-only memory do not use it. The model can replace this memory with a &lt;global_memory_update&gt; block.</p>
-              </div>
-            </div>
-            <div class="settings-section">
-              <h3 class="settings-section-title">Past conversations</h3>
-              <label class="field-check">
-                <input type="checkbox" id="settingChatRetrieval" checked>
-                <span>Search and reference past chats</span>
-              </label>
-              <p class="field-hint">Enabled by default, including outside Agent mode. The model can search and read other chats when useful. Activity shows the query, retrieved excerpts, and links to original messages. Retrieved text is sent to the selected model provider.</p>
-              <p class="field-hint">Project chats search only their project; other chats search non-project chats in the current profile. Temporary Ghost chats never search, appear in results, or use or update saved memory. Turning this off blocks future retrieval across the app; saved memory above is managed separately.</p>
-            </div>
-          </section>
-
-          <section class="settings-pane" data-settings-pane="profiles">
-            <h2 class="settings-pane-title">Profiles</h2>
-            <p class="settings-pane-lede">Use profiles to keep personal, work, and other information separate in one local account.</p>
-            <div class="profile-security-note">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3v8Z"/><path d="m9 12 2 2 4-4"/></svg>
-              <span>Profiles do not add another login. If encryption is enabled, the same passphrase unlocks every profile.</span>
-            </div>
-            <div class="settings-section">
-              <div class="profiles-settings-head">
-                <div>
-                  <h3 class="settings-section-title">Your profiles</h3>
-                  <p class="field-hint">The selected profile contains its chats, projects, notifications, instructions, and memory.</p>
-                </div>
-                <button type="button" class="btn btn-primary" id="btnSettingsProfileCreate">New profile</button>
-              </div>
-              <div class="profiles-settings-list" id="profilesSettingsList"></div>
-            </div>
-          </section>
-
-          <section class="settings-pane" data-settings-pane="appearance">
-            <h2 class="settings-pane-title">Appearance</h2>
-            <p class="settings-pane-lede">Set the theme, fonts, text size, and chat background.</p>
-            <div class="settings-section">
-              <h3 class="settings-section-title">Theme</h3>
-              <div class="segmented" id="themeToggle" role="tablist" aria-label="Theme">
-                <button type="button" data-theme-choice="dark" class="is-active" role="tab" aria-selected="true">Dark</button>
-                <button type="button" data-theme-choice="light" role="tab" aria-selected="false">Light</button>
-                <button type="button" data-theme-choice="system" role="tab" aria-selected="false">System</button>
-              </div>
-            </div>
-            <div class="settings-section">
-              <h3 class="settings-section-title">Fonts</h3>
-              <div class="settings-row">
-                <label class="field-label" for="settingFontBody">UI text</label>
-                <div>
-                  <select class="field-select" id="settingFontBody">
-                    <option value="inter">Inter</option>
-                    <option value="source-sans-3">Source Sans 3</option>
-                    <option value="ibm-plex-sans">IBM Plex Sans</option>
-                    <option value="atkinson-hyperlegible">Atkinson Hyperlegible</option>
-                    <option value="literata">Literata</option>
-                  </select>
-                  <p class="field-hint">This font applies to body text, the composer, and most controls.</p>
-                </div>
-              </div>
-              <div class="settings-row">
-                <label class="field-label" for="settingFontDisplay">Headings</label>
-                <div>
-                  <select class="field-select" id="settingFontDisplay">
-                    <option value="space-grotesk">Space Grotesk</option>
-                    <option value="syne">Syne</option>
-                    <option value="dm-sans">DM Sans</option>
-                    <option value="instrument-sans">Instrument Sans</option>
-                    <option value="fraunces">Fraunces</option>
-                  </select>
-                  <p class="field-hint">This font applies to titles and section labels. The sidebar name always uses Syne.</p>
-                </div>
-              </div>
-              <div class="settings-row">
-                <label class="field-label">Text size</label>
-                <div class="segmented" id="fontScaleToggle" role="tablist" aria-label="Text size">
-                  <button type="button" data-font-scale="compact" role="tab" aria-selected="false">Compact</button>
-                  <button type="button" data-font-scale="default" class="is-active" role="tab" aria-selected="true">Default</button>
-                  <button type="button" data-font-scale="large" role="tab" aria-selected="false">Large</button>
-                </div>
-              </div>
-            </div>
-            <div class="settings-section">
-              <h3 class="settings-section-title">Chat background</h3>
-              <div class="settings-row">
-                <label class="field-label" for="settingChatBackgroundUrl">Image</label>
-                <div class="background-image-controls">
-                  <input class="field-input" id="settingChatBackgroundUrl" type="url" inputmode="url" autocomplete="off" placeholder="https://example.com/background.jpg">
-                  <div class="background-image-actions">
-                    <input id="settingChatBackgroundFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif" hidden>
-                    <button type="button" class="btn btn-outline" id="btnChatBackgroundFile">Choose local image</button>
-                    <button type="button" class="btn btn-ghost" id="btnChatBackgroundClear">Remove</button>
-                  </div>
-                  <p class="field-hint" id="chatBackgroundFileHint">Enter a remote URL or choose a PNG, JPEG, WebP, GIF, or AVIF file up to 1 MB.</p>
-                </div>
-              </div>
-              <div class="settings-row">
-                <span class="field-label" id="chatBackgroundPositionLabel">Position</span>
-                <div>
-                  <input id="settingChatBackgroundPosition" type="hidden" value="center">
-                  <div class="background-position-preview" id="chatBackgroundPositionPreview">
-                    <img id="chatBackgroundPositionImage" alt="" referrerpolicy="no-referrer">
-                    <div class="background-position-shade" aria-hidden="true"></div>
-                    <div class="background-position-grid" role="radiogroup" aria-labelledby="chatBackgroundPositionLabel">
-                      <button type="button" role="radio" aria-checked="false" aria-label="Top left" title="Top left" data-background-position="top left"><span></span></button>
-                      <button type="button" role="radio" aria-checked="false" aria-label="Top" title="Top" data-background-position="top"><span></span></button>
-                      <button type="button" role="radio" aria-checked="false" aria-label="Top right" title="Top right" data-background-position="top right"><span></span></button>
-                      <button type="button" role="radio" aria-checked="false" aria-label="Left" title="Left" data-background-position="left"><span></span></button>
-                      <button type="button" role="radio" aria-checked="true" aria-label="Center" title="Center" data-background-position="center"><span></span></button>
-                      <button type="button" role="radio" aria-checked="false" aria-label="Right" title="Right" data-background-position="right"><span></span></button>
-                      <button type="button" role="radio" aria-checked="false" aria-label="Bottom left" title="Bottom left" data-background-position="bottom left"><span></span></button>
-                      <button type="button" role="radio" aria-checked="false" aria-label="Bottom" title="Bottom" data-background-position="bottom"><span></span></button>
-                      <button type="button" role="radio" aria-checked="false" aria-label="Bottom right" title="Bottom right" data-background-position="bottom right"><span></span></button>
-                    </div>
-                    <span class="background-position-empty">Choose an image to preview</span>
-                  </div>
-                  <p class="field-hint">Select the part of the image that stays fixed when the chat area changes size.</p>
-                </div>
-              </div>
-              <div class="settings-row">
-                <label class="field-label" for="settingChatBackgroundOverlay">Overlay opacity</label>
-                <div class="background-opacity-control">
-                  <input id="settingChatBackgroundOverlay" type="range" min="0" max="100" step="1" value="72">
-                  <output id="settingChatBackgroundOverlayValue" for="settingChatBackgroundOverlay">72%</output>
-                  <p class="field-hint">A dark overlay makes text easier to read. Chat text changes to black or white automatically.</p>
-                </div>
-              </div>
-            </div>
-            <div class="settings-section">
-              <h3 class="settings-section-title">Reset</h3>
-              <button type="button" class="btn btn-outline" id="btnAppearanceReset">Reset to defaults</button>
-              <p class="field-hint" style="margin-top:0.5rem">Reset the theme, fonts, text size, and chat background to their default values.</p>
-            </div>
-          </section>
-
-          <section class="settings-pane" data-settings-pane="thinking">
-            <h2 class="settings-pane-title">Thinking</h2>
-            <p class="settings-pane-lede">Set the reasoning effort and how Chat displays the reasoning.</p>
-            <div class="settings-section">
-              <div class="settings-row">
-                <label class="field-label" for="settingThinkingEffort">Intensity</label>
-                <div>
-                  <select class="field-select" id="settingThinkingEffort">
-                    <option value="auto">Auto (model default)</option>
-                  </select>
-                  <p class="field-hint">Only the values that the selected model supports are available.</p>
-                </div>
-              </div>
-              <div class="settings-row">
-                <label class="field-label" for="settingThinking">Display</label>
-                <div>
-                  <select class="field-select" id="settingThinking">
-                    <option value="collapsed">Collapse when done (show live preview)</option>
-                    <option value="hidden">Hide completely</option>
-                    <option value="visible">Always show</option>
-                  </select>
-                  <p class="field-hint">Collapse when done shows live reasoning below the status. Chat hides the reasoning when the model finishes.</p>
-                </div>
-              </div>
-              <label class="field-check">
-                  <input type="checkbox" id="settingAutoOpenTraceSidebar">
-                <span>
-                  <strong style="color:var(--color-ink);font-weight:600">Open activity sidebar on live activity</strong>
-                  <span style="display:block;color:var(--color-muted);font-size:var(--text-xs);margin-top:0.2rem">
-                    When enabled, the right sidebar opens automatically as reasoning or tool activity streams in.
-                  </span>
-                </span>
-              </label>
+              <p id="providerError" class="set-note provider-error is-hidden" role="alert"></p>
             </div>
           </section>
 
           <section class="settings-pane" data-settings-pane="agent-capabilities">
-            <h2 class="settings-pane-title">Agent capabilities</h2>
-            <p class="settings-pane-lede">The model can use these tools in Agent mode. Open the composer <strong>+</strong> menu to select a tool, or type <code>@</code> to use a tool one time.</p>
-            <div class="settings-section">
-              <h3 class="settings-section-title">Approvals</h3>
-              <p class="field-hint" style="margin:0 0 0.75rem">This setting applies to all capabilities below. File writes and terminal commands always require your approval.</p>
-              <div class="segmented segmented-stack" id="approvalModeToggle" role="tablist" aria-label="Tool approval">
-                <button type="button" data-approval-mode="auto_safe" role="tab" aria-selected="false">Auto-approve safe actions</button>
-                <button type="button" data-approval-mode="manual" class="is-active" role="tab" aria-selected="true">Ask before every action</button>
-              </div>
-              <p class="field-hint" style="margin-top:0.65rem">Auto-approve safe actions lets web searches, URL retrieval, file reads, and browser control proceed without asking. Ask before every action pauses each request until you choose Allow or Deny. Changes apply to new turns.</p>
-            </div>
-            <div class="settings-section">
-              <h3 class="settings-section-title">Web search</h3>
-              <label class="field-check">
-                <input type="checkbox" id="settingSkillWebSearch" checked>
-                <span>
-                  <strong style="color:var(--color-ink);font-weight:600">Enable web search</strong>
-                  <span style="display:block;color:var(--color-muted);font-size:var(--text-xs);margin-top:0.2rem">
-                    Let the model search the web in agent mode.
-                  </span>
-                </span>
-              </label>
-              <div class="capability-advanced" data-capability-advanced="web-search">
-                <button type="button" class="capability-advanced-toggle" id="btnWebSearchAdvanced" aria-expanded="false" aria-controls="webSearchOptions">
-                  Advanced
-                  <span class="capability-advanced-caret" aria-hidden="true">▾</span>
-                </button>
-                <div id="webSearchOptions" class="capability-advanced-panel is-collapsed" hidden>
-                  <div class="settings-row">
-                    <label class="field-label" for="settingWebSearchProvider">Provider</label>
-                    <select class="field-select" id="settingWebSearchProvider">
-                      <option value="auto">Auto</option>
-                      <option value="parallel">Parallel (free)</option>
-                      <option value="tinyfish">TinyFish</option>
-                      <option value="searxng">SearXNG</option>
-                      <option value="duckduckgo">DuckDuckGo</option>
-                    </select>
+            <h2 class="settings-pane-title">Agent tools</h2>
+            <p class="settings-pane-lede">What the model can do in Agent mode. Turn tools on for a message from the composer's <kbd>+</kbd> menu, or type <kbd>@</kbd>.</p>
+
+            <div class="set-group">
+              <div class="set-panel">
+                <div class="set-row">
+                  <div class="set-text">
+                    <span class="set-label" id="approvalModeLabel">Approvals</span>
+                    <p class="set-desc">Safe actions are searches, page reads, file reads, and browser steps. File edits and terminal commands always ask.</p>
                   </div>
-                  <div class="settings-row" data-web-search-provider="parallel">
-                    <label class="field-label" for="settingWebSearchParallelApiKey">API key</label>
-                    <div>
+                  <div class="set-control is-auto">
+                    <div class="segmented" id="approvalModeToggle" role="tablist" aria-labelledby="approvalModeLabel">
+                      <button type="button" data-approval-mode="manual" class="is-active" role="tab" aria-selected="true">Ask every time</button>
+                      <button type="button" data-approval-mode="auto_safe" role="tab" aria-selected="false">Allow safe actions</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="set-group">
+              <h3 class="set-group-title">Web</h3>
+              <div class="set-panel">
+                <label class="set-row is-switch" for="settingSkillWebSearch">
+                  <span class="set-text">
+                    <span class="set-label">Web search</span>
+                    <span class="set-desc">Search the web and read result snippets.</span>
+                  </span>
+                  <input type="checkbox" class="switch" id="settingSkillWebSearch" checked>
+                </label>
+                <button type="button" class="set-disclosure" id="btnWebSearchAdvanced" aria-expanded="false" aria-controls="webSearchOptions">
+                  <span>Search options</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                </button>
+                <div id="webSearchOptions" class="set-subpanel is-collapsed" hidden>
+                  <div class="set-row">
+                    <div class="set-text">
+                      <label class="set-label" for="settingWebSearchProvider">Search engine</label>
+                    </div>
+                    <div class="set-control">
+                      <select class="field-select" id="settingWebSearchProvider">
+                        <option value="auto">Auto</option>
+                        <option value="parallel">Parallel (free)</option>
+                        <option value="tinyfish">TinyFish</option>
+                        <option value="searxng">SearXNG</option>
+                        <option value="duckduckgo">DuckDuckGo</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="set-row" data-web-search-provider="parallel">
+                    <div class="set-text">
+                      <label class="set-label" for="settingWebSearchParallelApiKey">Parallel API key</label>
+                      <p class="set-desc">Optional. Without one, searches use the free Basic mode.</p>
+                    </div>
+                    <div class="set-control">
                       <input class="field-input" id="settingWebSearchParallelApiKey" type="password" placeholder="Optional" spellcheck="false" autocomplete="off">
-                      <p class="field-hint">The key is optional. Without a key, the provider uses the free MCP service in Basic mode. A key enables all modes.</p>
                     </div>
                   </div>
-                  <div class="settings-row" data-web-search-provider="parallel" data-web-search-when="parallel-keyed">
-                    <label class="field-label" for="settingWebSearchParallelMode">Mode</label>
-                    <select class="field-select" id="settingWebSearchParallelMode">
-                      <option value="turbo">Turbo</option>
-                      <option value="fast" selected>Fast</option>
-                      <option value="basic">Basic</option>
-                      <option value="advanced">Advanced</option>
-                    </select>
-                  </div>
-                  <div class="settings-row" data-web-search-provider="tinyfish">
-                    <label class="field-label" for="settingWebSearchTinyfishApiKey">API key</label>
-                    <div>
-                      <input class="field-input" id="settingWebSearchTinyfishApiKey" type="password" placeholder="TINYFISH_API_KEY or paste here" spellcheck="false" autocomplete="off">
-                      <p class="field-hint">Free key from <a href="https://agent.tinyfish.ai/api-keys" target="_blank" rel="noopener noreferrer">agent.tinyfish.ai</a>.</p>
+                  <div class="set-row" data-web-search-provider="parallel" data-web-search-when="parallel-keyed">
+                    <div class="set-text">
+                      <label class="set-label" for="settingWebSearchParallelMode">Parallel mode</label>
+                    </div>
+                    <div class="set-control">
+                      <select class="field-select" id="settingWebSearchParallelMode">
+                        <option value="turbo">Turbo</option>
+                        <option value="fast" selected>Fast</option>
+                        <option value="basic">Basic</option>
+                        <option value="advanced">Advanced</option>
+                      </select>
                     </div>
                   </div>
-                  <div class="settings-row" data-web-search-provider="auto searxng">
-                    <label class="field-label" for="settingWebSearchSearxng">SearXNG URL</label>
-                    <div>
+                  <div class="set-row" data-web-search-provider="tinyfish">
+                    <div class="set-text">
+                      <label class="set-label" for="settingWebSearchTinyfishApiKey">TinyFish API key</label>
+                      <p class="set-desc">Get a free key at <a href="https://agent.tinyfish.ai/api-keys" target="_blank" rel="noopener noreferrer">agent.tinyfish.ai</a>.</p>
+                    </div>
+                    <div class="set-control">
+                      <input class="field-input" id="settingWebSearchTinyfishApiKey" type="password" placeholder="Paste key" spellcheck="false" autocomplete="off">
+                    </div>
+                  </div>
+                  <div class="set-row" data-web-search-provider="auto searxng">
+                    <div class="set-text">
+                      <label class="set-label" for="settingWebSearchSearxng">SearXNG URL</label>
+                      <p class="set-desc" data-web-search-provider="searxng">Required for SearXNG.</p>
+                      <p class="set-desc" data-web-search-provider="auto">Optional. Tried before DuckDuckGo.</p>
+                    </div>
+                    <div class="set-control">
                       <input class="field-input" id="settingWebSearchSearxng" type="url" placeholder="https://searx.example.com" spellcheck="false" autocomplete="off">
-                      <p class="field-hint" data-web-search-provider="searxng">Required for SearXNG.</p>
-                      <p class="field-hint" data-web-search-provider="auto">The URL is optional. The app tries SearXNG first and then tries DuckDuckGo.</p>
                     </div>
                   </div>
-                  <div class="settings-row">
-                    <label class="field-label" for="settingWebSearchResults">Results</label>
-                    <input class="field-input" id="settingWebSearchResults" type="number" min="1" max="20" step="1" value="6">
+                  <div class="set-row">
+                    <div class="set-text">
+                      <label class="set-label" for="settingWebSearchResults">Results per search</label>
+                    </div>
+                    <div class="set-control is-narrow">
+                      <input class="field-input" id="settingWebSearchResults" type="number" min="1" max="20" step="1" value="6">
+                    </div>
                   </div>
-                  <div class="settings-row">
-                    <label class="field-label" for="settingWebSearchRecency">Recency</label>
-                    <select class="field-select" id="settingWebSearchRecency">
-                      <option value="any">Any time</option>
-                      <option value="day">Past day</option>
-                      <option value="week">Past week</option>
-                      <option value="month">Past month</option>
-                      <option value="year">Past year</option>
-                    </select>
+                  <div class="set-row">
+                    <div class="set-text">
+                      <label class="set-label" for="settingWebSearchRecency">Published</label>
+                    </div>
+                    <div class="set-control">
+                      <select class="field-select" id="settingWebSearchRecency">
+                        <option value="any">Any time</option>
+                        <option value="day">Past day</option>
+                        <option value="week">Past week</option>
+                        <option value="month">Past month</option>
+                        <option value="year">Past year</option>
+                      </select>
+                    </div>
                   </div>
-                  <div class="capability-advanced" data-capability-advanced="web-search-more">
-                    <button type="button" class="capability-advanced-toggle" id="btnWebSearchMore" aria-expanded="false" aria-controls="webSearchMoreOptions">
-                      More filters
-                      <span class="capability-advanced-caret" aria-hidden="true">▾</span>
-                    </button>
-                    <div id="webSearchMoreOptions" class="capability-advanced-panel is-collapsed" hidden>
-                      <div class="settings-row">
-                        <label class="field-label" for="settingWebSearchRegion">Region</label>
-                        <div>
-                          <input class="field-input" id="settingWebSearchRegion" type="text" list="webSearchRegionOptions" maxlength="5" value="us-en" spellcheck="false" autocomplete="off">
-                          <datalist id="webSearchRegionOptions">
-                            <option value="wt-wt">Worldwide</option>
-                            <option value="us-en">United States</option>
-                            <option value="uk-en">United Kingdom</option>
-                            <option value="ca-en">Canada (English)</option>
-                            <option value="ca-fr">Canada (French)</option>
-                            <option value="au-en">Australia</option>
-                            <option value="de-de">Germany</option>
-                            <option value="fr-fr">France</option>
-                            <option value="es-es">Spain</option>
-                            <option value="it-it">Italy</option>
-                            <option value="jp-jp">Japan</option>
-                          </datalist>
-                        </div>
-                      </div>
-                      <div class="settings-row" data-web-search-when="safesearch">
-                        <label class="field-label" for="settingWebSearchSafeSearch">SafeSearch</label>
-                        <select class="field-select" id="settingWebSearchSafeSearch">
-                          <option value="moderate">Moderate</option>
-                          <option value="on">Strict</option>
-                          <option value="off">Off</option>
-                        </select>
-                      </div>
-                      <div class="settings-row">
-                        <label class="field-label" for="settingWebSearchDepth">Page depth</label>
-                        <select class="field-select" id="settingWebSearchDepth">
-                          <option value="off">Snippets only</option>
-                          <option value="auto">Auto: 3 pages</option>
-                          <option value="light">Light: 2 pages</option>
-                          <option value="standard">Standard: 4 pages</option>
-                          <option value="deep">Deep: 6 pages</option>
-                        </select>
-                      </div>
-                      <div class="settings-row" data-web-search-when="page-chars">
-                        <label class="field-label" for="settingWebSearchPageMaxChars">Maximum page characters</label>
-                        <div>
-                          <input class="field-input" id="settingWebSearchPageMaxChars" type="number" min="0" max="200000" step="500" value="0">
-                          <p class="field-hint">Enter 0 to use the default value for the selected page depth. This setting applies only when page depth is on.</p>
-                        </div>
-                      </div>
+                  <div class="set-row">
+                    <div class="set-text">
+                      <label class="set-label" for="settingWebSearchRegion">Region</label>
+                    </div>
+                    <div class="set-control is-narrow">
+                      <input class="field-input" id="settingWebSearchRegion" type="text" list="webSearchRegionOptions" maxlength="5" value="us-en" spellcheck="false" autocomplete="off">
+                      <datalist id="webSearchRegionOptions">
+                        <option value="wt-wt">Worldwide</option>
+                        <option value="us-en">United States</option>
+                        <option value="uk-en">United Kingdom</option>
+                        <option value="ca-en">Canada (English)</option>
+                        <option value="ca-fr">Canada (French)</option>
+                        <option value="au-en">Australia</option>
+                        <option value="de-de">Germany</option>
+                        <option value="fr-fr">France</option>
+                        <option value="es-es">Spain</option>
+                        <option value="it-it">Italy</option>
+                        <option value="jp-jp">Japan</option>
+                      </datalist>
+                    </div>
+                  </div>
+                  <div class="set-row" data-web-search-when="safesearch">
+                    <div class="set-text">
+                      <label class="set-label" for="settingWebSearchSafeSearch">SafeSearch</label>
+                    </div>
+                    <div class="set-control">
+                      <select class="field-select" id="settingWebSearchSafeSearch">
+                        <option value="moderate">Moderate</option>
+                        <option value="on">Strict</option>
+                        <option value="off">Off</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="set-row">
+                    <div class="set-text">
+                      <label class="set-label" for="settingWebSearchDepth">Read full pages</label>
+                      <p class="set-desc">Open top results and read them, not just their snippets.</p>
+                    </div>
+                    <div class="set-control">
+                      <select class="field-select" id="settingWebSearchDepth">
+                        <option value="off">Snippets only</option>
+                        <option value="auto">Auto (3 pages)</option>
+                        <option value="light">2 pages</option>
+                        <option value="standard">4 pages</option>
+                        <option value="deep">6 pages</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="set-row" data-web-search-when="page-chars">
+                    <div class="set-text">
+                      <label class="set-label" for="settingWebSearchPageMaxChars">Characters per page</label>
+                      <p class="set-desc">0 uses the default for the page count.</p>
+                    </div>
+                    <div class="set-control is-narrow">
+                      <input class="field-input" id="settingWebSearchPageMaxChars" type="number" min="0" max="200000" step="500" value="0">
                     </div>
                   </div>
                 </div>
-              </div>
-            </div>
-            <div class="settings-section">
-              <h3 class="settings-section-title">Fetch URL</h3>
-              <label class="field-check">
-                <input type="checkbox" id="settingSkillFetchUrl" checked>
-                <span>
-                  <strong style="color:var(--color-ink);font-weight:600">Enable fetch URL</strong>
-                  <span style="display:block;color:var(--color-muted);font-size:var(--text-xs);margin-top:0.2rem">
-                    Open a specified page and extract its readable text. The model can use offsets to retrieve more text.
+                <label class="set-row is-switch" for="settingSkillFetchUrl">
+                  <span class="set-text">
+                    <span class="set-label">Read web pages</span>
+                    <span class="set-desc">Open a link and read its text.</span>
                   </span>
-                </span>
-              </label>
-              <div class="capability-advanced" data-capability-advanced="fetch-url">
-                <button type="button" class="capability-advanced-toggle" id="btnFetchUrlAdvanced" aria-expanded="false" aria-controls="fetchUrlOptions">
-                  Advanced
-                  <span class="capability-advanced-caret" aria-hidden="true">▾</span>
+                  <input type="checkbox" class="switch" id="settingSkillFetchUrl" checked>
+                </label>
+                <button type="button" class="set-disclosure" id="btnFetchUrlAdvanced" aria-expanded="false" aria-controls="fetchUrlOptions">
+                  <span>Page reading options</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
                 </button>
-                <div id="fetchUrlOptions" class="capability-advanced-panel is-collapsed" hidden>
-                  <div class="settings-row">
-                    <label class="field-label" for="settingFetchUrlMaxChars">Maximum result characters</label>
-                    <div>
+                <div id="fetchUrlOptions" class="set-subpanel is-collapsed" hidden>
+                  <div class="set-row">
+                    <div class="set-text">
+                      <label class="set-label" for="settingFetchUrlMaxChars">Characters per read</label>
+                      <p class="set-desc">The model reads longer pages in parts. 8,000 works well.</p>
+                    </div>
+                    <div class="set-control is-narrow">
                       <input class="field-input" id="settingFetchUrlMaxChars" type="number" min="1000" max="200000" step="500" value="8000">
-                      <p class="field-hint">Set the maximum number of characters in each result. The recommended value is 8,000. The model uses offsets to read longer pages.</p>
                     </div>
                   </div>
                 </div>
+                <label class="set-row is-switch" for="settingSkillDeepResearch">
+                  <span class="set-text">
+                    <span class="set-label">Deep research</span>
+                    <span class="set-desc">Several rounds of searching and reading before answering. Choose report length in the <kbd>+</kbd> menu.</span>
+                  </span>
+                  <input type="checkbox" class="switch" id="settingSkillDeepResearch" checked>
+                </label>
               </div>
             </div>
-            <div class="settings-section">
-              <h3 class="settings-section-title">Deep research</h3>
-              <label class="field-check">
-                <input type="checkbox" id="settingSkillDeepResearch" checked>
-                <span>
-                  <strong style="color:var(--color-ink);font-weight:600">Enable deep research</strong>
-                  <span style="display:block;color:var(--color-muted);font-size:var(--text-xs);margin-top:0.2rem">
-                    Search in multiple rounds, read sources, and compare evidence. The Comprehensive and Concise options use the same research depth. Select the answer length from the composer <strong>+</strong> menu.
+
+            <div class="set-group">
+              <h3 class="set-group-title">This computer</h3>
+              <div class="set-panel">
+                <label class="set-row is-switch" for="settingSkillBrowser">
+                  <span class="set-text">
+                    <span class="set-label">Browser</span>
+                    <span class="set-desc">Open and control Chrome or Edge. Asks before each action.</span>
                   </span>
-                </span>
-              </label>
-            </div>
-            <div class="settings-section">
-              <h3 class="settings-section-title">Browser</h3>
-              <label class="field-check">
-                <input type="checkbox" id="settingSkillBrowser">
-                <span>
-                  <strong style="color:var(--color-ink);font-weight:600">Enable browser</strong>
-                  <span style="display:block;color:var(--color-muted);font-size:var(--text-xs);margin-top:0.2rem">
-                    Let the model open and control Chrome or Edge. This capability requires Agent mode and your approval. Chrome or Edge must be installed.
+                  <input type="checkbox" class="switch" id="settingSkillBrowser">
+                </label>
+                <label class="set-row is-switch" for="settingSkillFilesystem">
+                  <span class="set-text">
+                    <span class="set-label">Files</span>
+                    <span class="set-desc">Read and edit files in the chat's workspace folder. Pick the folder from the composer.</span>
                   </span>
-                </span>
-              </label>
-            </div>
-            <div class="settings-section">
-              <h3 class="settings-section-title">File system</h3>
-              <label class="field-check">
-                <input type="checkbox" id="settingSkillFilesystem">
-                <span>
-                  <strong style="color:var(--color-ink);font-weight:600">Enable file system</strong>
-                  <span style="display:block;color:var(--color-muted);font-size:var(--text-xs);margin-top:0.2rem">
-                    Let the model read and edit files in the workspace for this chat. These file tools do not use a shell. Select the folder with the folder button next to the terminal. This capability requires Agent mode.
+                  <input type="checkbox" class="switch" id="settingSkillFilesystem">
+                </label>
+                <label class="set-row is-switch" for="settingSkillTerminal">
+                  <span class="set-text">
+                    <span class="set-label">Terminal</span>
+                    <span class="set-desc">Run commands in the workspace folder. Asks before each one, and blocks commands that delete data or need admin rights.</span>
                   </span>
-                </span>
-              </label>
-            </div>
-            <div class="settings-section">
-              <h3 class="settings-section-title">Terminal</h3>
-              <label class="field-check">
-                <input type="checkbox" id="settingSkillTerminal">
-                <span>
-                  <strong style="color:var(--color-ink);font-weight:600">Enable terminal</strong>
-                  <span style="display:block;color:var(--color-muted);font-size:var(--text-xs);margin-top:0.2rem">
-                    Let the model run one command at a time in the workspace for this chat. Each command requires your approval. The app blocks commands that can destroy data or increase privileges.
-                  </span>
-                </span>
-              </label>
-              <div class="capability-advanced" data-capability-advanced="terminal">
-                <button type="button" class="capability-advanced-toggle" id="btnTerminalAdvanced" aria-expanded="false" aria-controls="terminalOptions">
-                  Advanced
-                  <span class="capability-advanced-caret" aria-hidden="true">▾</span>
+                  <input type="checkbox" class="switch" id="settingSkillTerminal">
+                </label>
+                <button type="button" class="set-disclosure" id="btnTerminalAdvanced" aria-expanded="false" aria-controls="terminalOptions">
+                  <span>Terminal options</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
                 </button>
-                <div id="terminalOptions" class="capability-advanced-panel is-collapsed" hidden>
-                  <div class="settings-row">
-                    <label class="field-label" for="settingTerminalTimeout">Initial wait (seconds)</label>
-                    <div>
+                <div id="terminalOptions" class="set-subpanel is-collapsed" hidden>
+                  <div class="set-row">
+                    <div class="set-text">
+                      <label class="set-label" for="settingTerminalTimeout">Wait for output (seconds)</label>
+                      <p class="set-desc">After this, long commands keep running in the background and the model checks on them.</p>
+                    </div>
+                    <div class="set-control is-narrow">
                       <input class="field-input" id="settingTerminalTimeout" type="number" min="5" max="30" step="1" value="30">
-                      <p class="field-hint">Set the initial wait from 5 to 30 seconds. After this wait, the command continues in a session that the agent can check or stop. The session expires if the agent does not check it for 30 minutes. The terminal button in the composer opens a separate interactive panel.</p>
                     </div>
                   </div>
                 </div>
@@ -954,209 +973,345 @@
 
           <section class="settings-pane" data-settings-pane="skills">
             <h2 class="settings-pane-title">Skills</h2>
-            <p class="settings-pane-lede">Skills are Markdown files named <code>SKILL.md</code>. In Agent mode, the model can use <code>activate_skill</code> to load a relevant skill. The <code>name</code> and <code>description</code> frontmatter fields are optional.</p>
-            <div class="settings-section">
-              <div class="skills-toolbar">
-                <button type="button" class="btn btn-primary" id="btnSkillCreate">New skill</button>
-                <button type="button" class="btn btn-outline" id="btnSkillUpload">Upload .md</button>
-                <input type="file" id="skillFileInput" accept=".md,text/markdown,text/plain" hidden>
+            <p class="settings-pane-lede">Reusable instructions the model loads when a task calls for them in Agent mode. Each skill is a Markdown file, like <code>SKILL.md</code>.</p>
+            <div class="set-group">
+              <div class="set-group-head">
+                <h3 class="set-group-title">Your skills</h3>
+                <div class="set-group-actions">
+                  <button type="button" class="btn btn-ghost btn-small" id="btnSkillUpload">Upload file</button>
+                  <button type="button" class="btn btn-outline btn-small" id="btnSkillCreate">New skill</button>
+                  <input type="file" id="skillFileInput" accept=".md,text/markdown,text/plain" hidden>
+                </div>
               </div>
-              <p id="skillsEmpty" class="skills-empty">No skills yet. Upload a markdown file or create one.</p>
+              <p id="skillsEmpty" class="set-empty">No skills yet.</p>
               <ul id="skillsList" class="skills-list"></ul>
               <div id="skillEditor" class="skill-editor is-hidden">
-                <h3 class="settings-section-title" id="skillEditorTitle">Edit skill</h3>
+                <h3 class="set-group-title" id="skillEditorTitle">Edit skill</h3>
                 <input type="hidden" id="skillEditId" value="">
-                <div class="settings-row-stack">
-                  <label class="field-label" for="skillEditName">Name</label>
-                  <input class="field-input" id="skillEditName" type="text" maxlength="64" placeholder="e.g. Code review">
+                <div class="set-panel">
+                  <div class="set-row">
+                    <div class="set-text">
+                      <label class="set-label" for="skillEditName">Name</label>
+                    </div>
+                    <div class="set-control is-wide">
+                      <input class="field-input" id="skillEditName" type="text" maxlength="64" placeholder="Code review">
+                    </div>
+                  </div>
+                  <div class="set-row">
+                    <div class="set-text">
+                      <label class="set-label" for="skillEditDescription">When to use it</label>
+                      <p class="set-desc">The model reads this to decide whether to load the skill.</p>
+                    </div>
+                    <div class="set-control is-wide">
+                      <input class="field-input" id="skillEditDescription" type="text" maxlength="280" placeholder="Reviewing a pull request or diff">
+                    </div>
+                  </div>
+                  <div class="set-row is-stacked">
+                    <div class="set-text">
+                      <label class="set-label" for="skillEditContent">Instructions</label>
+                    </div>
+                    <textarea class="field-textarea is-code" id="skillEditContent" rows="10" placeholder="# Code review&#10;&#10;1. Read the whole diff first."></textarea>
+                  </div>
+                  <label class="set-row is-switch" for="skillEditEnabled">
+                    <span class="set-text">
+                      <span class="set-label">Enabled</span>
+                    </span>
+                    <input type="checkbox" class="switch" id="skillEditEnabled" checked>
+                  </label>
                 </div>
-                <div class="settings-row-stack">
-                  <label class="field-label" for="skillEditDescription">Description</label>
-                  <input class="field-input" id="skillEditDescription" type="text" maxlength="280" placeholder="When should the model use this?">
-                  <p class="field-hint">Write a short description of when to use this skill. The app shows the description in the list and to the model.</p>
-                </div>
-                <div class="settings-row-stack">
-                  <label class="field-label" for="skillEditContent">Markdown</label>
-                  <textarea class="field-textarea" id="skillEditContent" rows="10" placeholder="# Instructions&#10;&#10;Step-by-step guidance for the model…"></textarea>
-                </div>
-                <label class="field-check">
-                  <input type="checkbox" id="skillEditEnabled" checked>
-                  <span>Enabled (include in system prompt)</span>
-                </label>
-                <div class="skills-toolbar">
+                <div class="set-actions">
                   <button type="button" class="btn btn-primary" id="btnSkillSave">Save skill</button>
                   <button type="button" class="btn btn-ghost" id="btnSkillCancelEdit">Cancel</button>
                 </div>
-                <p id="skillsError" class="is-hidden" style="margin:0;font-size:var(--text-xs);color:var(--color-danger)"></p>
+                <p id="skillsError" class="set-note is-error is-hidden"></p>
               </div>
             </div>
           </section>
 
-          <section class="settings-pane" data-settings-pane="composer">
-            <h2 class="settings-pane-title">Composer</h2>
-            <p class="settings-pane-lede">Set the default model and the keyboard behavior for the composer.</p>
-            <div class="settings-section">
-              <h3 class="settings-section-title">Default model</h3>
-              <div class="settings-row">
-                <label class="field-label" for="settingDefaultModel">Model</label>
-                <select class="field-input" id="settingDefaultModel" aria-describedby="settingDefaultModelHint">
-                  <option value="">No models available</option>
-                </select>
+          <section class="settings-pane" data-settings-pane="appearance">
+            <h2 class="settings-pane-title">Appearance</h2>
+            <p class="settings-pane-lede">Theme, fonts, and text size apply right away. The chat background applies when you save.</p>
+            <div class="set-group">
+              <div class="set-panel">
+                <div class="set-row">
+                  <div class="set-text">
+                    <span class="set-label" id="themeToggleLabel">Theme</span>
+                  </div>
+                  <div class="set-control is-auto">
+                    <div class="segmented" id="themeToggle" role="tablist" aria-labelledby="themeToggleLabel">
+                      <button type="button" data-theme-choice="dark" class="is-active" role="tab" aria-selected="true">Dark</button>
+                      <button type="button" data-theme-choice="light" role="tab" aria-selected="false">Light</button>
+                      <button type="button" data-theme-choice="system" role="tab" aria-selected="false">System</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="set-row">
+                  <div class="set-text">
+                    <span class="set-label" id="fontScaleLabel">Text size</span>
+                  </div>
+                  <div class="set-control is-auto">
+                    <div class="segmented" id="fontScaleToggle" role="tablist" aria-labelledby="fontScaleLabel">
+                      <button type="button" data-font-scale="compact" role="tab" aria-selected="false">Compact</button>
+                      <button type="button" data-font-scale="default" class="is-active" role="tab" aria-selected="true">Default</button>
+                      <button type="button" data-font-scale="large" role="tab" aria-selected="false">Large</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="set-row">
+                  <div class="set-text">
+                    <label class="set-label" for="settingFontBody">Text font</label>
+                  </div>
+                  <div class="set-control">
+                    <select class="field-select" id="settingFontBody">
+                      <option value="inter">Inter</option>
+                      <option value="source-sans-3">Source Sans 3</option>
+                      <option value="ibm-plex-sans">IBM Plex Sans</option>
+                      <option value="atkinson-hyperlegible">Atkinson Hyperlegible</option>
+                      <option value="literata">Literata</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="set-row">
+                  <div class="set-text">
+                    <label class="set-label" for="settingFontDisplay">Heading font</label>
+                  </div>
+                  <div class="set-control">
+                    <select class="field-select" id="settingFontDisplay">
+                      <option value="space-grotesk">Space Grotesk</option>
+                      <option value="syne">Syne</option>
+                      <option value="dm-sans">DM Sans</option>
+                      <option value="instrument-sans">Instrument Sans</option>
+                      <option value="fraunces">Fraunces</option>
+                    </select>
+                  </div>
+                </div>
               </div>
-              <p class="field-hint" id="settingDefaultModelHint">Chats use this default until you choose a model in that chat. Choose Use default in the composer model menu to follow this setting again.</p>
             </div>
-            <div class="settings-section">
-              <label class="field-check">
-                <input type="checkbox" id="settingEnterSends" checked>
-                <span>Enter sends message <span style="color:var(--color-muted)">(Shift+Enter for a new line)</span></span>
-              </label>
-            </div>
-          </section>
-
-          <section class="settings-pane" data-settings-pane="attachments">
-            <h2 class="settings-pane-title">Attachments</h2>
-            <p class="settings-pane-lede">Control file uploads in Chat. By default, the paperclip is available when the selected model reports support for files.</p>
-            <div class="settings-section">
-              <h3 class="settings-section-title">Availability</h3>
-              <div class="settings-row">
-                <label class="field-label" for="settingAttachmentsMode">Attachments</label>
-                <select class="field-input" id="settingAttachmentsMode">
-                  <option value="auto">Auto: enable for supported models</option>
-                  <option value="on">Always enable paperclip</option>
-                  <option value="off">Disable attachments</option>
-                </select>
+            <div class="set-group">
+              <h3 class="set-group-title">Chat background</h3>
+              <div class="set-panel">
+                <div class="set-row is-stacked">
+                  <div class="set-text">
+                    <label class="set-label" for="settingChatBackgroundUrl">Image</label>
+                    <p class="set-desc" id="chatBackgroundFileHint">A web address, or a PNG, JPEG, WebP, GIF, or AVIF file up to 1 MB.</p>
+                  </div>
+                  <div class="background-image-controls">
+                    <input class="field-input" id="settingChatBackgroundUrl" type="url" inputmode="url" autocomplete="off" placeholder="https://example.com/background.jpg">
+                    <div class="background-image-actions">
+                      <input id="settingChatBackgroundFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif" hidden>
+                      <button type="button" class="btn btn-outline btn-small" id="btnChatBackgroundFile">Choose file</button>
+                      <button type="button" class="btn btn-ghost btn-small" id="btnChatBackgroundClear">Remove</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="set-row is-stacked">
+                  <div class="set-text">
+                    <span class="set-label" id="chatBackgroundPositionLabel">Anchor</span>
+                    <p class="set-desc">The part of the image that stays in view as the window resizes.</p>
+                  </div>
+                  <div>
+                    <input id="settingChatBackgroundPosition" type="hidden" value="center">
+                    <div class="background-position-preview" id="chatBackgroundPositionPreview">
+                      <img id="chatBackgroundPositionImage" alt="" referrerpolicy="no-referrer">
+                      <div class="background-position-shade" aria-hidden="true"></div>
+                      <div class="background-position-grid" role="radiogroup" aria-labelledby="chatBackgroundPositionLabel">
+                        <button type="button" role="radio" aria-checked="false" aria-label="Top left" title="Top left" data-background-position="top left"><span></span></button>
+                        <button type="button" role="radio" aria-checked="false" aria-label="Top" title="Top" data-background-position="top"><span></span></button>
+                        <button type="button" role="radio" aria-checked="false" aria-label="Top right" title="Top right" data-background-position="top right"><span></span></button>
+                        <button type="button" role="radio" aria-checked="false" aria-label="Left" title="Left" data-background-position="left"><span></span></button>
+                        <button type="button" role="radio" aria-checked="true" aria-label="Center" title="Center" data-background-position="center"><span></span></button>
+                        <button type="button" role="radio" aria-checked="false" aria-label="Right" title="Right" data-background-position="right"><span></span></button>
+                        <button type="button" role="radio" aria-checked="false" aria-label="Bottom left" title="Bottom left" data-background-position="bottom left"><span></span></button>
+                        <button type="button" role="radio" aria-checked="false" aria-label="Bottom" title="Bottom" data-background-position="bottom"><span></span></button>
+                        <button type="button" role="radio" aria-checked="false" aria-label="Bottom right" title="Bottom right" data-background-position="bottom right"><span></span></button>
+                      </div>
+                      <span class="background-position-empty">No image</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="set-row">
+                  <div class="set-text">
+                    <label class="set-label" for="settingChatBackgroundOverlay">Dimming</label>
+                    <p class="set-desc">Darkens the image so text stays readable.</p>
+                  </div>
+                  <div class="set-control background-opacity-control">
+                    <input id="settingChatBackgroundOverlay" type="range" min="0" max="100" step="1" value="72">
+                    <output id="settingChatBackgroundOverlayValue" for="settingChatBackgroundOverlay">72%</output>
+                  </div>
+                </div>
               </div>
-              <p class="field-hint">Auto disables the paperclip when the model does not report file support. Select Always enable paperclip to override this behavior.</p>
             </div>
-            <div class="settings-section">
-              <h3 class="settings-section-title">Text extraction fallback</h3>
-              <p class="field-hint" style="margin:0 0 0.65rem">This option is off by default. When it is on, the app converts PDF and text files to Markdown text. The app sends the text in an <code>Attachment:</code> block. Use this option for models that do not support files directly.</p>
-              <label class="field-check">
-                <input type="checkbox" id="settingAttachmentTextFallback">
-                <span>Extract PDF and text files into the prompt</span>
-              </label>
-              <label class="field-check" style="margin-top:0.55rem">
-                <input type="checkbox" id="settingAttachmentOcr">
-                <span>OCR images when the model lacks vision <span style="color:var(--color-muted)">(loads Tesseract.js on demand)</span></span>
-              </label>
-              <div class="settings-row" style="margin-top:0.75rem">
-                <label class="field-label" for="settingAttachmentMaxChars">Maximum extracted characters</label>
-                <input class="field-input" id="settingAttachmentMaxChars" type="number" min="2000" max="500000" step="1000" value="48000">
+            <div class="set-group">
+              <div class="set-panel">
+                <div class="set-row">
+                  <div class="set-text">
+                    <span class="set-label">Reset appearance</span>
+                    <p class="set-desc">Theme, fonts, text size, and background go back to their defaults.</p>
+                  </div>
+                  <div class="set-control is-auto">
+                    <button type="button" class="btn btn-outline btn-small" id="btnAppearanceReset">Reset</button>
+                  </div>
+                </div>
               </div>
-              <p class="field-hint">Text extraction stays off if the reported context limit is less than 16,000 tokens. If the context limit is unknown, text extraction can stay on. The app truncates text that exceeds the character limit.</p>
             </div>
           </section>
 
           <section class="settings-pane" data-settings-pane="data">
-            <h2 class="settings-pane-title">Local data</h2>
-            <p class="settings-pane-lede" id="settingsDataLede">Chats, projects, and settings are stored on disk by default.</p>
-            <p class="field-hint" id="settingsDataSummary" style="margin:0 0 0.85rem">Not available</p>
-            <div class="settings-section">
-              <h3 class="settings-section-title">Storage location</h3>
-              <div class="settings-data-path">
-                <strong>Data folder</strong>
-                <code id="settingsDataPath">Loading…</code>
-                <button type="button" class="btn btn-outline" id="btnOpenDataDir">Open folder</button>
-                <p class="settings-data-meta" id="settingsDataFiles">Not available</p>
-              </div>
-            </div>
-            <div class="settings-section" id="settingsEncryptionSection">
-              <h3 class="settings-section-title">Encryption at rest</h3>
-              <p class="field-hint" id="settingsEncryptionStatus" style="margin:0 0 0.65rem">Off. The app stores chats and settings as unencrypted JSON files.</p>
-              <p class="field-hint">Encryption applies only to app records. It does not apply to workspace files, downloads, terminal history, operating system caches, or browser profiles from older versions. Agent browsing uses temporary private sessions. The app can require you to sign in again after you lock or restart it.</p>
-              <div id="settingsEncryptionEnable" class="settings-encryption-form">
-                <label class="field">
-                  <span class="field-label">Passphrase</span>
-                  <input class="field-input" id="encryptionPassphrase" type="password" autocomplete="new-password" spellcheck="false" aria-describedby="encryptionPassphraseGuidance encryptionPassphraseWarning">
-                </label>
-                <label class="field">
-                  <span class="field-label">Confirm passphrase</span>
-                  <input class="field-input" id="encryptionPassphraseConfirm" type="password" autocomplete="new-password" spellcheck="false" aria-describedby="encryptionPassphraseWarning">
-                </label>
-                <p class="field-hint encryption-passphrase-warning is-hidden" id="encryptionPassphraseWarning" role="status" aria-live="polite"></p>
-                <button type="button" class="btn" id="btnEnableEncryption">Enable encryption</button>
-                <p class="field-hint" id="encryptionPassphraseGuidance" style="margin:0.45rem 0 0">The app encrypts chats, settings, provider tokens, and skill contents with Argon2id and AES-256-GCM. Use a passphrase with at least 16 characters. You must unlock the data after each restart. You cannot recover a forgotten passphrase.</p>
-              </div>
-              <div id="settingsEncryptionUnlock" class="settings-encryption-form is-hidden">
-                <label class="field">
-                  <span class="field-label">Passphrase</span>
-                  <input class="field-input" id="encryptionUnlockPassphrase" type="password" autocomplete="current-password" spellcheck="false">
-                </label>
-                <button type="button" class="btn" id="btnUnlockEncryption">Unlock</button>
-              </div>
-              <div id="settingsEncryptionActive" class="settings-encryption-form is-hidden">
-                <div class="settings-data-actions">
-                  <button type="button" class="btn btn-outline" id="btnLockEncryption">Lock session</button>
-                  <button type="button" class="btn btn-danger-ghost" id="btnDisableEncryption">Turn off encryption…</button>
-                </div>
-                <div id="settingsEncryptionDisable" class="settings-encryption-form is-hidden" style="margin-top:0.75rem">
-                  <label class="field">
-                    <span class="field-label">Passphrase to decrypt and disable</span>
-                    <input class="field-input" id="encryptionDisablePassphrase" type="password" autocomplete="current-password" spellcheck="false">
-                  </label>
-                  <button type="button" class="btn btn-danger-ghost" id="btnConfirmDisableEncryption">Confirm turn off</button>
+            <h2 class="settings-pane-title">Data &amp; encryption</h2>
+            <p class="settings-pane-lede" id="settingsDataLede">Everything is stored on this computer.</p>
+
+            <div class="set-group">
+              <h3 class="set-group-title">Storage</h3>
+              <div class="set-panel">
+                <div class="set-row is-stacked">
+                  <div class="set-text">
+                    <span class="set-label">Data folder</span>
+                    <p class="set-desc" id="settingsDataSummary">Not available</p>
+                  </div>
+                  <div class="settings-data-path">
+                    <code id="settingsDataPath">Loading…</code>
+                    <button type="button" class="btn btn-outline btn-small" id="btnOpenDataDir">Open folder</button>
+                  </div>
+                  <p class="set-desc" id="settingsDataFiles">Not available</p>
                 </div>
               </div>
             </div>
-            <div class="settings-section">
-              <h3 class="settings-section-title">Clear</h3>
-              <div class="settings-data-actions">
-                <div class="settings-data-card">
-                  <strong>Clear all chats</strong>
-                  <p>Deletes every chat. Projects stay.</p>
-                  <button type="button" class="btn btn-danger-ghost" id="btnClearChats">Clear chats</button>
+
+            <div class="set-group" id="settingsEncryptionSection">
+              <h3 class="set-group-title">Encryption</h3>
+              <div class="set-panel">
+                <div class="set-row is-stacked">
+                  <div class="set-text">
+                    <span class="set-label">Encrypt with a passphrase</span>
+                    <p class="set-desc" id="settingsEncryptionStatus">Off. Chats and settings are saved as plain files.</p>
+                  </div>
+                  <div id="settingsEncryptionEnable" class="settings-encryption-form">
+                    <label class="field">
+                      <span class="set-label">Passphrase</span>
+                      <input class="field-input" id="encryptionPassphrase" type="password" autocomplete="new-password" spellcheck="false" aria-describedby="encryptionPassphraseGuidance encryptionPassphraseWarning">
+                    </label>
+                    <label class="field">
+                      <span class="set-label">Confirm passphrase</span>
+                      <input class="field-input" id="encryptionPassphraseConfirm" type="password" autocomplete="new-password" spellcheck="false" aria-describedby="encryptionPassphraseWarning">
+                    </label>
+                    <p class="set-desc encryption-passphrase-warning is-hidden" id="encryptionPassphraseWarning" role="status" aria-live="polite"></p>
+                    <p class="set-desc" id="encryptionPassphraseGuidance">At least 16 characters. You'll enter it each time Gopher starts. A forgotten passphrase can't be recovered.</p>
+                    <div class="set-actions">
+                      <button type="button" class="btn btn-primary" id="btnEnableEncryption">Turn on encryption</button>
+                    </div>
+                  </div>
+                  <div id="settingsEncryptionUnlock" class="settings-encryption-form is-hidden">
+                    <label class="field">
+                      <span class="set-label">Passphrase</span>
+                      <input class="field-input" id="encryptionUnlockPassphrase" type="password" autocomplete="current-password" spellcheck="false">
+                    </label>
+                    <div class="set-actions">
+                      <button type="button" class="btn btn-primary" id="btnUnlockEncryption">Unlock</button>
+                    </div>
+                  </div>
+                  <div id="settingsEncryptionActive" class="settings-encryption-form is-hidden">
+                    <div class="set-actions">
+                      <button type="button" class="btn btn-outline" id="btnLockEncryption">Lock now</button>
+                      <button type="button" class="btn btn-danger-ghost" id="btnDisableEncryption">Turn off encryption…</button>
+                    </div>
+                    <div id="settingsEncryptionDisable" class="settings-encryption-form is-hidden">
+                      <label class="field">
+                        <span class="set-label">Passphrase</span>
+                        <input class="field-input" id="encryptionDisablePassphrase" type="password" autocomplete="current-password" spellcheck="false">
+                      </label>
+                      <div class="set-actions">
+                        <button type="button" class="btn btn-danger-ghost" id="btnConfirmDisableEncryption">Decrypt and turn off</button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div class="settings-data-card">
-                  <strong>Clear all projects</strong>
-                  <p>Deletes every project. Chats inside them move back to Recents.</p>
-                  <button type="button" class="btn btn-danger-ghost" id="btnClearProjects">Clear projects</button>
+              </div>
+              <p class="set-note">Covers chats, settings, provider keys, skills, and saved logs. Workspace files, downloads, and terminal history are not encrypted.</p>
+            </div>
+
+            <div class="set-group">
+              <h3 class="set-group-title">Delete data</h3>
+              <div class="set-panel is-danger">
+                <div class="set-row">
+                  <div class="set-text">
+                    <span class="set-label">Chats</span>
+                    <p class="set-desc">Deletes every chat in this profile. Projects stay.</p>
+                  </div>
+                  <div class="set-control is-auto">
+                    <button type="button" class="btn btn-danger-ghost btn-small" id="btnClearChats">Delete chats</button>
+                  </div>
                 </div>
-                <div class="settings-data-card">
-                  <strong>Clear chats, projects, and drafts</strong>
-                  <p>Deletes all chats, projects, and unsent drafts from the active profile. It does not change other profiles.</p>
-                  <button type="button" class="btn btn-danger-ghost" id="btnClearAllData">Clear everything</button>
+                <div class="set-row">
+                  <div class="set-text">
+                    <span class="set-label">Projects</span>
+                    <p class="set-desc">Deletes every project. Their chats move to Recents.</p>
+                  </div>
+                  <div class="set-control is-auto">
+                    <button type="button" class="btn btn-danger-ghost btn-small" id="btnClearProjects">Delete projects</button>
+                  </div>
+                </div>
+                <div class="set-row">
+                  <div class="set-text">
+                    <span class="set-label">Everything in this profile</span>
+                    <p class="set-desc">Chats, projects, and unsent drafts. Other profiles aren't touched.</p>
+                  </div>
+                  <div class="set-control is-auto">
+                    <button type="button" class="btn btn-danger-ghost btn-small" id="btnClearAllData">Delete all</button>
+                  </div>
                 </div>
               </div>
             </div>
           </section>
+
           <section class="settings-pane" data-settings-pane="app">
-            <h2 class="settings-pane-title">App</h2>
-            <p class="settings-pane-lede">Gopher follows master. Updates build locally and require Rust and your platform’s build dependencies.</p>
-            <div class="settings-section">
-              <h3 class="settings-section-title">Build</h3>
-              <div class="settings-data-card">
-                <strong id="appUpdateCurrent">Gopher</strong>
-                <p id="appUpdateStatus">Checking master on GitHub…</p>
-                <div class="settings-update-actions">
-                  <button type="button" class="btn btn-outline" id="btnAppUpdateCheck">Check for updates</button>
-                  <button type="button" class="btn btn-primary" id="btnAppUpdateInstall" hidden>Build and restart</button>
-                  <a class="btn btn-ghost" id="btnAppUpdateNotes" href="https://github.com/jacobzymet/gopher/commits/master" target="_blank" rel="noopener noreferrer">View commit</a>
+            <h2 class="settings-pane-title">Updates</h2>
+            <p class="settings-pane-lede">Gopher updates by building the latest master commit on this computer, so Rust and your platform's build tools need to stay installed.</p>
+            <div class="set-group">
+              <div class="set-panel">
+                <div class="set-row">
+                  <div class="set-text">
+                    <span class="set-label" id="appUpdateCurrent">Gopher</span>
+                    <p class="set-desc" id="appUpdateStatus">Checking GitHub…</p>
+                  </div>
+                  <div class="set-control is-auto settings-update-actions">
+                    <a class="btn btn-ghost btn-small" id="btnAppUpdateNotes" href="https://github.com/jacobzymet/gopher/commits/master" target="_blank" rel="noopener noreferrer">View commit</a>
+                    <button type="button" class="btn btn-outline btn-small" id="btnAppUpdateCheck">Check now</button>
+                    <button type="button" class="btn btn-primary btn-small" id="btnAppUpdateInstall" hidden>Build and restart</button>
+                  </div>
                 </div>
               </div>
             </div>
           </section>
+
           <section class="settings-pane" data-settings-pane="logs">
             <h2 class="settings-pane-title">Logs</h2>
-            <p class="settings-pane-lede">Trace the time from Send to the first token, with browser, server, provider, and tool logs in one place.</p>
-            <label class="field-check">
-              <input type="checkbox" id="settingDiagnosticsEnabled">
-              <span><strong>Enable diagnostic logging</strong><span class="diagnostics-hint">Off by default. Captures prompt and response content, raw provider streams, request timings, tool events, console output, and errors. Credentials are redacted.</span></span>
-            </label>
-            <p class="field-hint" id="diagnosticsStatus" role="status">Loading diagnostics…</p>
-            <p class="field-hint">Saved logs use your local-data encryption. Without encryption, logs stay in memory. Locking clears the live buffer. Keeps the most recent 2,000 entries or 8 MiB; oversized entries are marked.</p>
+            <p class="settings-pane-lede">A timeline of each request, from Send to the first token, for tracking down slow or failed replies.</p>
+            <div class="set-group">
+              <div class="set-panel">
+                <label class="set-row is-switch" for="settingDiagnosticsEnabled">
+                  <span class="set-text">
+                    <span class="set-label">Record diagnostic logs</span>
+                    <span class="set-desc">Includes prompts, responses, timings, and errors. API keys are removed. Keeps the last 2,000 entries.</span>
+                  </span>
+                  <input type="checkbox" class="switch" id="settingDiagnosticsEnabled">
+                </label>
+              </div>
+              <p class="set-note" id="diagnosticsStatus" role="status">Loading…</p>
+            </div>
             <div class="diagnostics-toolbar">
-              <input type="search" id="diagnosticsSearch" placeholder="Search logs…" aria-label="Search logs">
+              <input type="search" id="diagnosticsSearch" placeholder="Search logs" aria-label="Search logs">
               <select id="diagnosticsLevel" aria-label="Log severity"><option value="">All levels</option><option value="error">Errors</option><option value="warn">Warnings</option><option value="info">Info</option><option value="debug">Debug</option><option value="trace">Trace</option></select>
               <select id="diagnosticsTrace" aria-label="Request trace"><option value="">All requests</option></select>
-              <button type="button" class="btn btn-ghost" id="btnDiagnosticsPause">Pause view</button>
-              <button type="button" class="btn btn-ghost" id="btnDiagnosticsExport">Export JSON</button>
-              <button type="button" class="btn btn-ghost" id="btnDiagnosticsClear">Clear logs</button>
+              <button type="button" class="btn btn-ghost btn-small" id="btnDiagnosticsPause">Pause</button>
+              <button type="button" class="btn btn-ghost btn-small" id="btnDiagnosticsExport">Export JSON</button>
+              <button type="button" class="btn btn-ghost btn-small" id="btnDiagnosticsClear">Clear</button>
             </div>
-            <p class="diagnostics-timings" id="diagnosticsTimings">Enable logging, save, and send a prompt to measure the delay.</p>
+            <p class="diagnostics-timings" id="diagnosticsTimings">Turn on logging, save, and send a message to see timings.</p>
             <div class="diagnostics-feed" id="diagnosticsFeed" aria-label="Diagnostic entries"></div>
           </section>
         </div>
         <div class="dialog-actions">
+          <p class="settings-instant-note" id="settingsInstantNote">Changes on this page apply right away.</p>
           <button type="button" class="btn btn-ghost" id="btnSettingsCancel">Close</button>
           <button type="button" class="btn btn-primary" id="btnSettingsSave" disabled>
             <svg class="settings-save-check is-hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>

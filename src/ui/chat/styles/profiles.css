@@ -501,34 +501,8 @@
   color: var(--color-muted);
 }
 
-.profile-security-note {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.7rem;
-  margin-bottom: 1.35rem;
-  padding: 0.85rem 1rem;
-  border: 1px solid color-mix(in oklch, var(--color-accent) 24%, var(--color-rule));
-  border-radius: var(--radius-lg);
-  color: var(--color-ink-2);
-  background: color-mix(in oklch, var(--color-accent) 7%, transparent);
-  font-size: var(--text-xs);
-  line-height: 1.5;
-}
 
-.profile-security-note svg {
-  flex: 0 0 auto;
-  width: 1.1rem;
-  height: 1.1rem;
-  margin-top: 0.08rem;
-  color: var(--color-accent);
-}
 
-.profiles-settings-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1rem;
-}
 
 .profiles-settings-list {
   display: grid;
@@ -544,11 +518,6 @@
   border: 1px solid var(--color-rule);
   border-radius: var(--radius-lg);
   background: var(--color-paper-2);
-}
-
-.profile-settings-card.is-active {
-  border-color: color-mix(in oklch, var(--color-accent) 38%, var(--color-rule));
-  box-shadow: inset 3px 0 0 color-mix(in oklch, var(--color-accent) 72%, transparent);
 }
 
 .profile-settings-mark {
@@ -590,16 +559,10 @@
 }
 
 .profile-active-pill {
-  margin-right: 0.15rem;
-  padding: 0.25rem 0.5rem;
-  border-radius: var(--radius-pill);
-  color: var(--color-accent);
-  background: var(--accent-wash);
-  font-family: var(--font-mono);
-  font-size: 0.58rem;
-  font-weight: 650;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  margin-right: 0.25rem;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--color-muted);
 }
 
 .btn-profile-delete { color: var(--color-danger); }
@@ -648,9 +611,7 @@
 
 
 @media (max-width: 640px) {
-  .profiles-settings-head { align-items: stretch; flex-direction: column; }
-  .profiles-settings-head .btn { align-self: flex-start; }
-  .profile-settings-card { grid-template-columns: 2.4rem minmax(0, 1fr); }
+      .profile-settings-card { grid-template-columns: 2.4rem minmax(0, 1fr); }
   .profile-settings-actions { grid-column: 1 / -1; justify-content: flex-end; }
 }
 
