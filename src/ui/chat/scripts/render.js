@@ -178,6 +178,22 @@ function splitSealedTextParts(parts) {
   return { processNotes, answerChunks };
 }
 
+/** Collapsible activity fold; `bodyHtml` must already be escaped. */
+function timelineFoldHtml(extraClass, label, bodyHtml, collapsed) {
+  return (
+    '<div class="agent-timeline-fold' + extraClass + (collapsed ? ' is-collapsed' : '') + '">' +
+      '<button type="button" class="agent-timeline-fold-toggle" aria-expanded="' +
+        (collapsed ? 'false' : 'true') + '">' +
+        '<span>' + escapeHtml(label) + '</span>' +
+        THINK_CHEVRON +
+      '</button>' +
+      '<div class="agent-timeline-fold-panel">' +
+        '<div class="agent-timeline-fold-inner">' + bodyHtml + '</div>' +
+      '</div>' +
+    '</div>'
+  );
+}
+
 function renderProcessNotesFold(notes, { collapsed = true } = {}) {
   if (!notes || !notes.length) return '';
   const label = notes.length === 1
@@ -186,18 +202,7 @@ function renderProcessNotesFold(notes, { collapsed = true } = {}) {
   const body = notes.map((note) => (
     '<div class="agent-process-note">' + renderMarkdown(note) + '</div>'
   )).join('');
-  return (
-    '<div class="agent-timeline-fold agent-process-notes' + (collapsed ? ' is-collapsed' : '') + '">' +
-      '<button type="button" class="agent-timeline-fold-toggle" aria-expanded="' +
-        (collapsed ? 'false' : 'true') + '">' +
-        '<span>' + escapeHtml(label) + '</span>' +
-        THINK_CHEVRON +
-      '</button>' +
-      '<div class="agent-timeline-fold-panel">' +
-        '<div class="agent-timeline-fold-inner">' + body + '</div>' +
-      '</div>' +
-    '</div>'
-  );
+  return timelineFoldHtml(' agent-process-notes', label, body, collapsed);
 }
 
 function readProcessNotesCollapsed(root, fallback = true) {
@@ -418,18 +423,7 @@ function renderTimelineFold(timelineHtml, stepCount, { collapsed = true } = {}) 
   const label = stepCount === 1
     ? '1 activity step'
     : (stepCount + ' activity steps');
-  return (
-    '<div class="agent-timeline-fold' + (collapsed ? ' is-collapsed' : '') + '">' +
-      '<button type="button" class="agent-timeline-fold-toggle" aria-expanded="' +
-        (collapsed ? 'false' : 'true') + '">' +
-        '<span>' + escapeHtml(label) + '</span>' +
-        THINK_CHEVRON +
-      '</button>' +
-      '<div class="agent-timeline-fold-panel">' +
-        '<div class="agent-timeline-fold-inner">' + timelineHtml + '</div>' +
-      '</div>' +
-    '</div>'
-  );
+  return timelineFoldHtml('', label, timelineHtml, collapsed);
 }
 
 function renderMemoryNoticesHtml(message) {
@@ -2920,15 +2914,13 @@ function commitConversationTitle(convo, rawTitle) {
   return true;
 }
 
-function beginSidebarTitleEdit(convo, row) {
-  if (!convo || !row?.isConnected) return;
-  const title = row.querySelector('.convo-title');
-  if (!title) return;
+/** Inline chat-title field: Enter or blur commits, Escape cancels. */
+function createTitleInput(className, value, { onCommit, onCancel }) {
   const input = document.createElement('input');
-  input.className = 'convo-title-input';
+  input.className = className;
   input.type = 'text';
   input.maxLength = 120;
-  input.value = convo.title || 'New chat';
+  input.value = value;
   input.setAttribute('aria-label', 'Chat title');
   let cancelled = false;
   input.addEventListener('click', (event) => event.stopPropagation());
@@ -2939,14 +2931,25 @@ function beginSidebarTitleEdit(convo, row) {
     } else if (event.key === 'Escape') {
       event.preventDefault();
       cancelled = true;
-      renderSidebar();
+      onCancel();
     }
   });
   input.addEventListener('blur', () => {
-    if (!cancelled) {
-      commitConversationTitle(convo, input.value);
+    if (!cancelled) onCommit(input.value);
+  });
+  return input;
+}
+
+function beginSidebarTitleEdit(convo, row) {
+  if (!convo || !row?.isConnected) return;
+  const title = row.querySelector('.convo-title');
+  if (!title) return;
+  const input = createTitleInput('convo-title-input', convo.title || 'New chat', {
+    onCommit(value) {
+      commitConversationTitle(convo, value);
       if (input.isConnected) renderSidebar();
-    }
+    },
+    onCancel: renderSidebar,
   });
   title.replaceWith(input);
   input.focus();
@@ -2958,29 +2961,15 @@ function beginTopbarTitleEdit() {
   if (!convo || convo.incognito || convoTitleEl.querySelector('input')) return;
   stopTitleTyping(convoTitleEl);
   const original = convo.title || 'New chat';
-  const input = document.createElement('input');
-  input.className = 'chat-title-input';
-  input.type = 'text';
-  input.maxLength = 120;
-  input.value = original;
-  input.setAttribute('aria-label', 'Chat title');
-  let cancelled = false;
-  input.addEventListener('click', (event) => event.stopPropagation());
-  input.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      input.blur();
-    } else if (event.key === 'Escape') {
-      event.preventDefault();
-      cancelled = true;
+  const input = createTitleInput('chat-title-input', original, {
+    onCommit(value) {
+      commitConversationTitle(convo, value);
+      if (input.isConnected) convoTitleEl.textContent = convo.title || original;
+    },
+    onCancel() {
       convoTitleEl.textContent = original;
       convoTitleEl.focus();
-    }
-  });
-  input.addEventListener('blur', () => {
-    if (cancelled) return;
-    commitConversationTitle(convo, input.value);
-    if (input.isConnected) convoTitleEl.textContent = convo.title || original;
+    },
   });
   convoTitleEl.textContent = '';
   convoTitleEl.appendChild(input);
@@ -4352,21 +4341,18 @@ function resolveUserMessageIndex(row, convo) {
   return -1;
 }
 
-function beginMessageEdit(row) {
-  if (row.classList.contains('is-editing') || row.classList.contains('msg-queued')) return;
-  if (editingRow && editingRow !== row) cancelMessageEdit();
-
-  const raw = row.dataset.raw || '';
-  const bubble = row.querySelector('.msg-bubble');
-  if (!bubble) return;
-
+/**
+ * Inline editor that replaces a message bubble: textarea with @-mentions,
+ * Cancel/Save bar, Escape to cancel and the user's Enter-to-send preference.
+ */
+function buildMessageEditor({ value, label, placeholder, saveLabel, note = '', onSave }) {
   const editor = document.createElement('div');
   editor.className = 'msg-edit';
   const input = document.createElement('textarea');
   input.className = 'msg-edit-input';
-  input.value = raw;
-  input.setAttribute('aria-label', 'Edit message');
-  input.placeholder = 'Edit message… Type @ to mention';
+  input.value = value;
+  input.setAttribute('aria-label', label);
+  input.placeholder = placeholder;
   const bar = document.createElement('div');
   bar.className = 'msg-edit-bar';
   const btnCancel = document.createElement('button');
@@ -4376,31 +4362,21 @@ function beginMessageEdit(row) {
   const btnSave = document.createElement('button');
   btnSave.type = 'button';
   btnSave.className = 'btn btn-primary';
-  btnSave.textContent = 'Send & restart';
-  const status = document.createElement('div');
-  status.className = 'msg-edit-status';
-  status.setAttribute('role', 'status');
-  status.textContent = 'Sending replaces this message and all later replies.';
+  btnSave.textContent = saveLabel;
   bar.appendChild(btnCancel);
   bar.appendChild(btnSave);
   editor.appendChild(input);
-  editor.appendChild(status);
+  if (note) {
+    const status = document.createElement('div');
+    status.className = 'msg-edit-status';
+    status.setAttribute('role', 'status');
+    status.textContent = note;
+    editor.appendChild(status);
+  }
   editor.appendChild(bar);
 
-  bubble.replaceWith(editor);
-  row.classList.add('is-editing');
-  editingRow = row;
-  mentionInput = input;
-  if (typeof updateSendEnabled === 'function') updateSendEnabled();
-
-  const commit = () => {
-    const next = input.value.trim();
-    if (!next) return;
-    closeMentionMenu();
-    mentionInput = composerInput;
-    void submitEditedMessage(row, next);
-  };
-  btnCancel.addEventListener('click', cancelMessageEdit);
+  const commit = () => onSave(input.value.trim());
+  btnCancel.addEventListener('click', () => cancelMessageEdit());
   btnSave.addEventListener('click', commit);
   input.addEventListener('input', () => {
     autoResize(input);
@@ -4436,9 +4412,44 @@ function beginMessageEdit(row) {
       commit();
     }
   });
+  return { editor, input };
+}
+
+/** Focus a freshly mounted editor with the caret at the end. */
+function focusMessageEditor(input) {
   input.focus();
   input.setSelectionRange(input.value.length, input.value.length);
   autoResize(input);
+}
+
+function beginMessageEdit(row) {
+  if (row.classList.contains('is-editing') || row.classList.contains('msg-queued')) return;
+  if (editingRow && editingRow !== row) cancelMessageEdit();
+
+  const raw = row.dataset.raw || '';
+  const bubble = row.querySelector('.msg-bubble');
+  if (!bubble) return;
+
+  const { editor, input } = buildMessageEditor({
+    value: raw,
+    label: 'Edit message',
+    placeholder: 'Edit message… Type @ to mention',
+    saveLabel: 'Send & restart',
+    note: 'Sending replaces this message and all later replies.',
+    onSave(next) {
+      if (!next) return;
+      closeMentionMenu();
+      mentionInput = composerInput;
+      void submitEditedMessage(row, next);
+    },
+  });
+
+  bubble.replaceWith(editor);
+  row.classList.add('is-editing');
+  editingRow = row;
+  mentionInput = input;
+  if (typeof updateSendEnabled === 'function') updateSendEnabled();
+  focusMessageEditor(input);
 }
 
 async function submitEditedMessage(row, rawText) {

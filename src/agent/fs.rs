@@ -314,11 +314,7 @@ pub fn glob_files(ws: &Workspace, args: &Value) -> Result<String, String> {
         .filter(|s| !s.is_empty());
     let mut matches = Vec::new();
     if let Some(raw_path) = search_path {
-        let abs = ws.resolve(raw_path)?;
-        let meta = fs::symlink_metadata(&abs).map_err(|_| format!("Path not found: {raw_path}"))?;
-        if meta.file_type().is_symlink() {
-            return Err("Refusing to search a symlink.".into());
-        }
+        let (abs, meta) = resolve_search_path(ws, raw_path)?;
         if meta.is_file() {
             let rel = ws.relative_display(&abs);
             if glob_match(&matcher, &rel) {
@@ -422,11 +418,7 @@ pub fn grep_files(ws: &Workspace, args: &Value) -> Result<String, String> {
     };
 
     if let Some(raw_path) = search_path {
-        let abs = ws.resolve(raw_path)?;
-        let meta = fs::symlink_metadata(&abs).map_err(|_| format!("Path not found: {raw_path}"))?;
-        if meta.file_type().is_symlink() {
-            return Err("Refusing to search a symlink.".into());
-        }
+        let (abs, meta) = resolve_search_path(ws, raw_path)?;
         if meta.is_file() {
             let rel = ws.relative_display(&abs);
             if search
@@ -440,7 +432,7 @@ pub fn grep_files(ws: &Workspace, args: &Value) -> Result<String, String> {
                     search.context,
                     search.match_limit,
                     search.mode,
-                )?
+                )
             {
                 search.hits.extend(file_hits);
                 search.match_count = n;
@@ -573,7 +565,7 @@ fn grep_walk(ws: &Workspace, start: &Path, search: &mut GrepSearch<'_>) -> Resul
             GrepMode::Files => 1,
             GrepMode::Count => usize::MAX,
         };
-        if let Ok(Some((file_hits, n))) = grep_file_hits(
+        if let Some((file_hits, n)) = grep_file_hits(
             abs,
             &rel,
             search.regex,
@@ -601,24 +593,24 @@ fn grep_file_hits(
     context: usize,
     remaining: usize,
     mode: GrepMode,
-) -> Result<Option<(Vec<String>, usize)>, String> {
+) -> Option<(Vec<String>, usize)> {
     if remaining == 0 {
-        return Ok(None);
+        return None;
     }
     let Ok(meta) = fs::symlink_metadata(abs) else {
-        return Ok(None);
+        return None;
     };
     if meta.file_type().is_symlink() || !meta.is_file() || meta.len() > MAX_GREP_FILE_BYTES {
-        return Ok(None);
+        return None;
     }
     let Ok(bytes) = fs::read(abs) else {
-        return Ok(None);
+        return None;
     };
     if bytes.contains(&0) {
-        return Ok(None);
+        return None;
     }
     let Ok(text) = String::from_utf8(bytes) else {
-        return Ok(None);
+        return None;
     };
     let lines: Vec<&str> = text.lines().collect();
     let take_n = match mode {
@@ -633,7 +625,7 @@ fn grep_file_hits(
         .take(take_n)
         .collect();
     if match_idxs.is_empty() {
-        return Ok(None);
+        return None;
     }
     let n = match_idxs.len();
     let hits = match mode {
@@ -641,7 +633,7 @@ fn grep_file_hits(
         GrepMode::Files => vec![rel.to_string()],
         GrepMode::Count => vec![format!("{rel}: {n}")],
     };
-    Ok(Some((hits, n)))
+    Some((hits, n))
 }
 
 fn format_grep_windows(
@@ -801,16 +793,23 @@ pub fn str_replace(ws: &Workspace, args: &Value) -> Result<String, String> {
     let default_crlf = text
         .find('\n')
         .is_some_and(|i| i > 0 && text.as_bytes()[i - 1] == b'\r');
+    // Original byte span of each match, and whether it uses CRLF line endings.
+    let spans: Vec<(usize, usize, bool)> = normalized
+        .match_indices(&old)
+        .map(|(at, _)| {
+            let start = original_offset(at);
+            let end = original_offset(at + old.len());
+            let matched = &text[start..end];
+            let crlf = matched
+                .find('\n')
+                .map(|i| i > 0 && matched.as_bytes()[i - 1] == b'\r')
+                .unwrap_or(default_crlf);
+            (start, end, crlf)
+        })
+        .collect();
     let new_crlf_extra = new.bytes().filter(|byte| *byte == b'\n').count();
     let mut output_len = text.len();
-    for (at, _) in normalized.match_indices(&old) {
-        let start = original_offset(at);
-        let end = original_offset(at + old.len());
-        let matched = &text[start..end];
-        let crlf = matched
-            .find('\n')
-            .map(|i| i > 0 && matched.as_bytes()[i - 1] == b'\r')
-            .unwrap_or(default_crlf);
+    for &(start, end, crlf) in &spans {
         let inserted = new
             .len()
             .checked_add(if crlf { new_crlf_extra } else { 0 })
@@ -827,14 +826,7 @@ pub fn str_replace(ws: &Workspace, args: &Value) -> Result<String, String> {
     }
     let mut next = String::with_capacity(output_len);
     let mut cursor = 0;
-    for (at, _) in normalized.match_indices(&old) {
-        let start = original_offset(at);
-        let end = original_offset(at + old.len());
-        let matched = &text[start..end];
-        let crlf = matched
-            .find('\n')
-            .map(|i| i > 0 && matched.as_bytes()[i - 1] == b'\r')
-            .unwrap_or(default_crlf);
+    for &(start, end, crlf) in &spans {
         next.push_str(&text[cursor..start]);
         if crlf {
             next.push_str(&new.replace('\n', "\r\n"));
@@ -1059,48 +1051,24 @@ pub(super) fn atomic_write_with_permissions(
     result
 }
 
-#[cfg(not(windows))]
 fn replace_file(temporary: &Path, destination: &Path) -> Result<(), String> {
-    fs::rename(temporary, destination)
-        .map_err(|err| format!("Could not replace {}: {err}", destination.display()))
-}
-
-#[cfg(windows)]
-fn replace_file(temporary: &Path, destination: &Path) -> Result<(), String> {
-    use std::{iter, os::windows::ffi::OsStrExt};
-
-    const MOVEFILE_REPLACE_EXISTING: u32 = 0x1;
-    const MOVEFILE_WRITE_THROUGH: u32 = 0x8;
-    #[link(name = "kernel32")]
-    unsafe extern "system" {
-        fn MoveFileExW(existing: *const u16, replacement: *const u16, flags: u32) -> i32;
-    }
-
-    let existing: Vec<u16> = temporary
-        .as_os_str()
-        .encode_wide()
-        .chain(iter::once(0))
-        .collect();
-    let replacement: Vec<u16> = destination
-        .as_os_str()
-        .encode_wide()
-        .chain(iter::once(0))
-        .collect();
-    let result = unsafe {
-        MoveFileExW(
-            existing.as_ptr(),
-            replacement.as_ptr(),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-        )
-    };
-    if result == 0 {
-        return Err(format!(
+    crate::secure_fs::replace_file(temporary, destination).map_err(|err| {
+        format!(
             "Could not replace {}: {}",
             destination.display(),
-            std::io::Error::last_os_error()
-        ));
+            err.root_cause()
+        )
+    })
+}
+
+/// Resolve an explicit `path` argument for glob/grep, refusing symlinks.
+fn resolve_search_path(ws: &Workspace, raw_path: &str) -> Result<(PathBuf, fs::Metadata), String> {
+    let abs = ws.resolve(raw_path)?;
+    let meta = fs::symlink_metadata(&abs).map_err(|_| format!("Path not found: {raw_path}"))?;
+    if meta.file_type().is_symlink() {
+        return Err("Refusing to search a symlink.".into());
     }
-    Ok(())
+    Ok((abs, meta))
 }
 
 fn resolve_under(root: &Path, raw: &str) -> Result<PathBuf, String> {

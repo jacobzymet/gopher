@@ -1097,25 +1097,13 @@ async fn chat_completions(
             request.prompt_progress_supported = prompt_progress_supported;
             agent::stream_agent(upstream, request, user_skills)
         }
-        Ok(_) => {
-            if let Some(messages) = body.get_mut("messages").and_then(|v| v.as_array_mut()) {
-                agent::inject_skill_catalog_into_messages(messages, &user_skills);
-                if let Some(window) = model_context_window_tokens {
-                    agent::compact_chat_messages(messages, window)
-                        .map_err(ApiError::bad_request)?;
-                }
-            }
-            if prompt_progress_supported && let Some(object) = body.as_object_mut() {
-                object.insert("return_progress".into(), serde_json::json!(true));
-            }
-            chat::stream_remote_completion(upstream, body)
-        }
         Err(error) if wants_agent => {
             return Err(ApiError::bad_request(format!(
                 "Invalid agent request: {error}"
             )));
         }
-        Err(_) => {
+        // A plain completion: either agent mode is off or the body is not an agent request.
+        _ => {
             if let Some(messages) = body.get_mut("messages").and_then(|v| v.as_array_mut()) {
                 agent::inject_skill_catalog_into_messages(messages, &user_skills);
                 if let Some(window) = model_context_window_tokens {

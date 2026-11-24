@@ -491,6 +491,16 @@ function renderModelOptionHtml(option, index, { terms }) {
 
 const MODEL_FOLD_ICON = '<svg class="chat-model-fold" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
 
+/** Hover title for a model-menu row: selection state plus model and provider. */
+function modelOptionElementTitle(optionEl) {
+  const option = modelMenuOptions.find((item) => item.value === optionEl.dataset.value);
+  if (!option) return '';
+  const prefix = optionEl.classList.contains('is-selected')
+    ? 'Selected · '
+    : (modelMenuContext ? '' : 'Use in this chat · ');
+  return prefix + modelOptionTitle(option.label, option.provider);
+}
+
 function renderModelMenuList() {
   const terms = modelFilterTerms();
   const counts = modelMenuSectionCounts(modelMenuMatches);
@@ -527,12 +537,7 @@ function renderModelMenuList() {
     setIdentityTitle(label, label.textContent);
   });
   chatModelList.querySelectorAll('.chat-model-option').forEach((optionEl) => {
-    const option = modelMenuOptions.find((item) => item.value === optionEl.dataset.value);
-    const picking = !!modelMenuContext;
-    const prefix = picking
-      ? (optionEl.classList.contains('is-selected') ? 'Selected · ' : '')
-      : (optionEl.classList.contains('is-selected') ? 'Selected · ' : 'Use in this chat · ');
-    setIdentityTitle(optionEl, option ? prefix + modelOptionTitle(option.label, option.provider) : '');
+    setIdentityTitle(optionEl, modelOptionElementTitle(optionEl));
   });
 
   const empty = !modelMenuMatches.length;
@@ -1172,7 +1177,6 @@ let pendingComposerSend = null;
 function composerSendIsCurrent(attempt) {
   return activeId === attempt.convoId
     && activeProjectId === attempt.projectId
-    && appSurface === attempt.surface
     && draftIncognito === attempt.incognito
     && draftWorkspaceRoot === attempt.workspace
     && selectedChatModel === attempt.modelId
@@ -1227,7 +1231,7 @@ async function sendMessage({ branch = false } = {}) {
 
   const attempt = {
     convoId: activeId, projectId: activeProjectId, modelId: selectedChatModel,
-    surface: appSurface, incognito: draftIncognito, workspace: draftWorkspaceRoot,
+    incognito: draftIncognito, workspace: draftWorkspaceRoot,
     input: composerInput.value, quote: pendingReplyQuote, replyTarget: pendingReplyTarget,
     attachments: queuedFiles, mentions: [...composerMentionIds],
     diagnosticTraceId: typeof diagnosticMark === 'function' && settings.diagnosticsEnabled ? newId('turn') : '',
@@ -1848,7 +1852,6 @@ async function runAssistantTurn(convo, {
   deepResearchOutput = 'long',
   forceTools = [],
   queueItem = null,
-  loopTurnDirective = '',
   skipQueue = false,
   replaceLive = false,
 }) {
@@ -1904,52 +1907,11 @@ async function runAssistantTurn(convo, {
   resetTraceAutoOpenState();
 
   const turnSkills = { ...(skills || {
+    ...agentToolSettings(),
     web_search: !!settings.skillWebSearch,
-    web_search_depth: WEB_SEARCH_DEPTHS.includes(settings.webSearchDepth)
-      ? settings.webSearchDepth
-      : DEFAULT_SETTINGS.webSearchDepth,
-    web_search_provider: WEB_SEARCH_PROVIDERS.includes(settings.webSearchProvider)
-      ? settings.webSearchProvider
-      : DEFAULT_SETTINGS.webSearchProvider,
-    web_search_searxng: typeof settings.webSearchSearxng === 'string'
-      ? settings.webSearchSearxng.trim()
-      : '',
-    web_search_parallel_api_key: typeof settings.webSearchParallelApiKey === 'string'
-      ? settings.webSearchParallelApiKey.trim()
-      : '',
-    web_search_parallel_mode: WEB_SEARCH_PARALLEL_MODES.includes(settings.webSearchParallelMode)
-      ? settings.webSearchParallelMode
-      : DEFAULT_SETTINGS.webSearchParallelMode,
-    web_search_tinyfish_api_key: typeof settings.webSearchTinyfishApiKey === 'string'
-      ? settings.webSearchTinyfishApiKey.trim()
-      : '',
-    web_search_max_results: Math.min(20, Math.max(1, Number(settings.webSearchResults) || 6)),
-    web_search_region: /^[a-z]{2}-[a-z]{2}$/.test(settings.webSearchRegion)
-      ? settings.webSearchRegion
-      : 'us-en',
-    web_search_safesearch: WEB_SEARCH_SAFESEARCH.includes(settings.webSearchSafeSearch)
-      ? settings.webSearchSafeSearch
-      : 'moderate',
-    web_search_recency: WEB_SEARCH_RECENCIES.includes(settings.webSearchRecency)
-      ? settings.webSearchRecency
-      : 'any',
     fetch_url: !!settings.skillFetchUrl,
-    fetch_url_max_chars: Math.min(
-      200000,
-      Math.max(1000, Number(settings.fetchUrlMaxChars) || 8000)
-    ),
-    web_search_page_max_chars: (() => {
-      const raw = Number(settings.webSearchPageMaxChars);
-      if (!Number.isFinite(raw) || raw <= 0) return 0;
-      return Math.min(200000, Math.max(1000, Math.round(raw)));
-    })(),
-    approval_mode: APPROVAL_MODES.includes(settings.approvalMode)
-      ? settings.approvalMode
-      : 'manual',
     filesystem: !!settings.skillFilesystem,
-    workspace_root: sessionWorkspaceRoot(),
     terminal: !!settings.skillTerminal,
-    terminal_timeout_secs: Math.min(30, Math.max(5, Number(settings.terminalTimeoutSecs) || 30)),
     browser: !!settings.skillBrowser,
   }), chat_retrieval: settings.chatRetrieval !== false && !convo.incognito };
   if (turnSkills.chat_retrieval) useAgent = true;
@@ -2006,11 +1968,10 @@ async function runAssistantTurn(convo, {
     convo,
     includeTime: false,
   });
-  const systemParts = [systemPrompt, String(loopTurnDirective || '').trim()].filter(Boolean);
-  if (systemParts.length) {
+  if (systemPrompt) {
     // Keep the changing clock after the stable prompt and backend agent rules.
     apiMessages.unshift(
-      { role: 'system', content: systemParts.join('\n\n') },
+      { role: 'system', content: systemPrompt },
       { role: 'system', content: buildTimePrompt() },
     );
   }
@@ -3350,13 +3311,6 @@ composerInput.addEventListener('paste', (event) => {
 });
 document.getElementById('settingAttachmentTextFallback').addEventListener('change', syncAttachmentFallbackControls);
 
-function paintWordmarkSurface() {
-  appSurface = 'chat';
-  document.getElementById('chatShell')?.setAttribute('data-surface', 'chat');
-  document.title = 'Gopher | Agent';
-}
-paintWordmarkSurface();
-
 document.getElementById('btnThink').addEventListener('click', (event) => {
   event.stopPropagation();
   setThinkMenuOpen(!thinkMenuIsOpen());
@@ -3511,12 +3465,7 @@ function syncPrivacyModeUi(enabled) {
     setIdentityTitle(chatModelOriginPill, chatModelOriginPill.textContent);
   }
   chatModelList?.querySelectorAll('.chat-model-option').forEach((optionEl) => {
-    const option = modelMenuOptions.find((item) => item.value === optionEl.dataset.value);
-    const picking = !!modelMenuContext;
-    const prefix = picking
-      ? (optionEl.classList.contains('is-selected') ? 'Selected · ' : '')
-      : (optionEl.classList.contains('is-selected') ? 'Selected · ' : 'Use in this chat · ');
-    setIdentityTitle(optionEl, option ? prefix + modelOptionTitle(option.label, option.provider) : '');
+    setIdentityTitle(optionEl, modelOptionElementTitle(optionEl));
     const badge = optionEl.querySelector('.chat-model-origin-pill');
     if (badge) setIdentityTitle(badge, badge.textContent);
   });

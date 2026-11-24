@@ -141,11 +141,11 @@ impl SkillStore {
         let description = sanitize_description(upsert.description.as_deref().unwrap_or(""))?;
         let content = sanitize_content(upsert.content.as_deref().unwrap_or(""))?;
         let skill = UserSkill {
-            id: id.clone(),
-            name: name.clone(),
-            description: description.clone(),
+            id,
+            name,
+            description,
             enabled: upsert.enabled.unwrap_or(true),
-            content: content.clone(),
+            content,
             source_filename: sanitize_filename(upsert.source_filename),
             created_at: now,
             updated_at: now,

@@ -33,7 +33,7 @@ function normalizeComposerDraft(raw) {
 function currentComposerDraftContext() {
   return {
     profileId: activeProfileId,
-    key: activeId ? 'chat:' + activeId : 'new:' + appSurface + ':' + (activeProjectId || ''),
+    key: activeId ? 'chat:' + activeId : 'new:chat:' + (activeProjectId || ''),
     incognito: isIncognitoContext(),
   };
 }

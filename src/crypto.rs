@@ -158,15 +158,11 @@ pub fn save_meta(root: &Path, meta: &EncryptionMeta) -> Result<()> {
     secure_fs::ensure_private_dir(root)?;
     let path = meta_path(root);
     let value = serde_json::to_value(meta).context("could not serialize encryption metadata")?;
-    atomic_write_json(&path, &value)
+    secure_fs::atomic_write_json(&path, &value)
 }
 
 pub fn clear_meta(root: &Path) -> Result<()> {
     secure_fs::remove_file(&meta_path(root))
-}
-
-fn atomic_write_json(path: &Path, value: &Value) -> Result<()> {
-    secure_fs::atomic_write_json(path, value)
 }
 
 pub fn random_salt() -> Result<[u8; SALT_LEN]> {

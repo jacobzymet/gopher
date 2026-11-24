@@ -1273,7 +1273,7 @@ mod tests {
         );
 
         // A filesystem change invalidates the index before binding a new turn.
-        let mut changed = store.clone();
+        let mut changed = store;
         changed["activeProfileId"] = serde_json::json!("personal");
         store::save_chats(temp.path(), changed, None).unwrap();
         assert_eq!(app.chat_history_profile("current"), None);
@@ -1585,7 +1585,7 @@ mod tests {
         store::save_preferences(root, serde_json::json!({}), Some(&key)).unwrap();
         store::save_provider_tokens(
             root,
-            &serde_json::json!({ provider_id.clone(): "legacy-secret-token" }),
+            &serde_json::json!({ provider_id: "legacy-secret-token" }),
             &key,
         )
         .unwrap();

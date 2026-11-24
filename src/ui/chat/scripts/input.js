@@ -1064,6 +1064,53 @@ function displayTextWithMentions(text, mentionIds) {
   return prefix ? (prefix + ' ' + text).trim() : text;
 }
 
+/** Validated tool settings shared by every agent turn; capability flags are set by callers. */
+function agentToolSettings() {
+  const pageMaxChars = Number(settings.webSearchPageMaxChars);
+  return {
+    web_search_depth: WEB_SEARCH_DEPTHS.includes(settings.webSearchDepth)
+      ? settings.webSearchDepth
+      : DEFAULT_SETTINGS.webSearchDepth,
+    web_search_provider: WEB_SEARCH_PROVIDERS.includes(settings.webSearchProvider)
+      ? settings.webSearchProvider
+      : DEFAULT_SETTINGS.webSearchProvider,
+    web_search_searxng: typeof settings.webSearchSearxng === 'string'
+      ? settings.webSearchSearxng.trim()
+      : '',
+    web_search_parallel_api_key: typeof settings.webSearchParallelApiKey === 'string'
+      ? settings.webSearchParallelApiKey.trim()
+      : '',
+    web_search_parallel_mode: WEB_SEARCH_PARALLEL_MODES.includes(settings.webSearchParallelMode)
+      ? settings.webSearchParallelMode
+      : DEFAULT_SETTINGS.webSearchParallelMode,
+    web_search_tinyfish_api_key: typeof settings.webSearchTinyfishApiKey === 'string'
+      ? settings.webSearchTinyfishApiKey.trim()
+      : '',
+    web_search_max_results: Math.min(20, Math.max(1, Number(settings.webSearchResults) || 6)),
+    web_search_region: /^[a-z]{2}-[a-z]{2}$/.test(settings.webSearchRegion)
+      ? settings.webSearchRegion
+      : 'us-en',
+    web_search_safesearch: WEB_SEARCH_SAFESEARCH.includes(settings.webSearchSafeSearch)
+      ? settings.webSearchSafeSearch
+      : 'moderate',
+    web_search_recency: WEB_SEARCH_RECENCIES.includes(settings.webSearchRecency)
+      ? settings.webSearchRecency
+      : 'any',
+    fetch_url_max_chars: Math.min(
+      200000,
+      Math.max(1000, Number(settings.fetchUrlMaxChars) || 8000)
+    ),
+    web_search_page_max_chars: Number.isFinite(pageMaxChars) && pageMaxChars > 0
+      ? Math.min(200000, Math.max(1000, Math.round(pageMaxChars)))
+      : 0,
+    approval_mode: APPROVAL_MODES.includes(settings.approvalMode)
+      ? settings.approvalMode
+      : 'manual',
+    workspace_root: sessionWorkspaceRoot(),
+    terminal_timeout_secs: Math.min(30, Math.max(5, Number(settings.terminalTimeoutSecs) || 30)),
+  };
+}
+
 function resolveTurnSkills(mentionIds) {
   const mentioned = mentionIds instanceof Set ? mentionIds : new Set(mentionIds || []);
   const deepAllowed = !!settings.skillDeepResearch;
@@ -1094,54 +1141,13 @@ function resolveTurnSkills(mentionIds) {
     || browserCap
     || (!!settings.agentMode && userSkills.some((skill) => skill.enabled));
   const skills = {
-      chat_retrieval: chatRetrieval,
-      web_search: webSearch,
-      web_search_depth: WEB_SEARCH_DEPTHS.includes(settings.webSearchDepth)
-        ? settings.webSearchDepth
-        : DEFAULT_SETTINGS.webSearchDepth,
-      web_search_provider: WEB_SEARCH_PROVIDERS.includes(settings.webSearchProvider)
-        ? settings.webSearchProvider
-        : DEFAULT_SETTINGS.webSearchProvider,
-      web_search_searxng: typeof settings.webSearchSearxng === 'string'
-        ? settings.webSearchSearxng.trim()
-        : '',
-      web_search_parallel_api_key: typeof settings.webSearchParallelApiKey === 'string'
-        ? settings.webSearchParallelApiKey.trim()
-        : '',
-      web_search_parallel_mode: WEB_SEARCH_PARALLEL_MODES.includes(settings.webSearchParallelMode)
-        ? settings.webSearchParallelMode
-        : DEFAULT_SETTINGS.webSearchParallelMode,
-      web_search_tinyfish_api_key: typeof settings.webSearchTinyfishApiKey === 'string'
-        ? settings.webSearchTinyfishApiKey.trim()
-        : '',
-      web_search_max_results: Math.min(20, Math.max(1, Number(settings.webSearchResults) || 6)),
-      web_search_region: /^[a-z]{2}-[a-z]{2}$/.test(settings.webSearchRegion)
-        ? settings.webSearchRegion
-        : 'us-en',
-      web_search_safesearch: WEB_SEARCH_SAFESEARCH.includes(settings.webSearchSafeSearch)
-        ? settings.webSearchSafeSearch
-        : 'moderate',
-      web_search_recency: WEB_SEARCH_RECENCIES.includes(settings.webSearchRecency)
-        ? settings.webSearchRecency
-        : 'any',
-      fetch_url: fetchUrl,
-      fetch_url_max_chars: Math.min(
-        200000,
-        Math.max(1000, Number(settings.fetchUrlMaxChars) || 8000)
-      ),
-      web_search_page_max_chars: (() => {
-        const raw = Number(settings.webSearchPageMaxChars);
-        if (!Number.isFinite(raw) || raw <= 0) return 0;
-        return Math.min(200000, Math.max(1000, Math.round(raw)));
-      })(),
-      approval_mode: APPROVAL_MODES.includes(settings.approvalMode)
-        ? settings.approvalMode
-        : 'manual',
-      filesystem,
-      workspace_root: sessionWorkspaceRoot(),
-      terminal: terminalCap,
-      terminal_timeout_secs: Math.min(30, Math.max(5, Number(settings.terminalTimeoutSecs) || 30)),
-      browser: browserCap,
+    ...agentToolSettings(),
+    chat_retrieval: chatRetrieval,
+    web_search: webSearch,
+    fetch_url: fetchUrl,
+    filesystem,
+    terminal: terminalCap,
+    browser: browserCap,
   };
   if (deep) {
     skills.web_search_depth = 'deep';

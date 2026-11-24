@@ -283,7 +283,7 @@ fn apply_macos_edit_menu() {
 }
 
 fn spawn_quit_listeners(runtime: &tokio::runtime::Handle, proxy: EventLoopProxy<DesktopEvent>) {
-    let interrupt_proxy = proxy.clone();
+    let interrupt_proxy = proxy;
     runtime.spawn(async move {
         let _ = tokio::signal::ctrl_c().await;
         QUIT_REQUESTED.store(true, Ordering::SeqCst);
@@ -365,7 +365,7 @@ pub fn run_window(url: &str, bind: SocketAddr, runtime: &tokio::runtime::Handle)
 
     let app_origin = url.trim_end_matches('/').to_string();
     let stay_origin = app_origin.clone();
-    let window_origin = app_origin.clone();
+    let window_origin = app_origin;
     let builder = WebViewBuilder::new()
         .with_url(url)
         .with_background_color((22, 24, 30, 255))

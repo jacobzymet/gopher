@@ -324,7 +324,7 @@ pub async fn execute(
                 ))
             })
             .await?;
-            Ok(png_outcome(text, bytes))
+            Ok(png_outcome(text, &bytes))
         }
         "browser_evaluate" => {
             let expression = arg_str(args, "expression")
@@ -639,13 +639,13 @@ fn format_snapshot(data: &Value) -> String {
     lines.join("\n")
 }
 
-fn png_outcome(text: String, bytes: Vec<u8>) -> BrowserOutcome {
+fn png_outcome(text: String, bytes: &[u8]) -> BrowserOutcome {
     let image_data_url = if bytes.is_empty() || bytes.len() > MAX_EMBED_PNG_BYTES {
         None
     } else {
         Some(format!(
             "data:image/png;base64,{}",
-            base64::engine::general_purpose::STANDARD.encode(&bytes)
+            base64::engine::general_purpose::STANDARD.encode(bytes)
         ))
     };
     BrowserOutcome {

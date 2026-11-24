@@ -740,27 +740,18 @@ function beginQueuedMessageEdit(row) {
   const bubble = row.querySelector('.msg-bubble');
   if (!bubble) return;
 
-  const editor = document.createElement('div');
-  editor.className = 'msg-edit';
-  const input = document.createElement('textarea');
-  input.className = 'msg-edit-input';
-  input.value = raw === '(attachment)' ? '' : raw;
-  input.setAttribute('aria-label', 'Edit queued message');
-  input.placeholder = 'Edit queued message… Type @ to mention';
-  const bar = document.createElement('div');
-  bar.className = 'msg-edit-bar';
-  const btnCancel = document.createElement('button');
-  btnCancel.type = 'button';
-  btnCancel.className = 'btn btn-ghost';
-  btnCancel.textContent = 'Cancel';
-  const btnSave = document.createElement('button');
-  btnSave.type = 'button';
-  btnSave.className = 'btn btn-primary';
-  btnSave.textContent = 'Save';
-  bar.appendChild(btnCancel);
-  bar.appendChild(btnSave);
-  editor.appendChild(input);
-  editor.appendChild(bar);
+  const { editor, input } = buildMessageEditor({
+    value: raw === '(attachment)' ? '' : raw,
+    label: 'Edit queued message',
+    placeholder: 'Edit queued message… Type @ to mention',
+    saveLabel: 'Save',
+    onSave(next) {
+      if (!next && !(item.attachments && item.attachments.length)) return;
+      closeMentionMenu();
+      mentionInput = composerInput;
+      saveQueuedMessageEdit(row, next);
+    },
+  });
 
   bubble.replaceWith(editor);
   row.classList.add('is-editing');
@@ -769,53 +760,7 @@ function beginQueuedMessageEdit(row) {
   mentionInput = input;
   refreshQueuedBubble(row, item, { paused: isQueuePausedForEdit(activeId) });
   updateComposerHint();
-
-  const commit = () => {
-    const next = input.value.trim();
-    if (!next && !(item.attachments && item.attachments.length)) return;
-    closeMentionMenu();
-    mentionInput = composerInput;
-    saveQueuedMessageEdit(row, next);
-  };
-  btnCancel.addEventListener('click', () => cancelMessageEdit());
-  btnSave.addEventListener('click', commit);
-  input.addEventListener('input', () => {
-    autoResize(input);
-    updateMentionMenu(input);
-  });
-  input.addEventListener('click', () => updateMentionMenu(input));
-  input.addEventListener('keyup', (event) => {
-    if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
-      updateMentionMenu(input);
-    }
-  });
-  input.addEventListener('blur', () => {
-    setTimeout(() => {
-      if (document.activeElement !== input) closeMentionMenu();
-    }, 120);
-  });
-  input.addEventListener('keydown', (event) => {
-    if (event.isComposing || event.keyCode === 229) return;
-    if (handleMentionKeydown(event)) return;
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      cancelMessageEdit();
-      return;
-    }
-    if (event.key !== 'Enter') return;
-    if (settings.enterSends) {
-      if (!event.shiftKey) {
-        event.preventDefault();
-        commit();
-      }
-    } else if (event.ctrlKey || event.metaKey) {
-      event.preventDefault();
-      commit();
-    }
-  });
-  input.focus();
-  input.setSelectionRange(input.value.length, input.value.length);
-  autoResize(input);
+  focusMessageEditor(input);
   // If this item is already at the head, pause drain until save/cancel.
   if (isQueuePausedForEdit(activeId)) updateComposerHint();
 }

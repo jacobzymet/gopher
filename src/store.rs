@@ -48,7 +48,7 @@ pub fn save_diagnostics(
 ) -> Result<(), StoreError> {
     ensure_data_dir(root)?;
     let encrypted = crypto::encrypt_value(key, value, crypto::AAD_DIAGNOSTICS)?;
-    atomic_write_json(&diagnostics_path(root), &encrypted)?;
+    secure_fs::atomic_write_json(&diagnostics_path(root), &encrypted)?;
     Ok(())
 }
 
@@ -138,7 +138,7 @@ pub fn save_provider_tokens(
 ) -> Result<(), StoreError> {
     ensure_data_dir(root)?;
     let encrypted = crypto::encrypt_value(key, value, crypto::AAD_PROVIDER_TOKENS)?;
-    atomic_write_json(&provider_tokens_path(root), &encrypted)?;
+    secure_fs::atomic_write_json(&provider_tokens_path(root), &encrypted)?;
     Ok(())
 }
 
@@ -148,10 +148,6 @@ pub fn clear_provider_tokens(root: &Path) -> Result<()> {
 
 pub fn ensure_data_dir(root: &Path) -> Result<()> {
     secure_fs::ensure_private_dir(root)
-}
-
-fn atomic_write_json(path: &Path, value: &Value) -> Result<()> {
-    secure_fs::atomic_write_json(path, value)
 }
 
 fn read_json_file(path: &Path) -> Result<Option<Value>> {
@@ -312,7 +308,7 @@ pub fn save_chats(
     }
     let normalized = normalize_store(value)?;
     let on_disk = encode_for_disk(&normalized, key, crypto::AAD_CHATS)?;
-    atomic_write_json(&chats_path(root), &on_disk)?;
+    secure_fs::atomic_write_json(&chats_path(root), &on_disk)?;
     Ok(())
 }
 
@@ -351,7 +347,7 @@ pub fn save_preferences(
         )));
     };
     let on_disk = encode_for_disk(&value, key, crypto::AAD_PREFERENCES)?;
-    atomic_write_json(&preferences_path(root), &on_disk)?;
+    secure_fs::atomic_write_json(&preferences_path(root), &on_disk)?;
     Ok(())
 }
 
@@ -359,7 +355,7 @@ pub fn save_preferences(
 pub fn save_chats_plaintext_for_disable(root: &Path, value: Value) -> Result<(), StoreError> {
     ensure_data_dir(root)?;
     let normalized = normalize_store(value)?;
-    atomic_write_json(&chats_path(root), &normalized)?;
+    secure_fs::atomic_write_json(&chats_path(root), &normalized)?;
     Ok(())
 }
 
@@ -371,7 +367,7 @@ pub fn save_preferences_plaintext_for_disable(root: &Path, value: Value) -> Resu
             "preferences must be a JSON object"
         )));
     };
-    atomic_write_json(&preferences_path(root), &value)?;
+    secure_fs::atomic_write_json(&preferences_path(root), &value)?;
     Ok(())
 }
 
@@ -514,7 +510,7 @@ mod tests {
         let key = crypto::derive_key("test-passphrase", &salt).unwrap();
         crypto::save_meta(root, &crypto::meta_for_key(&key, salt).unwrap()).unwrap();
         // Attacker (or crash) left plaintext on disk while meta claims encryption.
-        atomic_write_json(
+        secure_fs::atomic_write_json(
             &chats_path(root),
             &serde_json::json!({
                 "version": 2,

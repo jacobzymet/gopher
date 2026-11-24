@@ -307,13 +307,13 @@ fn sync_directory(_path: &Path) -> Result<()> {
 }
 
 #[cfg(not(windows))]
-fn replace_file(temporary: &Path, destination: &Path) -> Result<()> {
+pub(crate) fn replace_file(temporary: &Path, destination: &Path) -> Result<()> {
     fs::rename(temporary, destination)
         .with_context(|| format!("could not replace {}", destination.display()))
 }
 
 #[cfg(windows)]
-fn replace_file(temporary: &Path, destination: &Path) -> Result<()> {
+pub(crate) fn replace_file(temporary: &Path, destination: &Path) -> Result<()> {
     use std::{iter, os::windows::ffi::OsStrExt};
 
     const MOVEFILE_REPLACE_EXISTING: u32 = 0x1;

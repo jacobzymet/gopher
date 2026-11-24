@@ -595,9 +595,8 @@ fn read_codex_default_model() -> Option<String> {
 }
 
 fn read_codex_cache_models() -> Vec<RemoteModelOption> {
-    let text = match std::fs::read_to_string(codex_home().join("models_cache.json")) {
-        Ok(text) => text,
-        Err(_) => return Vec::new(),
+    let Ok(text) = std::fs::read_to_string(codex_home().join("models_cache.json")) else {
+        return Vec::new();
     };
     let Ok(body) = serde_json::from_str::<Value>(&text) else {
         return Vec::new();

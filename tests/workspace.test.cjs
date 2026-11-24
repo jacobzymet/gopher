@@ -15,7 +15,7 @@ function load(context, names) {
 function harness(overrides = {}) {
   const context = vm.createContext({
     projects: [{ id: 'p', name: 'Garden', instructions: 'Grow tomatoes', memory: '' }],
-    conversations: [], activeProfileId: 'personal', appSurface: 'chat', activeProjectId: null,
+    conversations: [], activeProfileId: 'personal', activeProjectId: null,
     activeId: null, draftIncognito: false, latestState: null, profiles: [{ id: 'personal', conversations: [], composerDrafts: {} }],
     composerInput: { value: '' }, composerMentionIds: new Set(), pendingAttachments: [],
     pendingReplyQuote: '', pendingReplyTarget: null, draftModelId: '', draftWorkspaceRoot: '',

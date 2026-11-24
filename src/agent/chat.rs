@@ -52,7 +52,7 @@ impl StreamFail {
 /// Frames go through a channel only for nested `yield`; cancel is drop-based.
 pub(crate) fn stream_from_worker<F, Fut>(worker: F) -> ChatStream
 where
-    F: FnOnce(mpsc::Sender<Result<Vec<u8>, io::Error>>) -> Fut + Send + 'static,
+    F: FnOnce(SseSender) -> Fut + Send + 'static,
     Fut: Future<Output = Result<(), StreamFail>> + Send + 'static,
 {
     Box::pin(async_stream::stream! {
@@ -232,7 +232,7 @@ async fn proxy_openai_sse(
     url: &str,
     upstream: &crate::subscription::PreparedUpstream,
     payload: &serde_json::Value,
-    tx: &mpsc::Sender<Result<Vec<u8>, io::Error>>,
+    tx: &SseSender,
     upstream_label: &str,
 ) -> Result<(), StreamFail> {
     let response = match open_llm_sse(
@@ -264,7 +264,7 @@ async fn proxy_anthropic_sse(
     url: &str,
     upstream: &crate::subscription::PreparedUpstream,
     payload: &serde_json::Value,
-    tx: &mpsc::Sender<Result<Vec<u8>, io::Error>>,
+    tx: &SseSender,
 ) -> Result<(), StreamFail> {
     let response = open_llm_sse(
         url,
@@ -331,7 +331,7 @@ async fn proxy_responses_sse(
     url: &str,
     upstream: &crate::subscription::PreparedUpstream,
     payload: &serde_json::Value,
-    tx: &mpsc::Sender<Result<Vec<u8>, io::Error>>,
+    tx: &SseSender,
 ) -> Result<(), StreamFail> {
     let response = open_llm_sse(
         url,
@@ -391,10 +391,7 @@ async fn proxy_responses_sse(
     Ok(())
 }
 
-async fn forward_raw_sse(
-    response: reqwest::Response,
-    tx: &mpsc::Sender<Result<Vec<u8>, io::Error>>,
-) -> Result<(), StreamFail> {
+async fn forward_raw_sse(response: reqwest::Response, tx: &SseSender) -> Result<(), StreamFail> {
     let mut stream = response.bytes_stream();
     while let Some(chunk) = next_stream_chunk(&mut stream).await? {
         send_sse(tx, chunk.to_vec()).await?;
@@ -434,10 +431,10 @@ pub(crate) fn sse_error(message: &str) -> Vec<u8> {
     format!("event: error\ndata: {payload}\n\n").into_bytes()
 }
 
-pub(crate) async fn send_sse(
-    tx: &mpsc::Sender<Result<Vec<u8>, io::Error>>,
-    frame: Vec<u8>,
-) -> Result<(), StreamFail> {
+/// Channel that carries raw SSE frames back to the HTTP response body.
+pub(crate) type SseSender = mpsc::Sender<Result<Vec<u8>, io::Error>>;
+
+pub(crate) async fn send_sse(tx: &SseSender, frame: Vec<u8>) -> Result<(), StreamFail> {
     if tx.send(Ok(frame)).await.is_err() {
         Err(StreamFail::Cancelled)
     } else {

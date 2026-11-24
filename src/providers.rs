@@ -1293,16 +1293,8 @@ fn local_thinking_support(
 
     if let Some(from_lms) = fetch_lmstudio_thinking_map(&root, token, probe_timeout) {
         for model in models {
-            if let Some(capabilities) = from_lms.get(model).cloned() {
-                merge_thinking_capabilities(&mut out, model, capabilities);
-            } else {
-                let leaf = model.rsplit('/').next().unwrap_or(model);
-                if let Some((_, capabilities)) = from_lms
-                    .iter()
-                    .find(|(key, _)| key.as_str() == leaf || key.ends_with(&format!("/{leaf}")))
-                {
-                    merge_thinking_capabilities(&mut out, model, capabilities.clone());
-                }
+            if let Some(capabilities) = lmstudio_lookup(&from_lms, model) {
+                merge_thinking_capabilities(&mut out, model, capabilities.clone());
             }
         }
     }
@@ -1529,16 +1521,8 @@ fn local_attachments_support(
 
     if let Some(from_lms) = fetch_lmstudio_vision_map(&root, token, probe_timeout) {
         for model in models {
-            if let Some(supported) = from_lms.get(model).copied() {
-                out.insert(model.clone(), supported);
-            } else {
-                let leaf = model.rsplit('/').next().unwrap_or(model);
-                if let Some((_, supported)) = from_lms
-                    .iter()
-                    .find(|(key, _)| key.as_str() == leaf || key.ends_with(&format!("/{leaf}")))
-                {
-                    out.insert(model.clone(), *supported);
-                }
+            if let Some(supported) = lmstudio_lookup(&from_lms, model) {
+                out.insert(model.clone(), *supported);
             }
         }
     }
@@ -1721,11 +1705,13 @@ fn fetch_ollama_vision_capability(
     )
 }
 
-fn fetch_lmstudio_vision_map(
+/// LM Studio's native model list as `(id, entry)` pairs. `None` when the
+/// endpoint is missing, fails, or lists a model without an identifier.
+fn fetch_lmstudio_models(
     root: &str,
     token: &str,
     timeout: Duration,
-) -> Option<HashMap<String, bool>> {
+) -> Option<Vec<(String, serde_json::Value)>> {
     let root = root.trim_end_matches('/');
     let url = format!("{root}/api/v1/models");
     let client = http::llm_blocking_client(root, timeout);
@@ -1737,29 +1723,56 @@ fn fetch_lmstudio_vision_map(
     if response.status().as_u16() != 200 {
         return None;
     }
-    let body = read_probe_json(response)?;
-    let models = body
-        .get("models")
-        .and_then(|v| v.as_array())
-        .or_else(|| body.get("data").and_then(|v| v.as_array()))?;
-    let mut out = HashMap::new();
-    for entry in models {
-        let id = entry
-            .get("key")
-            .or_else(|| entry.get("id"))
-            .or_else(|| entry.get("name"))
-            .and_then(|v| v.as_str())?;
-        let caps = entry.get("capabilities")?;
-        let supported = caps
-            .get("vision")
-            .and_then(|v| v.as_bool())
-            .or_else(|| caps.get("image").and_then(|v| v.as_bool()))
-            .or_else(|| caps.get("multimodal").and_then(|v| v.as_bool()));
-        if let Some(flag) = supported {
-            out.insert(id.to_string(), flag);
-        }
-    }
-    if out.is_empty() { None } else { Some(out) }
+    let mut body = read_probe_json(response)?;
+    let models = match body.get_mut("models").filter(|v| v.is_array()) {
+        Some(models) => models.take(),
+        None => body.get_mut("data")?.take(),
+    };
+    let serde_json::Value::Array(models) = models else {
+        return None;
+    };
+    models
+        .into_iter()
+        .map(|entry| {
+            let id = entry
+                .get("key")
+                .or_else(|| entry.get("id"))
+                .or_else(|| entry.get("name"))
+                .and_then(serde_json::Value::as_str)?
+                .to_string();
+            Some((id, entry))
+        })
+        .collect()
+}
+
+/// Find `model` in an LM Studio map, falling back to its last path segment.
+fn lmstudio_lookup<'a, T>(map: &'a HashMap<String, T>, model: &str) -> Option<&'a T> {
+    map.get(model).or_else(|| {
+        let leaf = model.rsplit('/').next().unwrap_or(model);
+        map.iter()
+            .find(|(key, _)| key.as_str() == leaf || key.ends_with(&format!("/{leaf}")))
+            .map(|(_, value)| value)
+    })
+}
+
+fn fetch_lmstudio_vision_map(
+    root: &str,
+    token: &str,
+    timeout: Duration,
+) -> Option<HashMap<String, bool>> {
+    let out: HashMap<String, bool> = fetch_lmstudio_models(root, token, timeout)?
+        .into_iter()
+        .filter_map(|(id, entry)| {
+            let caps = entry.get("capabilities")?;
+            let supported = caps
+                .get("vision")
+                .and_then(serde_json::Value::as_bool)
+                .or_else(|| caps.get("image").and_then(serde_json::Value::as_bool))
+                .or_else(|| caps.get("multimodal").and_then(serde_json::Value::as_bool))?;
+            Some((id, supported))
+        })
+        .collect();
+    (!out.is_empty()).then_some(out)
 }
 
 fn fetch_lmstudio_thinking_map(
@@ -1767,35 +1780,11 @@ fn fetch_lmstudio_thinking_map(
     token: &str,
     timeout: Duration,
 ) -> Option<HashMap<String, ThinkingCapabilities>> {
-    let root = root.trim_end_matches('/');
-    let url = format!("{root}/api/v1/models");
-    let client = http::llm_blocking_client(root, timeout);
-    let mut request = client.get(&url).timeout(timeout);
-    if !token.trim().is_empty() {
-        request = request.header("Authorization", &format!("Bearer {}", token.trim()));
-    }
-    let response = request.send().ok()?;
-    if response.status().as_u16() != 200 {
-        return None;
-    }
-    let body = read_probe_json(response)?;
-    let models = body
-        .get("models")
-        .and_then(|v| v.as_array())
-        .or_else(|| body.get("data").and_then(|v| v.as_array()))?;
-    let mut out = HashMap::new();
-    for entry in models {
-        let id = entry
-            .get("key")
-            .or_else(|| entry.get("id"))
-            .or_else(|| entry.get("name"))
-            .and_then(|v| v.as_str())?;
-        let Some(capabilities) = thinking_capabilities_from_model_object(entry) else {
-            continue;
-        };
-        out.insert(id.to_string(), capabilities);
-    }
-    if out.is_empty() { None } else { Some(out) }
+    let out: HashMap<String, ThinkingCapabilities> = fetch_lmstudio_models(root, token, timeout)?
+        .into_iter()
+        .filter_map(|(id, entry)| Some((id, thinking_capabilities_from_model_object(&entry)?)))
+        .collect();
+    (!out.is_empty()).then_some(out)
 }
 
 /// True when a provider looks like a local inference server (llama.cpp,

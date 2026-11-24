@@ -23,6 +23,7 @@ function settingsContext() {
   vm.runInContext(state.slice(state.indexOf('const WEB_SEARCH_DEPTHS'), state.indexOf('const DEFAULT_SETTINGS')), context);
   vm.runInContext(state.match(/^const DEFAULT_SETTINGS = \{[\s\S]*?^\};/m)[0], context);
   for (const name of ['normalizeThinkingEffort', 'normalizeSearxngUrl', 'normalizeSettings', 'preferencesPayload', 'buildTimePrompt', 'buildSystemPrompt']) load(context, state, name);
+  load(context, input, 'agentToolSettings');
   load(context, input, 'resolveTurnSkills');
   load(context, input, 'resolveForcedTools');
   return context;

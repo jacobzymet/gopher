@@ -23,7 +23,7 @@ function sendHarness() {
     pendingComposerSend: null, editingRow: null, composerInput: { value: 'original draft' },
     pendingAttachments: [attachment], pendingReplyQuote: '', pendingReplyTarget: null,
     activeId: 'chat-1', activeProjectId: null, selectedChatModel: 'model', latestState: {},
-    appSurface: 'chat', draftIncognito: false, draftWorkspaceRoot: '',
+    draftIncognito: false, draftWorkspaceRoot: '',
     conversations: [{ id: 'chat-1', messages: [] }, { id: 'chat-2', messages: [] }],
     composerMentionIds: new Set(), serverReady: true,
     selectedRemoteModel: () => ({ ready: true }), requireUnlockedData: () => true,
@@ -173,17 +173,17 @@ function conflictHarness() {
   };
 }
 
-test('outbound prompts retain stage instructions and place the fresh clock after stable context', async () => {
+test('outbound prompts place the fresh clock after stable context', async () => {
   const h = conflictHarness();
   h.state.buildSystemPrompt = (_, opts) => {
     assert.equal(opts.includeTime, false);
     return 'Stable instructions and memory';
   };
   h.state.buildTimePrompt = () => 'Now: 2026-10-01 12:01';
-  const pending = h.run({ loopTurnDirective: 'Verify independently' });
+  const pending = h.run();
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(h.requests[0].messages, [
-    { role: 'system', content: 'Stable instructions and memory\n\nVerify independently' },
+    { role: 'system', content: 'Stable instructions and memory' },
     { role: 'system', content: 'Now: 2026-10-01 12:01' },
     { role: 'user', content: 'queued prompt' },
   ]);

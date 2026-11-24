@@ -5,7 +5,7 @@ A local, lightweight, open source LLM harness for humanity.
 A more permissive alternative to [Open WebUI](https://github.com/open-webui/open-webui), with:
 
 - OpenAI-compatible and Anthropic Messages–compatible providers, local or cloud
-- Chats, projects, Loops (multi-model group chats), memory, model pins, and attachments
+- Chats, projects, memory, model pins, and attachments
 - Agent mode with approvals, web search, URL fetching, deep research, browser control, filesystem access, terminal access, and custom skills
 - Passphrase-based encryption at rest for chats, preferences, provider credentials, and skills
 
@@ -79,7 +79,7 @@ Default URL: `http://gopher.localhost:3930`. `/settings` redirects to **Settings
 
 ## Everyday tools
 
-- **Ctrl+K** (⌘K on macOS) searches titles and the full text of saved chats, Loops, and projects in the current profile. Results include matching excerpts and open the relevant message. Use quotes for an exact phrase, filter by Chats or Projects, or type `>` for quick actions.
+- **Ctrl+K** (⌘K on macOS) searches titles and the full text of saved chats and projects in the current profile. Results include matching excerpts and open the relevant message. Use quotes for an exact phrase, filter by Chats or Projects, or type `>` for quick actions.
 - **Ctrl+F** (⌘F) finds text in the open conversation, including passages with inline formatting. Enter / Shift+Enter moves between matches; Escape closes the search.
 - Unsent text, capability mentions, reply quotes, and new-chat model/folder choices restore separately for each chat and project. Drafts use the same storage and encryption as chats. Ghost drafts and pending attachment files stay in memory only; files need to be reattached after reload.
 - The conversation menu offers **Export as Markdown**. Exports include messages, reply quotes, and attachment names. Tool payloads, provider configuration, and attachment bytes are excluded.

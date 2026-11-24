@@ -89,9 +89,8 @@ fn main() -> Result<()> {
             Err(error) => return Err(error).with_context(|| format!("could not bind {bind}")),
         }
     }
-    let listener = match listener {
-        Some(listener) => listener,
-        None => return greet_running_instance(bind),
+    let Some(listener) = listener else {
+        return greet_running_instance(bind);
     };
     let bind = listener
         .local_addr()

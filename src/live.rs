@@ -425,7 +425,7 @@ impl LiveHub {
                 }
             }
             let turn = Arc::new(LiveTurn::new(info));
-            turns.insert(conversation_id.clone(), Arc::clone(&turn));
+            turns.insert(conversation_id, Arc::clone(&turn));
             turn
         };
         if let Some(old) = displaced_turn

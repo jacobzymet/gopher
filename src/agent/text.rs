@@ -17,6 +17,16 @@ pub(super) fn collapse_ws(input: &str) -> String {
     out
 }
 
+/// Shorten `text` to at most `max_chars` characters, ending with an ellipsis when cut.
+pub(super) fn truncate_chars(text: &str, max_chars: usize) -> String {
+    if text.chars().count() <= max_chars {
+        return text.to_string();
+    }
+    let mut out: String = text.chars().take(max_chars.saturating_sub(1)).collect();
+    out.push('…');
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

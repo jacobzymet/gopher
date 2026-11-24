@@ -33,10 +33,13 @@ use serde_json::{Value, json};
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::timeout;
 
-use self::text::collapse_ws;
+use self::text::{collapse_ws, truncate_chars};
 use crate::{
     anthropic::{self, AnthropicSseTranslator},
-    chat::{ChatStream, StreamFail, next_stream_chunk, open_llm_sse, send_sse, stream_from_worker},
+    chat::{
+        ChatStream, SseSender, StreamFail, next_stream_chunk, open_llm_sse, send_sse,
+        stream_from_worker,
+    },
     http,
     providers::ApiStyle,
     skills::UserSkill,
@@ -242,10 +245,7 @@ fn append_steer_messages(messages: &mut Vec<Value>, steers: &[SteerPayload]) {
     }
 }
 
-async fn emit_steer_events(
-    tx: &mpsc::Sender<Result<Vec<u8>, std::io::Error>>,
-    steers: &[SteerPayload],
-) -> Result<(), StreamFail> {
+async fn emit_steer_events(tx: &SseSender, steers: &[SteerPayload]) -> Result<(), StreamFail> {
     for payload in steers {
         let mut event = json!({
             "phase": "steer",
@@ -821,7 +821,7 @@ async fn run_agent_loop(
     upstream: crate::subscription::PreparedUpstream,
     request: &mut AgentRequest,
     user_skills: &[UserSkill],
-    tx: &mpsc::Sender<Result<Vec<u8>, std::io::Error>>,
+    tx: &SseSender,
 ) -> Result<(), StreamFail> {
     let api_key = {
         let token = upstream.token.trim();
@@ -867,24 +867,7 @@ async fn run_agent_loop(
         request.deep_research_output,
         &request.force_tools,
     );
-    send_sse(
-        tx,
-        sse_agent(json!({
-            "phase": "status",
-            "message": if request.deep_research {
-                "Deep research"
-            } else if !request.force_tools.is_empty() {
-                "Agent · required skills"
-            } else if request.skills.chat_history.is_some()
-                && !request.skills.web_search && !request.skills.fetch_url
-                && !request.skills.filesystem && !request.skills.terminal && !request.skills.browser {
-                "Past-chat retrieval enabled"
-            } else {
-                "Agent mode"
-            }
-        })),
-    )
-    .await?;
+    send_status(tx, agent_mode_label(request)).await?;
 
     let steer_id = new_steer_id();
     let (steer_tx, mut steer_rx) = mpsc::channel(STEER_QUEUE_CAPACITY);
@@ -944,35 +927,16 @@ async fn run_agent_loop(
             pending_list = vec![research.next_tool().into()];
         }
         let allow_tools = !force_final;
-        let status_message = if await_clarify && tool_rounds == 0 && empty_retries == 0 {
-            "Refining research goal…".to_string()
-        } else if force_final {
-            "Writing answer…".to_string()
-        } else if request.deep_research {
-            if research.ready() {
-                "Checking evidence and resolving gaps…".to_string()
-            } else if research.next_tool() == "fetch_url" {
-                "Reading and verifying sources…".to_string()
-            } else {
-                "Researching multiple angles…".to_string()
-            }
-        } else if !pending_list.is_empty() {
-            format!("Required: {}", pending_list.join(", "))
-        } else if stall_retries > 0 {
-            "Retrying model connection…".to_string()
-        } else if tool_rounds == 0 && empty_retries == 0 {
-            "Waiting for model…".to_string()
-        } else {
-            "Continuing…".to_string()
-        };
-        send_sse(
-            tx,
-            sse_agent(json!({
-                "phase": "status",
-                "message": status_message
-            })),
-        )
-        .await?;
+        let status_message = round_status_message(RoundStatus {
+            first_round: tool_rounds == 0 && empty_retries == 0,
+            await_clarify,
+            force_final,
+            deep_research: request.deep_research,
+            research: &research,
+            pending: &pending_list,
+            stalled: stall_retries > 0,
+        });
+        send_status(tx, &status_message).await?;
 
         let definitions = if allow_tools {
             openai_tools_payload(&request.skills, user_skills, request.deep_research)
@@ -994,7 +958,11 @@ async fn run_agent_loop(
         request.messages = messages;
         if compacted && !context_notice_sent {
             context_notice_sent = true;
-            send_sse(tx, sse_agent(json!({"phase":"notice", "message":"Older tool activity was archived to stay within the context budget. The agent can retrieve it; user instructions were preserved."}))).await?;
+            send_notice(
+                tx,
+                "Older tool activity was archived to stay within the context budget. The agent can retrieve it; user instructions were preserved.",
+            )
+            .await?;
         }
         let turn = match stream_once(
             &upstream,
@@ -1015,14 +983,7 @@ async fn run_agent_loop(
             }
             Err(StreamFail::Stalled) if stall_retries < MAX_STALL_RETRIES => {
                 stall_retries += 1;
-                send_sse(
-                    tx,
-                    sse_agent(json!({
-                        "phase": "notice",
-                        "message": "The model stalled; retrying that step."
-                    })),
-                )
-                .await?;
+                send_notice(tx, "The model stalled; retrying that step.").await?;
                 continue;
             }
             Err(err) => return Err(err),
@@ -1042,13 +1003,7 @@ async fn run_agent_loop(
                 force_retries += 1;
                 tool_rounds += calls.len();
                 let err = crate::prompts::trim_prompt(crate::prompts::agent::NUDGE_FORCE_FINAL);
-                let mut results = Vec::new();
-                for call in &calls {
-                    send_tool_call(tx, call, false).await?;
-                    let outcome = ToolOutcome::soft_failure(err);
-                    send_tool_result(tx, call, &outcome).await?;
-                    results.push((call.clone(), err.to_string()));
-                }
+                let results = reject_tool_calls(tx, &calls, |_| err.to_string()).await?;
                 append_openai_tool_exchange(&mut request.messages, &turn, &results);
                 continue;
             }
@@ -1060,69 +1015,11 @@ async fn run_agent_loop(
                     ));
                 }
                 tool_rounds += calls.len();
-                let ask = &calls[ask_idx];
-                let questions = normalize_ask_user_questions(&ask.arguments);
-                if questions.is_empty() {
-                    let err = ask_user_format_error(&ask.arguments);
-                    let mut results = Vec::new();
-                    for call in &calls {
-                        send_tool_call(tx, call, false).await?;
-                        let text = if call.name == "ask_user" {
-                            err.clone()
-                        } else {
-                            "ask_user failed this turn; retry this tool after clarifying questions."
-                                .into()
-                        };
-                        let outcome = ToolOutcome::soft_failure(&text);
-                        send_tool_result(tx, call, &outcome).await?;
-                        results.push((call.clone(), text));
-                    }
-                    append_openai_tool_exchange(&mut request.messages, &turn, &results);
-                    continue;
-                }
-
-                let clarify_id = new_tool_call_id();
-                send_sse(
-                    tx,
-                    sse_agent(json!({
-                        "phase": "clarify",
-                        "id": clarify_id,
-                        "questions": questions,
-                    })),
-                )
-                .await?;
-                send_sse(
-                    tx,
-                    sse_agent(json!({
-                        "phase": "status",
-                        "message": "Waiting for your answers…"
-                    })),
-                )
-                .await?;
-
-                let answers = wait_for_clarify_answers(&clarify_id, tx).await?;
-                let summary = format_clarify_answers_for_model(&questions, &answers);
-                await_clarify = false;
-                pending_force.insert("web_search".into());
-                force_retries = 0;
-                send_sse(
-                    tx,
-                    sse_agent(json!({
-                        "phase": "clarify_done",
-                        "id": clarify_id,
-                        "answers": answers,
-                        "summary": summary,
-                    })),
-                )
-                .await?;
-                let mut results = Vec::new();
-                for (index, call) in calls.iter().enumerate() {
-                    let text = if index == ask_idx {
-                        summary.clone()
-                    } else {
-                        "Clarifying questions were asked this turn. Call this tool again after the user answers.".into()
-                    };
-                    results.push((call.clone(), text));
+                let (results, answered) = run_ask_user_round(tx, &calls, ask_idx).await?;
+                if answered {
+                    await_clarify = false;
+                    pending_force.insert("web_search".into());
+                    force_retries = 0;
                 }
                 append_openai_tool_exchange(&mut request.messages, &turn, &results);
                 continue;
@@ -1131,13 +1028,7 @@ async fn run_agent_loop(
             if await_clarify {
                 let err = "Deep research requires ask_user first (1–2 clarifying questions) before web_search or fetch_url.";
                 tool_rounds += calls.len();
-                let mut results = Vec::new();
-                for call in &calls {
-                    send_tool_call(tx, call, false).await?;
-                    let outcome = ToolOutcome::soft_failure(err);
-                    send_tool_result(tx, call, &outcome).await?;
-                    results.push((call.clone(), err.to_string()));
-                }
+                let results = reject_tool_calls(tx, &calls, |_| err.to_string()).await?;
                 append_openai_tool_exchange(&mut request.messages, &turn, &results);
                 continue;
             }
@@ -1161,35 +1052,16 @@ async fn run_agent_loop(
             };
             if !loop_notice_sent && tool_rounds >= loop_after {
                 loop_notice_sent = true;
-                send_sse(
+                send_notice(
                     tx,
-                    sse_agent(json!({
-                        "phase": "notice",
-                        "message": format!(
-                            "{loop_after} tool steps so far — the model may be stuck looping. Press Stop if this isn't making progress."
-                        ),
-                    })),
+                    &format!(
+                        "{loop_after} tool steps so far — the model may be stuck looping. Press Stop if this isn't making progress."
+                    ),
                 )
                 .await?;
             }
 
-            let mut approval_rx = HashMap::new();
-            let mut approval_guards = Vec::new();
-            for call in &calls {
-                if needs_approval(&call.name, request.skills.approval_mode) {
-                    approval_rx.insert(call.id.clone(), arm_tool_approval(&call.id)?);
-                    approval_guards.push(ApprovalWaitGuard {
-                        id: call.id.clone(),
-                    });
-                }
-            }
-            for call in &calls {
-                send_tool_call(tx, call, approval_rx.contains_key(&call.id)).await?;
-            }
-
-            let executed =
-                approve_and_execute_tools(calls, &request.skills, user_skills, tx, approval_rx)
-                    .await?;
+            let executed = run_tool_round(tx, calls, &request.skills, user_skills).await?;
             if request.deep_research {
                 research.record_round(&executed);
             }
@@ -1232,44 +1104,31 @@ async fn run_agent_loop(
                 pending_force_list(&pending_force, &request.force_tools)
             };
             send_sse(tx, sse_agent(json!({ "phase": "content_clear" }))).await?;
-            send_sse(
-                tx,
-                sse_agent(json!({
-                    "phase": "status",
-                    "message": if await_clarify {
-                        "Waiting to refine the research goal…".into()
-                    } else {
-                        format!("Waiting for: {}", pending.join(", "))
-                    }
-                })),
-            )
-            .await?;
-            request.messages.push(json!({
-                "role": "assistant",
-                "content": turn.assistant_text(),
-            }));
-            request.messages.push(json!({
-                "role": "user",
-                "content": if await_clarify {
-                    crate::prompts::trim_prompt(crate::prompts::agent::NUDGE_ASK_USER_FIRST)
-                        .to_string()
-                } else if needs_deep_search {
-                    research.note()
-                } else {
-                    crate::prompts::fill(
-                        crate::prompts::agent::NUDGE_REQUIRED_TOOLS,
-                        &[("tools", &pending.join(" and "))],
-                    )
-                },
-            }));
+            let status = if await_clarify {
+                "Waiting to refine the research goal…".into()
+            } else {
+                format!("Waiting for: {}", pending.join(", "))
+            };
+            send_status(tx, &status).await?;
+            let nudge = if await_clarify {
+                crate::prompts::trim_prompt(crate::prompts::agent::NUDGE_ASK_USER_FIRST).to_string()
+            } else if needs_deep_search {
+                research.note()
+            } else {
+                crate::prompts::fill(
+                    crate::prompts::agent::NUDGE_REQUIRED_TOOLS,
+                    &[("tools", &pending.join(" and "))],
+                )
+            };
+            push_retry_nudge(&mut request.messages, &turn, &nudge);
             continue;
         }
 
         // Reasoning-only / think-only / blank replies used to end the turn empty in the UI.
         // Nudge the model to either call a tool or write a user-visible answer.
         if turn.visible_text().is_empty() {
-            let answer_budget = if request.deep_research && (research.searches() > 0 || force_final)
-            {
+            let must_answer = request.deep_research && (research.searches() > 0 || force_final);
+            let answer_budget = if must_answer {
                 MAX_ANSWER_RETRIES
             } else {
                 MAX_EMPTY_RETRIES
@@ -1281,29 +1140,19 @@ async fn run_agent_loop(
             }
             empty_retries += 1;
             send_sse(tx, sse_agent(json!({ "phase": "content_clear" }))).await?;
-            send_sse(
-                tx,
-                sse_agent(json!({
-                    "phase": "status",
-                    "message": "Waiting for final answer…"
-                })),
-            )
-            .await?;
-            request.messages.push(json!({
-                "role": "assistant",
-                "content": turn.assistant_text(),
-            }));
-            request.messages.push(json!({
-                "role": "user",
-                "content": if request.deep_research && (research.searches() > 0 || force_final) {
-                    crate::prompts::trim_prompt(crate::prompts::agent::NUDGE_STOP_AND_ANSWER)
-                        .to_string()
-                } else if request.deep_research {
-                    crate::prompts::trim_prompt(crate::prompts::agent::NUDGE_EMPTY_DEEP).to_string()
-                } else {
-                    crate::prompts::trim_prompt(crate::prompts::agent::NUDGE_EMPTY).to_string()
-                },
-            }));
+            send_status(tx, "Waiting for final answer…").await?;
+            let nudge = if must_answer {
+                crate::prompts::agent::NUDGE_STOP_AND_ANSWER
+            } else if request.deep_research {
+                crate::prompts::agent::NUDGE_EMPTY_DEEP
+            } else {
+                crate::prompts::agent::NUDGE_EMPTY
+            };
+            push_retry_nudge(
+                &mut request.messages,
+                &turn,
+                crate::prompts::trim_prompt(nudge),
+            );
             continue;
         }
 
@@ -1325,6 +1174,147 @@ async fn run_agent_loop(
         send_sse(tx, b"data: [DONE]\n\n".to_vec()).await?;
         return Ok(());
     }
+}
+
+fn agent_mode_label(request: &AgentRequest) -> &'static str {
+    let skills = &request.skills;
+    if request.deep_research {
+        "Deep research"
+    } else if !request.force_tools.is_empty() {
+        "Agent · required skills"
+    } else if skills.chat_history.is_some()
+        && !skills.web_search
+        && !skills.fetch_url
+        && !skills.filesystem
+        && !skills.terminal
+        && !skills.browser
+    {
+        "Past-chat retrieval enabled"
+    } else {
+        "Agent mode"
+    }
+}
+
+/// Inputs for the status line shown before each model round.
+struct RoundStatus<'a> {
+    first_round: bool,
+    await_clarify: bool,
+    force_final: bool,
+    deep_research: bool,
+    research: &'a research::ResearchProgress,
+    pending: &'a [String],
+    stalled: bool,
+}
+
+fn round_status_message(status: RoundStatus<'_>) -> String {
+    if status.await_clarify && status.first_round {
+        "Refining research goal…".into()
+    } else if status.force_final {
+        "Writing answer…".into()
+    } else if status.deep_research {
+        if status.research.ready() {
+            "Checking evidence and resolving gaps…".into()
+        } else if status.research.next_tool() == "fetch_url" {
+            "Reading and verifying sources…".into()
+        } else {
+            "Researching multiple angles…".into()
+        }
+    } else if !status.pending.is_empty() {
+        format!("Required: {}", status.pending.join(", "))
+    } else if status.stalled {
+        "Retrying model connection…".into()
+    } else if status.first_round {
+        "Waiting for model…".into()
+    } else {
+        "Continuing…".into()
+    }
+}
+
+/// Handle a round that called `ask_user`: show the questions, wait for the
+/// user's answers, and return the tool results plus whether answers arrived.
+/// Malformed questions are rejected so the model can retry.
+async fn run_ask_user_round(
+    tx: &SseSender,
+    calls: &[ToolCall],
+    ask_idx: usize,
+) -> Result<(Vec<(ToolCall, String)>, bool), StreamFail> {
+    let ask = &calls[ask_idx];
+    let questions = normalize_ask_user_questions(&ask.arguments);
+    if questions.is_empty() {
+        let err = ask_user_format_error(&ask.arguments);
+        let results = reject_tool_calls(tx, calls, |call| {
+            if call.name == "ask_user" {
+                err.clone()
+            } else {
+                "ask_user failed this turn; retry this tool after clarifying questions.".into()
+            }
+        })
+        .await?;
+        return Ok((results, false));
+    }
+
+    let clarify_id = new_tool_call_id();
+    send_sse(
+        tx,
+        sse_agent(json!({
+            "phase": "clarify",
+            "id": clarify_id,
+            "questions": questions,
+        })),
+    )
+    .await?;
+    send_status(tx, "Waiting for your answers…").await?;
+
+    let answers = wait_for_clarify_answers(&clarify_id, tx).await?;
+    let summary = format_clarify_answers_for_model(&questions, &answers);
+    send_sse(
+        tx,
+        sse_agent(json!({
+            "phase": "clarify_done",
+            "id": clarify_id,
+            "answers": answers,
+            "summary": summary,
+        })),
+    )
+    .await?;
+    let results = calls
+        .iter()
+        .enumerate()
+        .map(|(index, call)| {
+            let text = if index == ask_idx {
+                summary.clone()
+            } else {
+                "Clarifying questions were asked this turn. Call this tool again after the user answers.".into()
+            };
+            (call.clone(), text)
+        })
+        .collect();
+    Ok((results, true))
+}
+
+/// Announce each call (flagging ones that need approval), wait for any
+/// approvals, and execute the batch.
+async fn run_tool_round(
+    tx: &SseSender,
+    calls: Vec<ToolCall>,
+    skills: &AgentSkills,
+    user_skills: &[UserSkill],
+) -> Result<Vec<(ToolCall, ToolOutcome)>, StreamFail> {
+    let mut approval_rx = HashMap::new();
+    // Guards unregister approval waiters however this round ends.
+    let mut approval_guards = Vec::new();
+    for call in &calls {
+        if needs_approval(&call.name, skills.approval_mode) {
+            approval_rx.insert(call.id.clone(), arm_tool_approval(&call.id)?);
+            approval_guards.push(ApprovalWaitGuard {
+                id: call.id.clone(),
+            });
+        }
+    }
+    for call in &calls {
+        send_tool_call(tx, call, approval_rx.contains_key(&call.id)).await?;
+    }
+    approve_and_execute_tools(calls, skills, user_skills, tx, approval_rx).await
 }
 
 fn pending_force_list(pending: &HashSet<String>, preferred_order: &[String]) -> Vec<String> {
@@ -1474,21 +1464,21 @@ fn inject_agent_system_prompt(
         }
         block.push_str(&deep_research_system_block(deep_research_output));
     }
-    if block.is_empty() {
-        return;
+    if !block.is_empty() {
+        append_to_system_prompt(messages, &block);
     }
+}
+
+/// Append `text` to a leading string system message, or insert one.
+fn append_to_system_prompt(messages: &mut Vec<Value>, text: &str) {
     if let Some(first) = messages.first_mut()
-        && first.get("role").and_then(|r| r.as_str()) == Some("system")
-        && let Some(content) = first.get("content").and_then(|c| c.as_str())
+        && first.get("role").and_then(Value::as_str) == Some("system")
+        && let Some(content) = first.get("content").and_then(Value::as_str)
     {
-        let merged = format!("{content}\n\n{block}");
-        first
-            .as_object_mut()
-            .unwrap()
-            .insert("content".into(), Value::String(merged));
+        first["content"] = Value::String(format!("{content}\n\n{text}"));
         return;
     }
-    messages.insert(0, json!({ "role": "system", "content": block }));
+    messages.insert(0, json!({ "role": "system", "content": text }));
 }
 
 fn agent_system_block(
@@ -1639,18 +1629,7 @@ pub fn inject_skill_catalog_into_messages(messages: &mut Vec<Value>, user_skills
         "{block}\n\n{}",
         crate::prompts::trim_prompt(crate::prompts::agent::SKILLS_NEED_AGENT)
     );
-    if let Some(first) = messages.first_mut()
-        && first.get("role").and_then(|r| r.as_str()) == Some("system")
-        && let Some(content) = first.get("content").and_then(|c| c.as_str())
-    {
-        let merged = format!("{content}\n\n{note}");
-        first
-            .as_object_mut()
-            .unwrap()
-            .insert("content".into(), Value::String(merged));
-        return;
-    }
-    messages.insert(0, json!({ "role": "system", "content": note }));
+    append_to_system_prompt(messages, &note);
 }
 
 pub fn compact_chat_messages(
@@ -1685,7 +1664,7 @@ async fn stream_once(
     request: &AgentRequest,
     user_skills: &[UserSkill],
     tools: StreamOnceTools<'_>,
-    tx: &mpsc::Sender<Result<Vec<u8>, std::io::Error>>,
+    tx: &SseSender,
 ) -> Result<StreamedTurn, StreamFail> {
     let api_base = upstream.api_base.trim_end_matches('/');
     let style = upstream.style;
@@ -1770,41 +1749,16 @@ async fn stream_once(
     let mut native_tools: Vec<Option<AccumToolCall>> = Vec::new();
     let mut forwarding = true;
 
-    match style {
-        ApiStyle::Openai => {
-            consume_openai_sse_agent(
-                &mut byte_stream,
-                &mut content,
-                &mut reasoning,
-                &mut native_tools,
-                &mut forwarding,
-                tx,
-            )
-            .await?;
-        }
-        ApiStyle::Anthropic => {
-            consume_anthropic_as_openai_agent(
-                &mut byte_stream,
-                &mut content,
-                &mut reasoning,
-                &mut native_tools,
-                &mut forwarding,
-                tx,
-            )
-            .await?;
-        }
-        ApiStyle::Responses => {
-            consume_responses_as_openai_agent(
-                &mut byte_stream,
-                &mut content,
-                &mut reasoning,
-                &mut native_tools,
-                &mut forwarding,
-                tx,
-            )
-            .await?;
-        }
-    }
+    consume_agent_sse(
+        style,
+        &mut byte_stream,
+        &mut content,
+        &mut reasoning,
+        &mut native_tools,
+        &mut forwarding,
+        tx,
+    )
+    .await?;
     // Dropping the body here (or earlier on cancel) aborts the upstream request.
     drop(byte_stream);
 
@@ -1817,27 +1771,83 @@ async fn stream_once(
     Ok(turn)
 }
 
-async fn consume_openai_sse_agent<S, B>(
+/// Upstream wire format, translated line by line into OpenAI chat-completion SSE.
+enum AgentSseTranslator {
+    Openai,
+    Responses(crate::responses::ResponsesSseTranslator),
+    Anthropic(AnthropicSseTranslator),
+}
+
+impl AgentSseTranslator {
+    fn new(style: ApiStyle) -> Self {
+        match style {
+            ApiStyle::Openai => Self::Openai,
+            ApiStyle::Responses => Self::Responses(Default::default()),
+            ApiStyle::Anthropic => Self::Anthropic(Default::default()),
+        }
+    }
+
+    /// Apply one upstream SSE line. Returns true once the stream has completed.
+    async fn feed(
+        &mut self,
+        line: &str,
+        content: &mut String,
+        reasoning: &mut String,
+        native_tools: &mut Vec<Option<AccumToolCall>>,
+        forwarding: &mut bool,
+        tx: &SseSender,
+    ) -> Result<bool, StreamFail> {
+        let (frames, finished) = match self {
+            Self::Openai => {
+                apply_openai_sse_line(line, content, reasoning, native_tools, forwarding, tx)
+                    .await?;
+                let done = line
+                    .strip_prefix("data:")
+                    .is_some_and(|data| data.trim() == "[DONE]");
+                return Ok(done);
+            }
+            Self::Responses(translator) => (
+                translator.push_line(line).map_err(StreamFail::Other)?,
+                translator.is_finished(),
+            ),
+            Self::Anthropic(translator) => (
+                translator.push_line(line).map_err(StreamFail::Other)?,
+                translator.is_finished(),
+            ),
+        };
+        for frame in frames {
+            apply_openai_sse_frame(&frame, content, reasoning, native_tools, forwarding, tx)
+                .await?;
+        }
+        Ok(finished)
+    }
+}
+
+/// Read an upstream model stream in `style`, accumulating the agent turn and
+/// forwarding visible deltas. Returns at the completion marker without waiting
+/// for the socket to close.
+async fn consume_agent_sse<S, B>(
+    style: ApiStyle,
     stream: &mut S,
     content: &mut String,
     reasoning: &mut String,
     native_tools: &mut Vec<Option<AccumToolCall>>,
     forwarding: &mut bool,
-    tx: &mpsc::Sender<Result<Vec<u8>, std::io::Error>>,
+    tx: &SseSender,
 ) -> Result<(), StreamFail>
 where
     S: StreamExt<Item = Result<B, reqwest::Error>> + Unpin,
     B: AsRef<[u8]>,
 {
+    let line_too_long = || StreamFail::Other("Model SSE line exceeded the safety limit.".into());
+    let mut translator = AgentSseTranslator::new(style);
     let mut buffer = Vec::new();
     while let Some(chunk) = next_stream_chunk(stream).await? {
         buffer.extend_from_slice(chunk.as_ref());
         let mut consumed = 0usize;
         while let Some(relative) = buffer[consumed..].iter().position(|byte| *byte == b'\n') {
             if relative > MAX_SSE_LINE_BYTES {
-                return Err(StreamFail::Other(
-                    "Model SSE line exceeded the safety limit.".into(),
-                ));
+                return Err(line_too_long());
             }
             let end = consumed + relative;
             let mut line = &buffer[consumed..end];
@@ -1845,10 +1855,9 @@ where
                 line = &line[..line.len() - 1];
             }
             let line = String::from_utf8_lossy(line);
-            apply_openai_sse_line(&line, content, reasoning, native_tools, forwarding, tx).await?;
-            if line
-                .strip_prefix("data:")
-                .is_some_and(|data| data.trim() == "[DONE]")
+            if translator
+                .feed(&line, content, reasoning, native_tools, forwarding, tx)
+                .await?
             {
                 return Ok(());
             }
@@ -1858,145 +1867,21 @@ where
             buffer = buffer.split_off(consumed);
         }
         if buffer.len() > MAX_SSE_LINE_BYTES {
-            return Err(StreamFail::Other(
-                "Model SSE line exceeded the safety limit.".into(),
-            ));
+            return Err(line_too_long());
         }
     }
     if !buffer.is_empty() {
         let line = String::from_utf8_lossy(&buffer);
-        apply_openai_sse_line(
-            line.trim_end_matches('\r'),
-            content,
-            reasoning,
-            native_tools,
-            forwarding,
-            tx,
-        )
-        .await?;
-    }
-    Ok(())
-}
-
-async fn consume_responses_as_openai_agent<S, B>(
-    stream: &mut S,
-    content: &mut String,
-    reasoning: &mut String,
-    native_tools: &mut Vec<Option<AccumToolCall>>,
-    forwarding: &mut bool,
-    tx: &mpsc::Sender<Result<Vec<u8>, std::io::Error>>,
-) -> Result<(), StreamFail>
-where
-    S: StreamExt<Item = Result<B, reqwest::Error>> + Unpin,
-    B: AsRef<[u8]>,
-{
-    let mut buffer = Vec::new();
-    let mut translator = crate::responses::ResponsesSseTranslator::default();
-    while let Some(chunk) = next_stream_chunk(stream).await? {
-        buffer.extend_from_slice(chunk.as_ref());
-        let mut consumed = 0usize;
-        while let Some(relative) = buffer[consumed..].iter().position(|byte| *byte == b'\n') {
-            if relative > MAX_SSE_LINE_BYTES {
-                return Err(StreamFail::Other(
-                    "Model SSE line exceeded the safety limit.".into(),
-                ));
-            }
-            let end = consumed + relative;
-            let mut line = &buffer[consumed..end];
-            if line.last() == Some(&b'\r') {
-                line = &line[..line.len() - 1];
-            }
-            let line = String::from_utf8_lossy(line);
-            for frame in translator.push_line(&line).map_err(StreamFail::Other)? {
-                let text = String::from_utf8_lossy(&frame);
-                for part in text.split('\n') {
-                    apply_openai_sse_line(part, content, reasoning, native_tools, forwarding, tx)
-                        .await?;
-                }
-            }
-            if translator.is_finished() {
-                return Ok(());
-            }
-            consumed = end + 1;
-        }
-        if consumed != 0 {
-            buffer = buffer.split_off(consumed);
-        }
-        if buffer.len() > MAX_SSE_LINE_BYTES {
-            return Err(StreamFail::Other(
-                "Model SSE line exceeded the safety limit.".into(),
-            ));
-        }
-    }
-    if !buffer.is_empty() {
-        let line = String::from_utf8_lossy(&buffer);
-        for frame in translator
-            .push_line(line.trim_end_matches('\r'))
-            .map_err(StreamFail::Other)?
-        {
-            apply_openai_sse_frame(&frame, content, reasoning, native_tools, forwarding, tx)
-                .await?;
-        }
-    }
-    Ok(())
-}
-
-async fn consume_anthropic_as_openai_agent<S, B>(
-    stream: &mut S,
-    content: &mut String,
-    reasoning: &mut String,
-    native_tools: &mut Vec<Option<AccumToolCall>>,
-    forwarding: &mut bool,
-    tx: &mpsc::Sender<Result<Vec<u8>, std::io::Error>>,
-) -> Result<(), StreamFail>
-where
-    S: StreamExt<Item = Result<B, reqwest::Error>> + Unpin,
-    B: AsRef<[u8]>,
-{
-    let mut buffer = Vec::new();
-    let mut translator = AnthropicSseTranslator::default();
-    while let Some(chunk) = next_stream_chunk(stream).await? {
-        buffer.extend_from_slice(chunk.as_ref());
-        let mut consumed = 0usize;
-        while let Some(relative) = buffer[consumed..].iter().position(|byte| *byte == b'\n') {
-            if relative > MAX_SSE_LINE_BYTES {
-                return Err(StreamFail::Other(
-                    "Model SSE line exceeded the safety limit.".into(),
-                ));
-            }
-            let end = consumed + relative;
-            let mut line = &buffer[consumed..end];
-            if line.last() == Some(&b'\r') {
-                line = &line[..line.len() - 1];
-            }
-            let line = String::from_utf8_lossy(line);
-            for frame in translator.push_line(&line).map_err(StreamFail::Other)? {
-                apply_openai_sse_frame(&frame, content, reasoning, native_tools, forwarding, tx)
-                    .await?;
-            }
-            if translator.is_finished() {
-                return Ok(());
-            }
-            consumed = end + 1;
-        }
-        if consumed != 0 {
-            buffer = buffer.split_off(consumed);
-        }
-        if buffer.len() > MAX_SSE_LINE_BYTES {
-            return Err(StreamFail::Other(
-                "Model SSE line exceeded the safety limit.".into(),
-            ));
-        }
-    }
-    if !buffer.is_empty() {
-        let line = String::from_utf8_lossy(&buffer);
-        for frame in translator
-            .push_line(line.trim_end_matches('\r'))
-            .map_err(StreamFail::Other)?
-        {
-            apply_openai_sse_frame(&frame, content, reasoning, native_tools, forwarding, tx)
-                .await?;
-        }
+        translator
+            .feed(
+                line.trim_end_matches('\r'),
+                content,
+                reasoning,
+                native_tools,
+                forwarding,
+                tx,
+            )
+            .await?;
     }
     Ok(())
 }
@@ -2007,7 +1892,7 @@ async fn apply_openai_sse_frame(
     reasoning: &mut String,
     native_tools: &mut Vec<Option<AccumToolCall>>,
     forwarding: &mut bool,
-    tx: &mpsc::Sender<Result<Vec<u8>, std::io::Error>>,
+    tx: &SseSender,
 ) -> Result<(), StreamFail> {
     let Ok(text) = std::str::from_utf8(frame) else {
         return Ok(());
@@ -2024,7 +1909,7 @@ async fn apply_openai_sse_line(
     reasoning: &mut String,
     native_tools: &mut Vec<Option<AccumToolCall>>,
     forwarding: &mut bool,
-    tx: &mpsc::Sender<Result<Vec<u8>, std::io::Error>>,
+    tx: &SseSender,
 ) -> Result<(), StreamFail> {
     if trimmed.is_empty() || !trimmed.starts_with("data:") {
         return Ok(());
@@ -2172,7 +2057,7 @@ fn append_tool_arguments(slot: &mut AccumToolCall, args: &Value) -> Result<(), S
 
 async fn announce_preparing_tools(
     native_tools: &mut [Option<AccumToolCall>],
-    tx: &mpsc::Sender<Result<Vec<u8>, std::io::Error>>,
+    tx: &SseSender,
 ) -> Result<(), StreamFail> {
     for slot in native_tools.iter_mut().flatten() {
         if slot.name.trim().is_empty() {
@@ -2769,10 +2654,45 @@ fn sse_agent(payload: Value) -> Vec<u8> {
     format!("event: agent\ndata: {payload}\n\n").into_bytes()
 }
 
-async fn send_content_clear(
-    tx: &mpsc::Sender<Result<Vec<u8>, std::io::Error>>,
-    turn: &StreamedTurn,
-) -> Result<(), StreamFail> {
+async fn send_status(tx: &SseSender, message: &str) -> Result<(), StreamFail> {
+    send_sse(
+        tx,
+        sse_agent(json!({ "phase": "status", "message": message })),
+    )
+    .await
+}
+
+async fn send_notice(tx: &SseSender, message: &str) -> Result<(), StreamFail> {
+    send_sse(
+        tx,
+        sse_agent(json!({ "phase": "notice", "message": message })),
+    )
+    .await
+}
+
+/// Show every call in the UI as a soft failure and return the matching model results.
+async fn reject_tool_calls(
+    tx: &SseSender,
+    calls: &[ToolCall],
+    text_for: impl Fn(&ToolCall) -> String,
+) -> Result<Vec<(ToolCall, String)>, StreamFail> {
+    let mut results = Vec::with_capacity(calls.len());
+    for call in calls {
+        let text = text_for(call);
+        send_tool_call(tx, call, false).await?;
+        send_tool_result(tx, call, &ToolOutcome::soft_failure(&text)).await?;
+        results.push((call.clone(), text));
+    }
+    Ok(results)
+}
+
+/// Replay the model's last reply, then append a user nudge asking it to retry.
+fn push_retry_nudge(messages: &mut Vec<Value>, turn: &StreamedTurn, nudge: &str) {
+    messages.push(json!({ "role": "assistant", "content": turn.assistant_text() }));
+    messages.push(json!({ "role": "user", "content": nudge }));
+}
+
+async fn send_content_clear(tx: &SseSender, turn: &StreamedTurn) -> Result<(), StreamFail> {
     let mut clear = json!({ "phase": "content_clear" });
     if !turn.content.trim().is_empty() {
         clear["text"] = json!(turn.content);
@@ -2783,10 +2703,7 @@ async fn send_content_clear(
     send_sse(tx, sse_agent(clear)).await
 }
 
-async fn send_stream_content_clear(
-    tx: &mpsc::Sender<Result<Vec<u8>, std::io::Error>>,
-    reasoning: &str,
-) -> Result<(), StreamFail> {
+async fn send_stream_content_clear(tx: &SseSender, reasoning: &str) -> Result<(), StreamFail> {
     let mut clear = json!({ "phase": "content_clear" });
     let reasoning = reasoning.trim();
     if !reasoning.is_empty() {
@@ -2796,7 +2713,7 @@ async fn send_stream_content_clear(
 }
 
 async fn send_tool_call(
-    tx: &mpsc::Sender<Result<Vec<u8>, std::io::Error>>,
+    tx: &SseSender,
     call: &ToolCall,
     needs_approval: bool,
 ) -> Result<(), StreamFail> {
@@ -2814,10 +2731,7 @@ async fn send_tool_call(
     send_sse(tx, sse_agent(payload)).await
 }
 
-async fn send_tool_approval(
-    tx: &mpsc::Sender<Result<Vec<u8>, std::io::Error>>,
-    call: &ToolCall,
-) -> Result<(), StreamFail> {
+async fn send_tool_approval(tx: &SseSender, call: &ToolCall) -> Result<(), StreamFail> {
     send_sse(
         tx,
         sse_agent(json!({
@@ -2832,10 +2746,7 @@ async fn send_tool_approval(
     .await
 }
 
-async fn send_tool_executing(
-    tx: &mpsc::Sender<Result<Vec<u8>, std::io::Error>>,
-    call: &ToolCall,
-) -> Result<(), StreamFail> {
+async fn send_tool_executing(tx: &SseSender, call: &ToolCall) -> Result<(), StreamFail> {
     send_sse(
         tx,
         sse_agent(json!({
@@ -2850,7 +2761,7 @@ async fn send_tool_executing(
 }
 
 async fn send_tool_result(
-    tx: &mpsc::Sender<Result<Vec<u8>, std::io::Error>>,
+    tx: &SseSender,
     call: &ToolCall,
     outcome: &ToolOutcome,
 ) -> Result<(), StreamFail> {
@@ -2890,7 +2801,7 @@ fn arm_tool_approval(approval_id: &str) -> Result<oneshot::Receiver<bool>, Strea
 async fn wait_for_approval(
     approval_id: &str,
     mut answer_rx: oneshot::Receiver<bool>,
-    tx: &mpsc::Sender<Result<Vec<u8>, std::io::Error>>,
+    tx: &SseSender,
 ) -> Result<bool, StreamFail> {
     let _guard = ApprovalWaitGuard {
         id: approval_id.to_string(),
@@ -2915,10 +2826,7 @@ async fn wait_for_approval(
     }
 }
 
-async fn wait_for_clarify_answers(
-    clarify_id: &str,
-    tx: &mpsc::Sender<Result<Vec<u8>, std::io::Error>>,
-) -> Result<Value, StreamFail> {
+async fn wait_for_clarify_answers(clarify_id: &str, tx: &SseSender) -> Result<Value, StreamFail> {
     let (answer_tx, mut answer_rx) = oneshot::channel();
     {
         let mut map = clarify_waiters()
@@ -3463,7 +3371,7 @@ async fn approve_and_execute_tools(
     calls: Vec<ToolCall>,
     skills: &AgentSkills,
     user_skills: &[UserSkill],
-    tx: &mpsc::Sender<Result<Vec<u8>, std::io::Error>>,
+    tx: &SseSender,
     mut approval_rx: HashMap<String, oneshot::Receiver<bool>>,
 ) -> Result<Vec<(ToolCall, ToolOutcome)>, StreamFail> {
     let mut executed = Vec::new();
@@ -3517,7 +3425,7 @@ async fn approve_and_execute_tools(
 }
 
 async fn emit_executed_tool(
-    tx: &mpsc::Sender<Result<Vec<u8>, std::io::Error>>,
+    tx: &SseSender,
     call: &ToolCall,
     outcome: &ToolOutcome,
 ) -> Result<(), StreamFail> {
@@ -4097,15 +4005,6 @@ fn html_to_readable_text(html: &str, max_chars: usize) -> String {
     truncate_chars(&joined, max_chars)
 }
 
-fn truncate_chars(text: &str, max_chars: usize) -> String {
-    if text.chars().count() <= max_chars {
-        return text.to_string();
-    }
-    let mut out: String = text.chars().take(max_chars.saturating_sub(1)).collect();
-    out.push('…');
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4297,7 +4196,8 @@ mod tests {
         let mut reasoning = String::new();
         let mut tools = Vec::new();
         let mut forwarding = true;
-        consume_openai_sse_agent(
+        consume_agent_sse(
+            ApiStyle::Openai,
             &mut stream,
             &mut content,
             &mut reasoning,
@@ -4315,7 +4215,8 @@ mod tests {
                 .iter()
                 .map(|chunk| Ok::<&[u8], reqwest::Error>(chunk.as_slice())),
         );
-        let result = consume_openai_sse_agent(
+        let result = consume_agent_sse(
+            ApiStyle::Openai,
             &mut stream,
             &mut String::new(),
             &mut String::new(),
@@ -4334,7 +4235,8 @@ mod tests {
     async fn stalled_model_round_errors_instead_of_hanging() {
         let mut stream = futures_util::stream::pending::<Result<Vec<u8>, reqwest::Error>>();
         let (tx, _rx) = mpsc::channel(4);
-        let result = consume_openai_sse_agent(
+        let result = consume_agent_sse(
+            ApiStyle::Openai,
             &mut stream,
             &mut String::new(),
             &mut String::new(),
@@ -4366,41 +4268,16 @@ mod tests {
             let (tx, _rx) = mpsc::channel(8);
             let (mut content, mut reasoning, mut native_tools, mut forwarding) =
                 (String::new(), String::new(), Vec::new(), true);
-            match style {
-                ApiStyle::Openai => {
-                    consume_openai_sse_agent(
-                        &mut stream,
-                        &mut content,
-                        &mut reasoning,
-                        &mut native_tools,
-                        &mut forwarding,
-                        &tx,
-                    )
-                    .await
-                }
-                ApiStyle::Responses => {
-                    consume_responses_as_openai_agent(
-                        &mut stream,
-                        &mut content,
-                        &mut reasoning,
-                        &mut native_tools,
-                        &mut forwarding,
-                        &tx,
-                    )
-                    .await
-                }
-                ApiStyle::Anthropic => {
-                    consume_anthropic_as_openai_agent(
-                        &mut stream,
-                        &mut content,
-                        &mut reasoning,
-                        &mut native_tools,
-                        &mut forwarding,
-                        &tx,
-                    )
-                    .await
-                }
-            }
+            consume_agent_sse(
+                style,
+                &mut stream,
+                &mut content,
+                &mut reasoning,
+                &mut native_tools,
+                &mut forwarding,
+                &tx,
+            )
+            .await
             .unwrap();
             assert_eq!(content, "你好", "{style:?}");
         }
@@ -4420,32 +4297,63 @@ mod tests {
             let (tx, _rx) = mpsc::channel(8);
             let (mut content, mut reasoning, mut native_tools, mut forwarding) =
                 (String::new(), String::new(), Vec::new(), true);
-            let result = match style {
-                ApiStyle::Openai => {
-                    consume_openai_sse_agent(
-                        &mut stream,
-                        &mut content,
-                        &mut reasoning,
-                        &mut native_tools,
-                        &mut forwarding,
-                        &tx,
-                    )
-                    .await
-                }
-                _ => {
-                    consume_responses_as_openai_agent(
-                        &mut stream,
-                        &mut content,
-                        &mut reasoning,
-                        &mut native_tools,
-                        &mut forwarding,
-                        &tx,
-                    )
-                    .await
-                }
-            };
+            let result = consume_agent_sse(
+                style,
+                &mut stream,
+                &mut content,
+                &mut reasoning,
+                &mut native_tools,
+                &mut forwarding,
+                &tx,
+            )
+            .await;
             assert!(result.is_ok(), "{style:?}: {result:?}");
         }
+    }
+
+    #[test]
+    fn round_status_prioritizes_research_state_over_generic_progress() {
+        let research = research::ResearchProgress::default();
+        let pending = vec!["web_search".to_string()];
+        let status = |first_round, await_clarify, force_final, deep_research, pending, stalled| {
+            round_status_message(RoundStatus {
+                first_round,
+                await_clarify,
+                force_final,
+                deep_research,
+                research: &research,
+                pending,
+                stalled,
+            })
+        };
+        assert_eq!(
+            status(true, true, false, true, &[], false),
+            "Refining research goal…"
+        );
+        assert_eq!(
+            status(false, false, true, true, &[], false),
+            "Writing answer…"
+        );
+        assert_eq!(
+            status(false, false, false, true, &[], false),
+            "Researching multiple angles…"
+        );
+        assert_eq!(
+            status(false, false, false, false, &pending, true),
+            "Required: web_search"
+        );
+        assert_eq!(
+            status(false, false, false, false, &[], true),
+            "Retrying model connection…"
+        );
+        assert_eq!(
+            status(true, false, false, false, &[], false),
+            "Waiting for model…"
+        );
+        assert_eq!(
+            status(false, false, false, false, &[], false),
+            "Continuing…"
+        );
     }
 
     #[test]

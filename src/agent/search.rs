@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use tokio::sync::Mutex;
 use tokio::time::timeout;
 
-use super::text::collapse_ws;
+use super::text::{collapse_ws, truncate_chars};
 use super::{AgentSkills, SearchHit, WebSearchProvider, WebSearchRecency, WebSearchSafeSearch};
 use crate::http;
 
@@ -84,7 +84,7 @@ async fn search_duckduckgo_only(
 ) -> Result<(Vec<SearchHit>, String, String), String> {
     let mut errors = Vec::new();
     let by_source = search_duckduckgo(query, skills, &mut errors).await;
-    finalize_sources(by_source, errors, query, limit, false, None, "DuckDuckGo")
+    finalize_sources(by_source, &errors, query, limit, false, None, "DuckDuckGo")
 }
 
 async fn search_searxng_only(
@@ -109,7 +109,7 @@ async fn search_searxng_only(
         Ok(_) => errors.push("searxng: no usable links".into()),
         Err(error) => errors.push(format!("searxng: {error}")),
     }
-    finalize_sources(by_source, errors, query, limit, false, None, "SearXNG")
+    finalize_sources(by_source, &errors, query, limit, false, None, "SearXNG")
 }
 
 async fn search_auto(
@@ -150,11 +150,11 @@ async fn search_auto(
 
     finalize_sources(
         by_source,
-        errors,
+        &errors,
         query,
         limit,
         fell_back,
-        searx_error,
+        searx_error.as_deref(),
         if searx_requested {
             "SearXNG"
         } else {
@@ -165,11 +165,11 @@ async fn search_auto(
 
 fn finalize_sources(
     by_source: Vec<(String, Vec<SearchHit>)>,
-    errors: Vec<String>,
+    errors: &[String],
     query: &str,
     limit: usize,
     fell_back: bool,
-    searx_error: Option<String>,
+    searx_error: Option<&str>,
     preferred_label: &str,
 ) -> Result<(Vec<SearchHit>, String, String), String> {
     if by_source.is_empty() {
@@ -190,7 +190,6 @@ fn finalize_sources(
     let engine = if used_searx { "SearXNG" } else { "DuckDuckGo" };
     let note = if fell_back {
         let why = searx_error
-            .as_deref()
             .map(strip_searxng_prefix)
             .unwrap_or_else(|| "unavailable".into());
         format!("{engine} · SearXNG failed ({why})")
@@ -632,16 +631,6 @@ fn unix_ymd(secs: u64) -> String {
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = if m <= 2 { y + 1 } else { y };
     format!("{y:04}-{m:02}-{d:02}")
-}
-
-fn truncate_chars(text: &str, max: usize) -> String {
-    let count = text.chars().count();
-    if count <= max {
-        return text.to_string();
-    }
-    let mut out: String = text.chars().take(max.saturating_sub(1)).collect();
-    out.push('…');
-    out
 }
 
 fn tinyfish_api_key(skills: &AgentSkills) -> Option<String> {
@@ -1165,11 +1154,7 @@ fn parse_searxng_json(body: &Value, limit: usize) -> Vec<SearchHit> {
                 ),
                 _ => continue,
             };
-            if let Some(hit) = featured_hit(
-                collapse_ws(&title),
-                decode_result_href(&url),
-                collapse_ws(&snippet),
-            ) {
+            if let Some(hit) = featured_hit(&title, decode_result_href(&url), &snippet) {
                 hits.push(hit);
             }
         }
@@ -1332,9 +1317,8 @@ fn parse_ddg_scraper(html: &str, selector: &str) -> Vec<SearchHit> {
 }
 
 fn nearby_snippet(el: scraper::ElementRef<'_>) -> String {
-    let snippet_sel = match Selector::parse(".result__snippet, .result-snippet") {
-        Ok(sel) => sel,
-        Err(_) => return String::new(),
+    let Ok(snippet_sel) = Selector::parse(".result__snippet, .result-snippet") else {
+        return String::new();
     };
     let mut node = el.parent();
     for _ in 0..10 {
@@ -1370,19 +1354,13 @@ fn parse_ddg_results(
     {
         let window_start = rest[..idx].rfind('<').unwrap_or(idx);
         rest = &rest[window_start..];
-        let href = match attr_after(rest, "href=\"").or_else(|| attr_after(rest, "href='")) {
-            Some(value) => value,
-            None => {
-                rest = &rest[1..];
-                continue;
-            }
+        let Some(href) = attr_after(rest, "href=\"").or_else(|| attr_after(rest, "href='")) else {
+            rest = &rest[1..];
+            continue;
         };
-        let title_html = match between(rest, ">", "</a>") {
-            Some(value) => value,
-            None => {
-                rest = &rest[1..];
-                continue;
-            }
+        let Some(title_html) = between(rest, ">", "</a>") else {
+            rest = &rest[1..];
+            continue;
         };
         let title = collapse_ws(&strip_tags(title_html));
         let url = decode_result_href(href);
@@ -1405,9 +1383,9 @@ fn parse_ddg_results(
     hits
 }
 
-fn featured_hit(title: String, url: String, snippet: String) -> Option<SearchHit> {
-    let title = collapse_ws(&title);
-    let snippet = collapse_ws(&snippet);
+fn featured_hit(title: &str, url: String, snippet: &str) -> Option<SearchHit> {
+    let title = collapse_ws(title);
+    let snippet = collapse_ws(snippet);
     if title.is_empty() && snippet.is_empty() {
         return None;
     }

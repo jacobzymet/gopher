@@ -1896,8 +1896,6 @@ let draftIncognito = false;
 let activeProjectId = null;
 /** 'chat' | 'projects' | 'notifications' */
 let mainView = 'chat';
-/** 'chat' | 'bots' — wordmark surface. Bots is shown as Loops. */
-let appSurface = 'chat';
 let suppressUrlSync = false;
 let editingProjectId = null;
 let creatingProject = false;
