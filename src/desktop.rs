@@ -283,7 +283,7 @@ fn apply_macos_edit_menu() {
 }
 
 fn spawn_quit_listeners(runtime: &tokio::runtime::Handle, proxy: EventLoopProxy<DesktopEvent>) {
-    let interrupt_proxy = proxy;
+    let interrupt_proxy = proxy.clone();
     runtime.spawn(async move {
         let _ = tokio::signal::ctrl_c().await;
         QUIT_REQUESTED.store(true, Ordering::SeqCst);
